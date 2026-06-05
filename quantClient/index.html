@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>量化选股看板</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app" v-cloak>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">Q</div>
+        <div>
+          <h1>量化选股</h1>
+          <p>Quant Dashboard</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button :class="{ active: activeTab === 'overview' }" @click="activeTab = 'overview'">总览</button>
+        <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">强势股</button>
+        <button :class="{ active: activeTab === 'dip' }" @click="activeTab = 'dip'">抄底候选</button>
+        <button :class="{ active: activeTab === 'sectors' }" @click="activeTab = 'sectors'">板块</button>
+        <button :class="{ active: activeTab === 'reports' }" @click="activeTab = 'reports'">历史</button>
+      </nav>
+
+      <div class="connection">
+        <label for="apiBase">接口地址</label>
+        <input id="apiBase" v-model.trim="apiBase" @change="saveApiBase" spellcheck="false">
+        <div class="status-row">
+          <span class="dot" :class="healthOk ? 'ok' : 'warn'"></span>
+          <span>{{ healthText }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="shell">
+      <header class="toolbar">
+        <div>
+          <p class="eyebrow">交易日 {{ latest.trade_date || '--' }}</p>
+          <h2>{{ pageTitle }}</h2>
+        </div>
+        <div class="actions">
+          <label class="switch">
+            <input type="checkbox" v-model="includeAi">
+            <span></span>
+            <b>AI 分析</b>
+          </label>
+          <select v-model.number="limit">
+            <option :value="10">10 条</option>
+            <option :value="20">20 条</option>
+            <option :value="50">50 条</option>
+            <option :value="100">100 条</option>
+          </select>
+          <button class="secondary" @click="refreshAll" :disabled="loading">刷新</button>
+          <button class="primary" @click="runScan" :disabled="loading">{{ loading ? '运行中' : '运行扫描' }}</button>
+        </div>
+      </header>
+
+      <section v-if="error" class="alert">
+        <strong>请求失败</strong>
+        <span>{{ error }}</span>
+      </section>
+
+      <section class="metrics">
+        <article>
+          <span>强势股</span>
+          <strong>{{ latest.strong?.length || 0 }}</strong>
+        </article>
+        <article>
+          <span>抄底个股</span>
+          <strong>{{ latest.dip?.length || 0 }}</strong>
+        </article>
+        <article>
+          <span>候选板块</span>
+          <strong>{{ latest.sectors?.length || 0 }}</strong>
+        </article>
+        <article>
+          <span>报告编号</span>
+          <strong>{{ latest.id || '--' }}</strong>
+        </article>
+      </section>
+
+      <section v-show="activeTab === 'overview'" class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>强势股 Top</h3>
+            <button @click="activeTab = 'strong'">查看全部</button>
+          </div>
+          <stock-table :rows="topRows(latest.strong, 8)" mode="strong"></stock-table>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h3>抄底候选 Top</h3>
+            <button @click="activeTab = 'dip'">查看全部</button>
+          </div>
+          <stock-table :rows="topRows(latest.dip, 8)" mode="dip"></stock-table>
+        </div>
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>AI 分析</h3>
+            <span>{{ latest.include_ai ? '已生成' : '未启用' }}</span>
+          </div>
+          <pre class="analysis">{{ latest.ai_analysis || '暂无 AI 分析结果' }}</pre>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'strong'" class="panel">
+        <div class="panel-head">
+          <h3>强势股列表</h3>
+          <span>{{ latest.strong?.length || 0 }} 条</span>
+        </div>
+        <stock-table :rows="latest.strong || []" mode="strong"></stock-table>
+      </section>
+
+      <section v-show="activeTab === 'dip'" class="panel">
+        <div class="panel-head">
+          <h3>抄底候选个股</h3>
+          <span>{{ latest.dip?.length || 0 }} 条</span>
+        </div>
+        <stock-table :rows="latest.dip || []" mode="dip"></stock-table>
+      </section>
+
+      <section v-show="activeTab === 'sectors'" class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>候选板块</h3>
+            <span>{{ latest.sectors?.length || 0 }} 条</span>
+          </div>
+          <sector-table :rows="latest.sectors || []"></sector-table>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h3>板块代表股</h3>
+            <span>{{ latest.rep_stocks?.length || 0 }} 条</span>
+          </div>
+          <stock-table :rows="latest.rep_stocks || []" mode="rep"></stock-table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'reports'" class="panel">
+        <div class="panel-head">
+          <h3>历史报告</h3>
+          <button @click="loadReports">刷新历史</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>交易日</th>
+                <th>状态</th>
+                <th>AI</th>
+                <th>生成时间</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in reports" :key="item.id">
+                <td>{{ item.id }}</td>
+                <td>{{ item.trade_date }}</td>
+                <td><span class="tag" :class="item.status">{{ item.status }}</span></td>
+                <td>{{ item.include_ai ? '是' : '否' }}</td>
+                <td>{{ item.created_at }}</td>
+                <td><button class="row-button" @click="openReport(item.id)">打开</button></td>
+              </tr>
+              <tr v-if="reports.length === 0">
+                <td colspan="6" class="empty">暂无历史报告</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="./main.js"></script>
+</body>
+</html>
+

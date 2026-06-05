@@ -1,0 +1,7 @@
+tushare
+pandas
+ollama
+requests
+fastapi
+uvicorn
+pymysql

@@ -1,0 +1,79 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "tools.jackson.core",
+    "module": "jackson-core",
+    "version": "3.1.2",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "tools.jackson",
+          "module": "jackson-bom",
+          "version": {
+            "requires": "3.1.2"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          },
+          "endorseStrictVersions": true
+        }
+      ],
+      "files": [
+        {
+          "name": "jackson-core-3.1.2.jar",
+          "url": "jackson-core-3.1.2.jar",
+          "size": 600176,
+          "sha512": "e959332fd411f77e533eafd34cab6ee9a07e99b7d7e611bdf639d9ba03e6fd2d2912cad596176660b522b1d838984253c5d18e0901bc3a3d6be0a5ea4fc0ed9b",
+          "sha256": "bbb00763f5998f03a26f21e47ed500f253c7fc5c158fa3e8a41dbf97aa7416fd",
+          "sha1": "d0da2e67ffb0b7cf5aba0436b315aa3eb3eb37ca",
+          "md5": "26ca9e27f24af5ffcff54c9ddb1440ee"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "tools.jackson",
+          "module": "jackson-bom",
+          "version": {
+            "requires": "3.1.2"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          },
+          "endorseStrictVersions": true
+        }
+      ],
+      "files": [
+        {
+          "name": "jackson-core-3.1.2.jar",
+          "url": "jackson-core-3.1.2.jar",
+          "size": 600176,
+          "sha512": "e959332fd411f77e533eafd34cab6ee9a07e99b7d7e611bdf639d9ba03e6fd2d2912cad596176660b522b1d838984253c5d18e0901bc3a3d6be0a5ea4fc0ed9b",
+          "sha256": "bbb00763f5998f03a26f21e47ed500f253c7fc5c158fa3e8a41dbf97aa7416fd",
+          "sha1": "d0da2e67ffb0b7cf5aba0436b315aa3eb3eb37ca",
+          "md5": "26ca9e27f24af5ffcff54c9ddb1440ee"
+        }
+      ]
+    }
+  ]
+}

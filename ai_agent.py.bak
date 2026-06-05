@@ -1,0 +1,38 @@
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="你的claude api key"
+)
+
+
+def analyze_stocks(stock_text: str):
+    prompt = f"""
+你是专业A股短线交易分析师。
+
+以下是筛选出的股票数据：
+
+{stock_text}
+
+请输出：
+
+1. 这些股票的共同特征
+2. 是否属于短线强势行情
+3. 是否适合追涨
+4. 风险点
+5. 操作建议（明确：买入/观望/回避）
+
+要求：
+- 简洁
+- 专业
+- 不要废话
+"""
+
+    response = client.messages.create(
+        model="claude-3-sonnet-20240229",
+        max_tokens=1000,
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    return response.content[0].text

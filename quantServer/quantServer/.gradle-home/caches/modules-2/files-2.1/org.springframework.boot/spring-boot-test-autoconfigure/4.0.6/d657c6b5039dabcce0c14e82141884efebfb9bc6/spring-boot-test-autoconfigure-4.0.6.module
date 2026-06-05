@@ -1,0 +1,118 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.springframework.boot",
+    "module": "spring-boot-test-autoconfigure",
+    "version": "4.0.6",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.4.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework.boot",
+          "module": "spring-boot-test",
+          "version": {
+            "requires": "4.0.6"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-boot-test-autoconfigure-4.0.6.jar",
+          "url": "spring-boot-test-autoconfigure-4.0.6.jar",
+          "size": 27877,
+          "sha512": "8935971c9b27ad1cbef4f6794627f1b4f15efd6d7202ae0a1ae9b7eb8b369e3dfca6083a8fc7f50dfd36e9fd0e66dca2d768644aeaef8cbc1d84e4dacbf20e77",
+          "sha256": "deb1a4abfeabed14ef6f501b58c1215f0a248ba24ff9ef88651e16774a32ee89",
+          "sha1": "268908eb95b5483157544d79155ef7e0dd521798",
+          "md5": "a77b0f635873e9e20283e4b0fee31f40"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework.boot",
+          "module": "spring-boot-test",
+          "version": {
+            "requires": "4.0.6"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-boot-test-autoconfigure-4.0.6.jar",
+          "url": "spring-boot-test-autoconfigure-4.0.6.jar",
+          "size": 27877,
+          "sha512": "8935971c9b27ad1cbef4f6794627f1b4f15efd6d7202ae0a1ae9b7eb8b369e3dfca6083a8fc7f50dfd36e9fd0e66dca2d768644aeaef8cbc1d84e4dacbf20e77",
+          "sha256": "deb1a4abfeabed14ef6f501b58c1215f0a248ba24ff9ef88651e16774a32ee89",
+          "sha1": "268908eb95b5483157544d79155ef7e0dd521798",
+          "md5": "a77b0f635873e9e20283e4b0fee31f40"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "spring-boot-test-autoconfigure-4.0.6-javadoc.jar",
+          "url": "spring-boot-test-autoconfigure-4.0.6-javadoc.jar",
+          "size": 141834,
+          "sha512": "d05053d0ff80eb1ad84afc516b774db4056bd4b5a2b0a58bd1863e1617fe871da6b08a9dd9480913bf70454ffe76622bde540e76e9b70d4fe2f5e319488ef84e",
+          "sha256": "7e8d349279b8e5f43a0b50c3df48c96824d5f798970251c701266b4fab76c591",
+          "sha1": "3fd79ae9834ea6807695740aa56d10c252454cc5",
+          "md5": "c4e5e1449dd2956c0ded85b42cc1f5d4"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "spring-boot-test-autoconfigure-4.0.6-sources.jar",
+          "url": "spring-boot-test-autoconfigure-4.0.6-sources.jar",
+          "size": 25255,
+          "sha512": "a53a64b5206ad3c45cef6b361c360ca910bc10d08a483e9433459e22f0db36211cc68a4ff0c9eebecabfbbaa89cee09fa1f53effae6c77457f636753cdf84e90",
+          "sha256": "05d49b5465233644b98aa4dfa099ca930015f2a3219b93e8d13056db680cea63",
+          "sha1": "7c36602480aeaa7a779820e4ba6a2fc049f45672",
+          "md5": "3291dd9711f842a1517c84b2e58f9c47"
+        }
+      ]
+    }
+  ]
+}

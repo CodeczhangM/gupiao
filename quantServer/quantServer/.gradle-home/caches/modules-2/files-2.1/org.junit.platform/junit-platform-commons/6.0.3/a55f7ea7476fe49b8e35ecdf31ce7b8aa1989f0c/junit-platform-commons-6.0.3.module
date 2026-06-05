@@ -1,0 +1,144 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.junit.platform",
+    "module": "junit-platform-commons",
+    "version": "6.0.3",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.1.0"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.junit",
+          "module": "junit-bom",
+          "version": {
+            "requires": "6.0.3"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          },
+          "endorseStrictVersions": true
+        },
+        {
+          "group": "org.apiguardian",
+          "module": "apiguardian-api",
+          "version": {
+            "requires": "1.1.2"
+          }
+        },
+        {
+          "group": "org.jspecify",
+          "module": "jspecify",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "junit-platform-commons-6.0.3.jar",
+          "url": "junit-platform-commons-6.0.3.jar",
+          "size": 171256,
+          "sha512": "a22154edbf3c277421dc87e924f5cbe7e2807df43a7b14911303d9f578b4cbe1f3dd5123aff2b94cecd5def3a5141710d6c127f58a03f6ace30be5bd3171fd6e",
+          "sha256": "39f262d09c3d52719fe0b77f080e90a3695e285d779a41b232e17963ae5da200",
+          "sha1": "1093a7faa2ba47c28aa83f378d9a2083463bb20c",
+          "md5": "b415ffe739fa5e59a7ca87f2817c3bbc"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.junit",
+          "module": "junit-bom",
+          "version": {
+            "requires": "6.0.3"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          },
+          "endorseStrictVersions": true
+        }
+      ],
+      "files": [
+        {
+          "name": "junit-platform-commons-6.0.3.jar",
+          "url": "junit-platform-commons-6.0.3.jar",
+          "size": 171256,
+          "sha512": "a22154edbf3c277421dc87e924f5cbe7e2807df43a7b14911303d9f578b4cbe1f3dd5123aff2b94cecd5def3a5141710d6c127f58a03f6ace30be5bd3171fd6e",
+          "sha256": "39f262d09c3d52719fe0b77f080e90a3695e285d779a41b232e17963ae5da200",
+          "sha1": "1093a7faa2ba47c28aa83f378d9a2083463bb20c",
+          "md5": "b415ffe739fa5e59a7ca87f2817c3bbc"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "junit-platform-commons-6.0.3-javadoc.jar",
+          "url": "junit-platform-commons-6.0.3-javadoc.jar",
+          "size": 4503392,
+          "sha512": "cde05bdffb786f6e175575569128361720b4074d7e5e975cfa4f0fbe3447655929055fc421b7be564624712447024f3acd4f4fbe46a30b61a1931e7269ca7d5c",
+          "sha256": "930aebb0d5e7eb38acf37b19873114a020766a4936be901e7f621fe882cdc7ef",
+          "sha1": "b085e85aabe91289ca4752ecc721367927614563",
+          "md5": "275cc7c568bf82b9fef638e256acbe10"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "junit-platform-commons-6.0.3-sources.jar",
+          "url": "junit-platform-commons-6.0.3-sources.jar",
+          "size": 115156,
+          "sha512": "17e6d9143471deec257f5b4d7d38f172a7d7096f337a6fbfab1288fb139a9cdec7da2a27f4c5aee3fededae3f2203fdb9418ebbd1838e9db1bd6daa818289161",
+          "sha256": "06cbe4a4bbd79339c3817983510cf3adc3d6a88a8a556c80c5b84eeb1ebd13dc",
+          "sha1": "27e4015c025cc02ea68d71b799a84a1508d4f60e",
+          "md5": "a7f09fc93c0c172ab6f91c4b2fd6080b"
+        }
+      ]
+    }
+  ]
+}

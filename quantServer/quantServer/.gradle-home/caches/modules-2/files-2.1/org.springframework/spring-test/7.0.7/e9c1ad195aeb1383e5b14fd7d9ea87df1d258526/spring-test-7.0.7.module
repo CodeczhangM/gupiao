@@ -1,0 +1,82 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.springframework",
+    "module": "spring-test",
+    "version": "7.0.7",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.4.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework",
+          "module": "spring-core",
+          "version": {
+            "requires": "7.0.7"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-test-7.0.7.jar",
+          "url": "spring-test-7.0.7.jar",
+          "size": 1109277,
+          "sha512": "5f84a39a3eb2f88e8fae4191b42fcdcff3f2f43de2bc4c6a3bb9736120ee348503d3aaeb2d44c310daa0bacb30f0da46817e043306ebd1d8a5a6a3c994e1e570",
+          "sha256": "9ed5fda6520b79f1f53714b2f307891a19c5fc18181169fe81d5272efd73a934",
+          "sha1": "58c34299b8a881978743a7b15b59c2b71f53271c",
+          "md5": "4a6d6906fda0ea3cca7f529a48817525"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework",
+          "module": "spring-core",
+          "version": {
+            "requires": "7.0.7"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-test-7.0.7.jar",
+          "url": "spring-test-7.0.7.jar",
+          "size": 1109277,
+          "sha512": "5f84a39a3eb2f88e8fae4191b42fcdcff3f2f43de2bc4c6a3bb9736120ee348503d3aaeb2d44c310daa0bacb30f0da46817e043306ebd1d8a5a6a3c994e1e570",
+          "sha256": "9ed5fda6520b79f1f53714b2f307891a19c5fc18181169fe81d5272efd73a934",
+          "sha1": "58c34299b8a881978743a7b15b59c2b71f53271c",
+          "md5": "4a6d6906fda0ea3cca7f529a48817525"
+        }
+      ]
+    }
+  ]
+}
