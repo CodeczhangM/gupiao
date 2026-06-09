@@ -342,9 +342,90 @@ button {
   color: var(--blue);
 }
 
+.form-grid {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.form-grid label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-grid select,
+.inline-action {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.inline-action {
+  align-self: end;
+  border-color: #1f5f94;
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.summary-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #edf0ed;
+}
+
+.summary-list div {
+  min-height: 76px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.summary-list span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.summary-list strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 22px;
+}
+
 .table-wrap {
   width: 100%;
-  overflow-x: auto;
+  overflow: auto;
+}
+
+.scroll-panel {
+  overflow: hidden;
+}
+
+.scroll-panel .table-wrap {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.scroll-panel.tall .table-wrap {
+  max-height: 460px;
+}
+
+.scroll-panel table {
+  min-width: 1120px;
+}
+
+.panel table {
+  min-width: 1260px;
 }
 
 table {
@@ -366,6 +447,9 @@ td {
 }
 
 th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   color: var(--muted);
   font-weight: 600;
   background: #fafbf9;
@@ -432,7 +516,7 @@ tr:hover td {
   }
 
   .nav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .nav button {
@@ -445,7 +529,8 @@ tr:hover td {
   }
 
   .metrics,
-  .grid.two {
+  .grid.two,
+  .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -464,7 +549,8 @@ tr:hover td {
   }
 
   .metrics,
-  .grid.two {
+  .grid.two,
+  .form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -483,4 +569,3 @@ tr:hover td {
     min-width: 108px;
   }
 }
-

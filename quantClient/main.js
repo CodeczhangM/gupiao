@@ -33,12 +33,22 @@ function signedClass(value) {
   return '';
 }
 
+function displayMetric(value, fallback = '历史不足') {
+  if (value === null || value === undefined || value === '') return fallback;
+  return formatNumber(value);
+}
+
+function displayPercent(value, fallback = '历史不足') {
+  if (value === null || value === undefined || value === '') return fallback;
+  return `${formatNumber(value)}%`;
+}
+
 const StockTable = {
   props: {
     rows: { type: Array, default: () => [] },
     mode: { type: String, default: 'strong' },
   },
-  methods: { formatNumber, signedClass },
+  methods: { formatNumber, signedClass, displayMetric, displayPercent },
   template: `
     <div class="table-wrap">
       <table>
@@ -51,6 +61,12 @@ const StockTable = {
             <th>涨跌幅</th>
             <th>换手率</th>
             <th>量比</th>
+            <th>抄底原因</th>
+            <th>高点回撤</th>
+            <th>缩量率</th>
+            <th>MA20</th>
+            <th>MA40</th>
+            <th>守线</th>
             <th>评分</th>
           </tr>
         </thead>
@@ -63,10 +79,16 @@ const StockTable = {
             <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</td>
             <td>{{ formatNumber(row.turnover_rate) }}%</td>
             <td>{{ formatNumber(row.volume_ratio) }}</td>
+            <td>{{ row.dip_reason || '--' }}</td>
+            <td :class="signedClass(row.high_drawdown)">{{ displayPercent(row.high_drawdown) }}</td>
+            <td>{{ displayMetric(row.volume_shrink_rate) }}</td>
+            <td>{{ displayMetric(row.ma20) }}</td>
+            <td>{{ displayMetric(row.ma40) }}</td>
+            <td>{{ row.support_line || '--' }}</td>
             <td>{{ formatNumber(row.score ?? row.dip_score) }}</td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="8" class="empty">暂无数据</td>
+            <td colspan="14" class="empty">暂无数据</td>
           </tr>
         </tbody>
       </table>
@@ -108,10 +130,55 @@ const SectorTable = {
   `,
 };
 
+const BacktestTable = {
+  props: {
+    rows: { type: Array, default: () => [] },
+  },
+  methods: { formatNumber, signedClass },
+  template: `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>策略</th>
+            <th>选股日</th>
+            <th>卖出日</th>
+            <th>代码</th>
+            <th>名称</th>
+            <th>行业</th>
+            <th>买入收盘</th>
+            <th>卖出收盘</th>
+            <th>收益</th>
+            <th>评分</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, index) in rows" :key="row.strategy + row.trade_date + row.ts_code + index">
+            <td>{{ row.strategy === 'strong' ? '强势' : '抄底' }}</td>
+            <td>{{ row.trade_date || '--' }}</td>
+            <td>{{ row.exit_date || '--' }}</td>
+            <td class="mono">{{ row.ts_code || '--' }}</td>
+            <td>{{ row.name || '--' }}</td>
+            <td>{{ row.industry || '--' }}</td>
+            <td>{{ formatNumber(row.entry_close) }}</td>
+            <td>{{ formatNumber(row.exit_close) }}</td>
+            <td :class="signedClass(row.return_pct)">{{ formatNumber(row.return_pct) }}%</td>
+            <td>{{ formatNumber(row.score) }}</td>
+          </tr>
+          <tr v-if="rows.length === 0">
+            <td colspan="10" class="empty">暂无回测结果</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `,
+};
+
 createApp({
   components: {
     StockTable,
     SectorTable,
+    BacktestTable,
   },
   data() {
     return {
@@ -122,6 +189,16 @@ createApp({
       latest: {},
       reports: [],
       loading: false,
+      backtestLoading: false,
+      backtestLookbackDays: 30,
+      backtestHoldDays: 3,
+      backtestLimit: 20,
+      backtest: null,
+      evaluationLoading: false,
+      evaluationHoldDays: 3,
+      evaluationReportLimit: 50,
+      evaluationStockLimit: 20,
+      aiEvaluation: null,
       error: '',
       healthOk: false,
       healthText: '未连接',
@@ -135,16 +212,26 @@ createApp({
         dip: '抄底候选',
         sectors: '板块机会',
         reports: '历史报告',
+        backtest: '策略回测',
+        evaluation: 'AI 推荐评估',
       };
       return titles[this.activeTab] || '选股总览';
+    },
+    backtestRows() {
+      return this.backtest && this.backtest.results ? this.backtest.results : [];
     },
   },
   mounted() {
     this.refreshAll();
   },
   methods: {
+    formatNumber,
+    signedClass,
     topRows(rows, limit) {
       return (rows || []).slice(0, limit);
+    },
+    listCount(rows) {
+      return rows ? rows.length : 0;
     },
     saveApiBase() {
       localStorage.setItem('quant_api_base', this.apiBase || '/api/quant');
@@ -240,6 +327,67 @@ createApp({
       } finally {
         this.loading = false;
       }
+    },
+    async runBacktest() {
+      this.backtestLoading = true;
+      this.error = '';
+      try {
+        this.backtest = await this.request('/backtest/run', {
+          method: 'POST',
+          body: JSON.stringify({
+            lookbackDays: this.backtestLookbackDays,
+            holdDays: this.backtestHoldDays,
+            limit: this.backtestLimit,
+          }),
+        });
+        this.activeTab = 'backtest';
+      } catch (error) {
+        this.error = error.message;
+      } finally {
+        this.backtestLoading = false;
+      }
+    },
+    async runAiEvaluation() {
+      this.evaluationLoading = true;
+      this.error = '';
+      try {
+        this.aiEvaluation = await this.request(
+          `/evaluation/ai?holdDays=${this.evaluationHoldDays}&reportLimit=${this.evaluationReportLimit}&stockLimit=${this.evaluationStockLimit}`
+        );
+        this.activeTab = 'evaluation';
+      } catch (error) {
+        this.error = error.message;
+      } finally {
+        this.evaluationLoading = false;
+      }
+    },
+    summaryValue(strategy, key, suffix = '') {
+      const value = this.summaryMetric(strategy, key);
+      if (value === null || value === undefined) return '--';
+      return `${formatNumber(value)}${suffix}`;
+    },
+    summaryMetric(strategy, key) {
+      if (!this.backtest || !this.backtest.summary || !this.backtest.summary[strategy]) {
+        return null;
+      }
+      return this.backtest.summary[strategy][key];
+    },
+    evaluationSummaryValue(group, key, suffix = '') {
+      const value = this.evaluationSummaryMetric(group, key);
+      if (value === null || value === undefined) return '--';
+      return `${formatNumber(value)}${suffix}`;
+    },
+    evaluationSummaryMetric(group, key) {
+      if (!this.aiEvaluation || !this.aiEvaluation.summary || !this.aiEvaluation.summary[group]) {
+        return null;
+      }
+      return this.aiEvaluation.summary[group][key];
+    },
+    evaluationRanking(key) {
+      if (!this.aiEvaluation || !this.aiEvaluation.ranking) {
+        return [];
+      }
+      return this.aiEvaluation.ranking[key] || [];
     },
   },
 }).mount('#app');

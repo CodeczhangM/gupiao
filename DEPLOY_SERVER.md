@@ -134,6 +134,9 @@ MYSQL_PASSWORD=你的强密码
 MYSQL_DATABASE=quant
 
 OLLAMA_MODEL=deepseek-r1:7b
+
+# 0 表示最新可用交易日；1 表示前一交易日。
+MARKET_DATE_OFFSET=0
 ```
 
 注意：`.env` 不要提交到公开仓库。
@@ -225,8 +228,8 @@ java -jar target/quantServer-0.0.1-SNAPSHOT.jar
 新开终端验证：
 
 ```bash
-curl http://127.0.0.1:8080/api/quant/health
-curl http://127.0.0.1:8080/api/quant/health/db
+curl http://127.0.0.1:8081/api/quant/health
+curl http://127.0.0.1:8081/api/quant/health/db
 ```
 
 停止手动进程后，创建 systemd 服务：
@@ -248,8 +251,9 @@ WorkingDirectory=/opt/quant/quantServer/quantServer
 ExecStart=/usr/bin/java -jar /opt/quant/quantServer/quantServer/target/quantServer-0.0.1-SNAPSHOT.jar
 Restart=always
 RestartSec=5
-Environment=SERVER_PORT=8080
+Environment=SERVER_PORT=8081
 Environment=QUANT_PYTHON_BASE_URL=http://127.0.0.1:8000
+Environment=QUANT_PYTHON_READ_TIMEOUT=600s
 
 [Install]
 WantedBy=multi-user.target
@@ -299,11 +303,18 @@ server {
     }
 
     location /api/quant/ {
-        proxy_pass http://127.0.0.1:8080/api/quant/;
+        # 如果服务器已有 Tomcat 占用 8080，Spring Boot 建议使用 8081。
+        proxy_pass http://127.0.0.1:8081/api/quant/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 回测和 AI 分析可能耗时较长，避免 Nginx 默认 60 秒超时。
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+        send_timeout 600s;
     }
 }
 ```
@@ -343,15 +354,15 @@ http://你的域名或服务器IP
 ```bash
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/health/db
-curl http://127.0.0.1:8080/api/quant/health
-curl http://127.0.0.1:8080/api/quant/health/db
+curl http://127.0.0.1:8081/api/quant/health
+curl http://127.0.0.1:8081/api/quant/health/db
 curl http://你的域名或服务器IP/api/quant/health
 ```
 
 运行一次扫描：
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/quant/scan/run \
+curl -X POST http://127.0.0.1:8081/api/quant/scan/run \
   -H 'Content-Type: application/json' \
   -d '{"includeAi":false,"limit":20}'
 ```
@@ -359,7 +370,7 @@ curl -X POST http://127.0.0.1:8080/api/quant/scan/run \
 查看最新报告：
 
 ```bash
-curl http://127.0.0.1:8080/api/quant/reports/latest
+curl http://127.0.0.1:8081/api/quant/reports/latest
 ```
 
 ## 10. 常见问题
@@ -375,7 +386,7 @@ curl http://127.0.0.1:8080/api/quant/reports/latest
 如果是直接打开本地 HTML，则使用：
 
 ```text
-http://127.0.0.1:8080/api/quant
+http://127.0.0.1:8081/api/quant
 ```
 
 ### 10.2 数据库健康检查失败
@@ -423,7 +434,7 @@ journalctl -u quant-python -f
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8080/api/quant/health
+curl http://127.0.0.1:8081/api/quant/health
 ```
 
 查看 Spring 配置：
@@ -436,6 +447,44 @@ systemctl cat quant-spring
 
 ```text
 QUANT_PYTHON_BASE_URL=http://127.0.0.1:8000
+```
+
+### 10.5 页面返回 504 Gateway Time-out
+
+504 通常表示 Nginx 已经把请求转给 Spring 了，但 Spring 或 Python 在 Nginx 超时时间内没有返回。回测、AI 分析、首次拉取行情数据都可能触发这个问题。
+
+先确认 Nginx 代理到了 Spring 的实际端口。如果服务器已有 Tomcat 使用 8080，Spring Boot 应该使用 8081：
+
+```nginx
+location /api/quant/ {
+    proxy_pass http://127.0.0.1:8081/api/quant/;
+    proxy_connect_timeout 30s;
+    proxy_send_timeout 600s;
+    proxy_read_timeout 600s;
+    send_timeout 600s;
+}
+```
+
+修改后重载 Nginx：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+再绕过 Nginx 直接测试 Spring：
+
+```bash
+curl -X POST http://127.0.0.1:8081/api/quant/backtest/run \
+  -H 'Content-Type: application/json' \
+  -d '{"lookbackDays":5,"holdDays":1,"limit":3}'
+```
+
+如果直连 Spring 成功，但域名访问 504，就是 Nginx 超时配置或反代端口问题。如果直连 Spring 也超时，继续看 Spring 和 Python 日志：
+
+```bash
+journalctl -u quant-spring -f
+journalctl -u quant-python -f
 ```
 
 ## 11. 更新部署
@@ -458,7 +507,7 @@ sudo systemctl reload nginx
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8080/api/quant/health
+curl http://127.0.0.1:8081/api/quant/health
 ```
 
 ## 12. 建议的安全加固
@@ -466,7 +515,7 @@ curl http://127.0.0.1:8080/api/quant/health
 上线后建议：
 
 - Nginx 配 HTTPS
-- 不把 Python 8000 和 Spring 8080 暴露到公网，只开放 80/443
+- 不把 Python 8000 和 Spring 8081 暴露到公网，只开放 80/443
 - `.env` 权限收紧：
 
 ```bash
@@ -476,4 +525,3 @@ chmod 600 /opt/quant/.env
 - MySQL 不使用 root 账号给应用连接
 - 云服务器安全组只开放必要端口
 - AI 分析接口耗时较长，前端可按需启用
-

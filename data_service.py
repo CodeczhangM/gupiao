@@ -8,9 +8,6 @@ import settings
 
 token = os.getenv("TUSHARE_TOKEN")
 
-if token:
-    ts.set_token(token)
-
 pro = ts.pro_api(token) if token else ts.pro_api()
 
 if token:
@@ -26,6 +23,10 @@ MAINBOARD_EXCLUDE_PREFIX = ("3",)   # 创业板 300xxx、科创板 688xxx 用后
 TUSHARE_RETRY_DELAYS = (3, 6, 10)
 
 _query_cache = {}
+
+
+class MarketDataUnavailable(Exception):
+    """行情接口当天数据尚未可用。"""
 
 
 def _is_rate_limited(exc: Exception) -> bool:
@@ -64,7 +65,8 @@ def _query_tushare(api_name: str, **kwargs):
 def get_trade_dates(n=2, end_date=None):
     """获取最近 n 个交易日，返回列表（降序，最新在前）"""
     end_day_obj = datetime.strptime(end_date, "%Y%m%d") if end_date else datetime.today()
-    start_day = (end_day_obj - timedelta(days=90)).strftime("%Y%m%d")
+    calendar_days = max(90, int(n * 3))
+    start_day = (end_day_obj - timedelta(days=calendar_days)).strftime("%Y%m%d")
     end_day = end_day_obj.strftime("%Y%m%d")
 
     cal = _query_tushare("trade_cal", start_date=start_day, end_date=end_day)
@@ -80,16 +82,19 @@ def get_trade_dates(n=2, end_date=None):
     return open_days["cal_date"].iloc[:n].tolist()
 
 
-def get_market_data():
-    """获取前一个交易日的行情 + 基本面数据"""
-    dates = get_trade_dates(n=2)
-    # dates[0] 是最新交易日，dates[1] 是前一个交易日
-    trade_date = dates[1]
+def get_market_data_by_date(trade_date: str):
+    """获取指定交易日的行情 + 基本面数据。"""
+    try:
+        df = _query_tushare("daily", trade_date=trade_date)
+        basic = _query_tushare("daily_basic", trade_date=trade_date)
+    except KeyError as exc:
+        if str(exc).strip("'\"") == "fields":
+            raise MarketDataUnavailable(f"{trade_date} 行情数据尚未发布") from exc
+        raise
 
-    print(f"使用交易日（前一交易日）: {trade_date}")
+    if df.empty or basic.empty:
+        raise MarketDataUnavailable(f"{trade_date} 行情或基本面数据为空")
 
-    df = _query_tushare("daily", trade_date=trade_date)
-    basic = _query_tushare("daily_basic", trade_date=trade_date)
     stock_basic = _query_tushare(
         "stock_basic",
         exchange="",
@@ -101,6 +106,27 @@ def get_market_data():
     df = pd.merge(df, stock_basic, on="ts_code", how="left")
 
     return df, trade_date
+
+
+def get_market_data():
+    """获取最新可用交易日的行情 + 基本面数据。"""
+    date_offset = int(os.getenv("MARKET_DATE_OFFSET", "0"))
+    date_offset = max(0, min(date_offset, 5))
+    dates = get_trade_dates(n=max(date_offset + 6, 6))
+    candidate_dates = dates[date_offset:]
+
+    label = "最新可用交易日" if date_offset == 0 else f"前 {date_offset} 个交易日起的最新可用交易日"
+    last_error = None
+    for trade_date in candidate_dates:
+        try:
+            result = get_market_data_by_date(trade_date)
+            print(f"使用交易日（{label}）: {trade_date}")
+            return result
+        except MarketDataUnavailable as exc:
+            last_error = exc
+            print(f"{exc}，尝试前一交易日...")
+
+    raise last_error or Exception("未找到可用行情数据")
 
 
 def get_recent_daily_data(end_trade_date: str, n=20):

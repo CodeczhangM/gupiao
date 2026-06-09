@@ -4,6 +4,7 @@ com/codec/quantserver/service/QuantPythonClient.class
 com/codec/quantserver/config/CorsConfig$1.class
 com/codec/quantserver/config/QuantClientConfig.class
 com/codec/quantserver/dto/QuantScanRequest.class
+com/codec/quantserver/dto/QuantBacktestRequest.class
 com/codec/quantserver/config/CorsConfig.class
 com/codec/quantserver/config/QuantPythonProperties.class
 com/codec/quantserver/controller/QuantController.class

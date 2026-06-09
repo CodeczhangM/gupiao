@@ -1,5 +1,6 @@
 package com.codec.quantserver.service;
 
+import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -30,6 +31,36 @@ public class QuantPythonClient {
                         .path("/api/scan/run")
                         .queryParam("include_ai", request.isIncludeAi())
                         .queryParam("limit", limit)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> runBacktest(QuantBacktestRequest request) {
+        int lookbackDays = Math.max(1, Math.min(request.getLookbackDays(), 120));
+        int holdDays = Math.max(1, Math.min(request.getHoldDays(), 20));
+        int limit = Math.max(1, Math.min(request.getLimit(), 100));
+        return restClient.post()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/backtest/run")
+                        .queryParam("lookback_days", lookbackDays)
+                        .queryParam("hold_days", holdDays)
+                        .queryParam("limit", limit)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> evaluateAi(int holdDays, int reportLimit, int stockLimit) {
+        int safeHoldDays = Math.max(1, Math.min(holdDays, 20));
+        int safeReportLimit = Math.max(1, Math.min(reportLimit, 200));
+        int safeStockLimit = Math.max(1, Math.min(stockLimit, 100));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/evaluation/ai")
+                        .queryParam("hold_days", safeHoldDays)
+                        .queryParam("report_limit", safeReportLimit)
+                        .queryParam("stock_limit", safeStockLimit)
                         .build())
                 .retrieve()
                 .body(mapType());
@@ -77,4 +108,3 @@ public class QuantPythonClient {
         return (Class<Map<String, Object>>) (Class<?>) Map.class;
     }
 }
-

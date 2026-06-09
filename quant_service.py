@@ -48,7 +48,7 @@ def run_quant_scan(include_ai: bool = False, limit: int = 20):
     )
 
     try:
-        hist_df = get_recent_daily_data(trade_date, n=20)
+        hist_df = get_recent_daily_data(trade_date, n=40)
     except Exception:
         hist_df = pd.DataFrame()
 
@@ -81,4 +81,3 @@ def run_quant_scan(include_ai: bool = False, limit: int = 20):
         "error_message": None,
         "created_at": datetime.now(),
     }
-

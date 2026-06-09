@@ -1,5 +1,6 @@
 package com.codec.quantserver.controller;
 
+import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.service.QuantPythonClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,6 +38,20 @@ public class QuantController {
         return quantPythonClient.runScan(request == null ? new QuantScanRequest() : request);
     }
 
+    @PostMapping("/backtest/run")
+    public Map<String, Object> runBacktest(@RequestBody(required = false) QuantBacktestRequest request) {
+        return quantPythonClient.runBacktest(request == null ? new QuantBacktestRequest() : request);
+    }
+
+    @GetMapping("/evaluation/ai")
+    public Map<String, Object> evaluateAi(
+            @RequestParam(defaultValue = "3") int holdDays,
+            @RequestParam(defaultValue = "50") int reportLimit,
+            @RequestParam(defaultValue = "20") int stockLimit
+    ) {
+        return quantPythonClient.evaluateAi(holdDays, reportLimit, stockLimit);
+    }
+
     @GetMapping("/reports")
     public Object reports(@RequestParam(defaultValue = "20") int limit) {
         return quantPythonClient.listReports(limit);
@@ -62,4 +77,3 @@ public class QuantController {
         return quantPythonClient.latestDip();
     }
 }
-

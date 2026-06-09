@@ -37,6 +37,7 @@ http://127.0.0.1:8000
 
 ```bash
 export QUANT_PYTHON_BASE_URL=http://127.0.0.1:8000
+export QUANT_PYTHON_READ_TIMEOUT=600s
 ```
 
 ## 4. Spring 暴露的接口
@@ -59,4 +60,3 @@ curl -X POST http://127.0.0.1:8080/api/quant/scan/run \
   -H 'Content-Type: application/json' \
   -d '{"includeAi":false,"limit":20}'
 ```
-

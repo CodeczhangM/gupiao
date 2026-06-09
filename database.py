@@ -165,3 +165,23 @@ def list_reports(limit: int = 20):
         row["include_ai"] = bool(row["include_ai"])
         row["created_at"] = row["created_at"].isoformat(sep=" ")
     return rows
+
+
+def list_ai_reports(limit: int = 50):
+    init_db()
+    limit = max(1, min(limit, 200))
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT *
+                FROM quant_reports
+                WHERE include_ai = 1 AND ai_analysis IS NOT NULL AND ai_analysis <> ''
+                ORDER BY id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cursor.fetchall()
+
+    return [_decode_report(row) for row in rows]

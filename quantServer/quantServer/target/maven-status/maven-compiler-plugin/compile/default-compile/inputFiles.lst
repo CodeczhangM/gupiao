@@ -4,5 +4,6 @@
 /mnt/d/piao/quantServer/quantServer/src/main/java/com/codec/quantserver/config/QuantPythonProperties.java
 /mnt/d/piao/quantServer/quantServer/src/main/java/com/codec/quantserver/controller/ApiExceptionHandler.java
 /mnt/d/piao/quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java
+/mnt/d/piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/QuantBacktestRequest.java
 /mnt/d/piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/QuantScanRequest.java
 /mnt/d/piao/quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java

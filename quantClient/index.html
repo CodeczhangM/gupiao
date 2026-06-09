@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260606">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -22,6 +22,8 @@
         <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">强势股</button>
         <button :class="{ active: activeTab === 'dip' }" @click="activeTab = 'dip'">抄底候选</button>
         <button :class="{ active: activeTab === 'sectors' }" @click="activeTab = 'sectors'">板块</button>
+        <button :class="{ active: activeTab === 'backtest' }" @click="activeTab = 'backtest'">回测</button>
+        <button :class="{ active: activeTab === 'evaluation' }" @click="activeTab = 'evaluation'">AI评估</button>
         <button :class="{ active: activeTab === 'reports' }" @click="activeTab = 'reports'">历史</button>
       </nav>
 
@@ -54,6 +56,8 @@
             <option :value="100">100 条</option>
           </select>
           <button class="secondary" @click="refreshAll" :disabled="loading">刷新</button>
+          <button class="secondary" @click="runBacktest" :disabled="backtestLoading">{{ backtestLoading ? '回测中' : '运行回测' }}</button>
+          <button class="secondary" @click="runAiEvaluation" :disabled="evaluationLoading">{{ evaluationLoading ? '评估中' : 'AI评估' }}</button>
           <button class="primary" @click="runScan" :disabled="loading">{{ loading ? '运行中' : '运行扫描' }}</button>
         </div>
       </header>
@@ -66,15 +70,15 @@
       <section class="metrics">
         <article>
           <span>强势股</span>
-          <strong>{{ latest.strong?.length || 0 }}</strong>
+          <strong>{{ listCount(latest.strong) }}</strong>
         </article>
         <article>
           <span>抄底个股</span>
-          <strong>{{ latest.dip?.length || 0 }}</strong>
+          <strong>{{ listCount(latest.dip) }}</strong>
         </article>
         <article>
           <span>候选板块</span>
-          <strong>{{ latest.sectors?.length || 0 }}</strong>
+          <strong>{{ listCount(latest.sectors) }}</strong>
         </article>
         <article>
           <span>报告编号</span>
@@ -109,7 +113,7 @@
       <section v-show="activeTab === 'strong'" class="panel">
         <div class="panel-head">
           <h3>强势股列表</h3>
-          <span>{{ latest.strong?.length || 0 }} 条</span>
+          <span>{{ listCount(latest.strong) }} 条</span>
         </div>
         <stock-table :rows="latest.strong || []" mode="strong"></stock-table>
       </section>
@@ -117,7 +121,7 @@
       <section v-show="activeTab === 'dip'" class="panel">
         <div class="panel-head">
           <h3>抄底候选个股</h3>
-          <span>{{ latest.dip?.length || 0 }} 条</span>
+          <span>{{ listCount(latest.dip) }} 条</span>
         </div>
         <stock-table :rows="latest.dip || []" mode="dip"></stock-table>
       </section>
@@ -126,14 +130,14 @@
         <div class="panel">
           <div class="panel-head">
             <h3>候选板块</h3>
-            <span>{{ latest.sectors?.length || 0 }} 条</span>
+            <span>{{ listCount(latest.sectors) }} 条</span>
           </div>
           <sector-table :rows="latest.sectors || []"></sector-table>
         </div>
         <div class="panel">
           <div class="panel-head">
             <h3>板块代表股</h3>
-            <span>{{ latest.rep_stocks?.length || 0 }} 条</span>
+            <span>{{ listCount(latest.rep_stocks) }} 条</span>
           </div>
           <stock-table :rows="latest.rep_stocks || []" mode="rep"></stock-table>
         </div>
@@ -172,11 +176,200 @@
           </table>
         </div>
       </section>
+
+      <section v-show="activeTab === 'backtest'" class="grid two">
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>回测参数</h3>
+            <span>{{ backtest ? backtest.start_trade_date + ' 至 ' + backtest.end_trade_date : '未运行' }}</span>
+          </div>
+          <div class="form-grid">
+            <label>
+              <span>回测交易日</span>
+              <select v-model.number="backtestLookbackDays">
+                <option :value="10">10 日</option>
+                <option :value="20">20 日</option>
+                <option :value="30">30 日</option>
+                <option :value="60">60 日</option>
+                <option :value="120">120 日</option>
+              </select>
+            </label>
+            <label>
+              <span>持有周期</span>
+              <select v-model.number="backtestHoldDays">
+                <option :value="1">1 个交易日</option>
+                <option :value="3">3 个交易日</option>
+                <option :value="5">5 个交易日</option>
+                <option :value="10">10 个交易日</option>
+                <option :value="20">20 个交易日</option>
+              </select>
+            </label>
+            <label>
+              <span>每日每策略</span>
+              <select v-model.number="backtestLimit">
+                <option :value="5">5 只</option>
+                <option :value="10">10 只</option>
+                <option :value="20">20 只</option>
+                <option :value="50">50 只</option>
+              </select>
+            </label>
+            <button class="primary inline-action" @click="runBacktest" :disabled="backtestLoading">
+              {{ backtestLoading ? '回测中' : '开始回测' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>总体表现</h3>
+            <span>{{ summaryValue('all', 'count') }} 笔</span>
+          </div>
+          <div class="summary-list">
+            <div><span>胜率</span><strong>{{ summaryValue('all', 'win_rate', '%') }}</strong></div>
+            <div><span>平均收益</span><strong :class="signedClass(summaryMetric('all', 'avg_return'))">{{ summaryValue('all', 'avg_return', '%') }}</strong></div>
+            <div><span>最大收益</span><strong :class="signedClass(summaryMetric('all', 'max_return'))">{{ summaryValue('all', 'max_return', '%') }}</strong></div>
+            <div><span>最大亏损</span><strong :class="signedClass(summaryMetric('all', 'min_return'))">{{ summaryValue('all', 'min_return', '%') }}</strong></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>策略对比</h3>
+            <span>按当前规则</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>策略</th>
+                  <th>笔数</th>
+                  <th>胜率</th>
+                  <th>平均收益</th>
+                  <th>中位收益</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>强势股</td>
+                  <td>{{ summaryValue('strong', 'count') }}</td>
+                  <td>{{ summaryValue('strong', 'win_rate', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('strong', 'avg_return'))">{{ summaryValue('strong', 'avg_return', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('strong', 'median_return'))">{{ summaryValue('strong', 'median_return', '%') }}</td>
+                </tr>
+                <tr>
+                  <td>抄底候选</td>
+                  <td>{{ summaryValue('dip', 'count') }}</td>
+                  <td>{{ summaryValue('dip', 'win_rate', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('dip', 'avg_return'))">{{ summaryValue('dip', 'avg_return', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('dip', 'median_return'))">{{ summaryValue('dip', 'median_return', '%') }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>回测明细</h3>
+            <span>{{ backtestRows.length }} 条</span>
+          </div>
+          <backtest-table :rows="backtestRows"></backtest-table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'evaluation'" class="grid two">
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>AI 推荐评估参数</h3>
+            <span>{{ aiEvaluation ? '已评估 ' + aiEvaluation.reports_used + ' 份报告' : '未运行' }}</span>
+          </div>
+          <div class="form-grid">
+            <label>
+              <span>持有周期</span>
+              <select v-model.number="evaluationHoldDays">
+                <option :value="1">1 个交易日</option>
+                <option :value="3">3 个交易日</option>
+                <option :value="5">5 个交易日</option>
+                <option :value="10">10 个交易日</option>
+              </select>
+            </label>
+            <label>
+              <span>历史报告</span>
+              <select v-model.number="evaluationReportLimit">
+                <option :value="10">10 份</option>
+                <option :value="30">30 份</option>
+                <option :value="50">50 份</option>
+                <option :value="100">100 份</option>
+              </select>
+            </label>
+            <label>
+              <span>每策略股票</span>
+              <select v-model.number="evaluationStockLimit">
+                <option :value="10">10 只</option>
+                <option :value="20">20 只</option>
+                <option :value="50">50 只</option>
+              </select>
+            </label>
+            <button class="primary inline-action" @click="runAiEvaluation" :disabled="evaluationLoading">
+              {{ evaluationLoading ? '评估中' : '开始评估' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>AI 推荐命中率</h3>
+            <span>{{ evaluationSummaryValue('ai_recommended', 'count') }} 笔</span>
+          </div>
+          <div class="summary-list">
+            <div><span>正确率</span><strong>{{ evaluationSummaryValue('ai_recommended', 'accuracy', '%') }}</strong></div>
+            <div><span>错误率</span><strong>{{ evaluationSummaryValue('ai_recommended', 'error_rate', '%') }}</strong></div>
+            <div><span>平均收益</span><strong :class="signedClass(evaluationSummaryMetric('ai_recommended', 'avg_return'))">{{ evaluationSummaryValue('ai_recommended', 'avg_return', '%') }}</strong></div>
+            <div><span>错误笔数</span><strong>{{ evaluationSummaryValue('ai_recommended', 'wrong') }}</strong></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>未推荐判断</h3>
+            <span>{{ evaluationSummaryValue('not_recommended', 'count') }} 笔</span>
+          </div>
+          <div class="summary-list">
+            <div><span>正确率</span><strong>{{ evaluationSummaryValue('not_recommended', 'accuracy', '%') }}</strong></div>
+            <div><span>漏选率</span><strong>{{ evaluationSummaryValue('not_recommended', 'error_rate', '%') }}</strong></div>
+            <div><span>平均收益</span><strong :class="signedClass(evaluationSummaryMetric('not_recommended', 'avg_return'))">{{ evaluationSummaryValue('not_recommended', 'avg_return', '%') }}</strong></div>
+            <div><span>漏选笔数</span><strong>{{ evaluationSummaryValue('not_recommended', 'wrong') }}</strong></div>
+          </div>
+        </div>
+
+        <div class="panel scroll-panel">
+          <div class="panel-head">
+            <h3>AI 推荐最正确</h3>
+            <span>按收益排序</span>
+          </div>
+          <backtest-table :rows="evaluationRanking('recommended_best')"></backtest-table>
+        </div>
+
+        <div class="panel scroll-panel">
+          <div class="panel-head">
+            <h3>AI 推荐最错误</h3>
+            <span>按亏损排序</span>
+          </div>
+          <backtest-table :rows="evaluationRanking('recommended_worst')"></backtest-table>
+        </div>
+
+        <div class="panel wide scroll-panel tall">
+          <div class="panel-head">
+            <h3>AI 漏选但上涨</h3>
+            <span>不推荐中的上涨股票</span>
+          </div>
+          <backtest-table :rows="evaluationRanking('missed_best')"></backtest-table>
+        </div>
+      </section>
     </main>
   </div>
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <script src="./main.js"></script>
+  <script src="./main.js?v=20260606"></script>
 </body>
 </html>
-

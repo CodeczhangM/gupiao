@@ -9,7 +9,7 @@ public class QuantPythonProperties {
 
     private String baseUrl = "http://127.0.0.1:8000";
     private Duration connectTimeout = Duration.ofSeconds(5);
-    private Duration readTimeout = Duration.ofSeconds(120);
+    private Duration readTimeout = Duration.ofSeconds(600);
 
     public String getBaseUrl() {
         return baseUrl;
@@ -35,4 +35,3 @@ public class QuantPythonProperties {
         this.readTimeout = readTimeout;
     }
 }
-
