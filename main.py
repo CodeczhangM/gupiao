@@ -18,38 +18,39 @@ def main():
     df, trade_date = get_market_data()
     print(f"数据获取完成：{len(df)} 条，交易日：{trade_date}\n")
 
-    # ── 2. 强势股筛选 ──────────────────────────────────────────
-    print("⚙️  筛选强势推荐股...")
-    strong = pick_stocks(df)
-    if strong.empty:
-        print("❌ 没有符合条件的强势股")
-        strong_text = "【强势股】无符合条件的股票。"
-    else:
-        print(f"选出 {len(strong)} 只强势股")
-        strong_text = format_for_ai(strong, label="强势推荐股", limit=10)
-
-    # ── 3. 抄底股筛选 ──────────────────────────────────────────
-    print("\n⚙️  筛选抄底候选股...")
+    # ── 2. 获取历史数据 ────────────────────────────────────────
     try:
-        hist_df = get_recent_daily_data(trade_date, n=20)
+        hist_df = get_recent_daily_data(trade_date, n=61)
         if hist_df.empty:
-            print("多日历史数据为空，退回单日抄底逻辑")
+            print("历史数据为空，优势股将无结果，抄底股退回单日逻辑")
         else:
             hist_days = hist_df["trade_date"].nunique()
-            print(f"已加载最近 {hist_days} 个交易日历史数据")
-            if hist_days < 20:
-                print("历史数据不足 20 个交易日，近20日跌幅将按现有历史数据估算")
+            print(f"已加载最近 {hist_days} 个交易日历史数据\n")
+            if hist_days < 61:
+                print("历史数据不足 61 个交易日，优势股仅保留历史完整的股票")
     except Exception as e:
-        print(f"获取多日历史数据失败，退回单日抄底逻辑: {e}")
+        print(f"获取历史数据失败: {e}")
         hist_df = pd.DataFrame()
 
+    # ── 3. 优势股筛选 ──────────────────────────────────────────
+    print("⚙️  筛选优势股...")
+    strong = pick_stocks(df, hist_df)
+    if strong.empty:
+        print("❌ 没有可评分的优势股")
+        strong_text = "【优势股】无符合条件的股票。"
+    else:
+        print(f"选出 {len(strong)} 只优势股")
+        strong_text = format_for_ai(strong, label="优势股", limit=10)
+
+    # ── 4. 抄底股筛选 ──────────────────────────────────────────
+    print("\n⚙️  筛选抄底候选股...")
     dip = pick_dip_stocks(df, hist_df)
     if dip.empty:
         print("❌ 没有符合条件的抄底候选股")
     else:
         print(f"选出 {len(dip)} 只抄底候选股")
 
-    # ── 4. 抄底板块分析 ────────────────────────────────────────
+    # ── 5. 抄底板块分析 ────────────────────────────────────────
     print("\n⚙️  分析抄底板块...")
     sector_result = get_sector_data(trade_date)
     if isinstance(sector_result, tuple):
@@ -66,12 +67,12 @@ def main():
     if not dip.empty:
         dip_text += "\n\n" + format_for_ai(dip, label="抄底候选个股", limit=10)
 
-    # ── 5. AI 分析 ─────────────────────────────────────────────
+    # ── 6. AI 分析 ─────────────────────────────────────────────
     print("\n🤖 本地 AI 分析中...\n")
     result = analyze_stocks(strong_text, dip_text, trade_date)
 
-    # ── 6. 输出结果 ────────────────────────────────────────────
-    print("\n========== 强势推荐股（Top 10）==========\n")
+    # ── 7. 输出结果 ────────────────────────────────────────────
+    print("\n========== 优势股（Top 10）==========\n")
     if not strong.empty:
         print(strong.head(10).to_string(index=False))
 

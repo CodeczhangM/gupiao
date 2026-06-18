@@ -133,6 +133,17 @@ MYSQL_USER=quant_user
 MYSQL_PASSWORD=你的强密码
 MYSQL_DATABASE=quant
 
+AI_PROVIDER=traecli
+TRAECLI_PERSONAL_ACCESS_TOKEN=你的_traecli_login_token
+TRAECLI_BIN=/root/.local/bin/traecli
+TRAECLI_MODEL=DeepSeek-V4-Pro
+TRAECLI_TIMEOUT_SECONDS=300
+HOME=/root
+XDG_CACHE_HOME=/root/.cache
+XDG_CONFIG_HOME=/root/.config
+XDG_DATA_HOME=/root/.local/share
+
+# 如需临时切回本地 Ollama，改为 AI_PROVIDER=ollama。
 OLLAMA_MODEL=deepseek-r1:7b
 
 # 0 表示最新可用交易日；1 表示前一交易日。
@@ -148,6 +159,18 @@ MARKET_DATE_OFFSET=0
 ```bash
 cd /opt/quant
 python3 -m pip install -r requirements.txt
+```
+
+确认 TRAE CLI 可用：
+
+```bash
+traecli --help
+```
+
+如果需要验证 AI 调用：
+
+```bash
+echo "用一句话回复：TRAE CLI 已接入" | traecli --print --output-format text --query-timeout 60s
 ```
 
 手动启动测试：
@@ -525,3 +548,6 @@ chmod 600 /opt/quant/.env
 - MySQL 不使用 root 账号给应用连接
 - 云服务器安全组只开放必要端口
 - AI 分析接口耗时较长，前端可按需启用
+
+## 查看启动问题
+sudo journalctl -u quant-python -f

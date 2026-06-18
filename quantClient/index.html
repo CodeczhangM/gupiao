@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260606">
+  <link rel="stylesheet" href="./styles.css?v=20260615">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -19,7 +19,7 @@
 
       <nav class="nav">
         <button :class="{ active: activeTab === 'overview' }" @click="activeTab = 'overview'">总览</button>
-        <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">强势股</button>
+        <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">优势股</button>
         <button :class="{ active: activeTab === 'dip' }" @click="activeTab = 'dip'">抄底候选</button>
         <button :class="{ active: activeTab === 'sectors' }" @click="activeTab = 'sectors'">板块</button>
         <button :class="{ active: activeTab === 'backtest' }" @click="activeTab = 'backtest'">回测</button>
@@ -69,7 +69,7 @@
 
       <section class="metrics">
         <article>
-          <span>强势股</span>
+          <span>优势股</span>
           <strong>{{ listCount(latest.strong) }}</strong>
         </article>
         <article>
@@ -89,7 +89,7 @@
       <section v-show="activeTab === 'overview'" class="grid two">
         <div class="panel">
           <div class="panel-head">
-            <h3>强势股 Top</h3>
+            <h3>优势股 Top</h3>
             <button @click="activeTab = 'strong'">查看全部</button>
           </div>
           <stock-table :rows="topRows(latest.strong, 8)" mode="strong"></stock-table>
@@ -112,7 +112,7 @@
 
       <section v-show="activeTab === 'strong'" class="panel">
         <div class="panel-head">
-          <h3>强势股列表</h3>
+          <h3>优势股列表</h3>
           <span>{{ listCount(latest.strong) }} 条</span>
         </div>
         <stock-table :rows="latest.strong || []" mode="strong"></stock-table>
@@ -250,7 +250,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>强势股</td>
+                  <td>优势股</td>
                   <td>{{ summaryValue('strong', 'count') }}</td>
                   <td>{{ summaryValue('strong', 'win_rate', '%') }}</td>
                   <td :class="signedClass(summaryMetric('strong', 'avg_return'))">{{ summaryValue('strong', 'avg_return', '%') }}</td>
@@ -370,6 +370,6 @@
   </div>
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <script src="./main.js?v=20260606"></script>
+  <script src="./main.js?v=20260615"></script>
 </body>
 </html>

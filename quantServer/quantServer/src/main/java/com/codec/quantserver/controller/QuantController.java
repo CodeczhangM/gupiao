@@ -43,6 +43,19 @@ public class QuantController {
         return quantPythonClient.runBacktest(request == null ? new QuantBacktestRequest() : request);
     }
 
+    @GetMapping("/backtest/run")
+    public Map<String, Object> runBacktest(
+            @RequestParam(defaultValue = "30") int lookbackDays,
+            @RequestParam(defaultValue = "3") int holdDays,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        QuantBacktestRequest request = new QuantBacktestRequest();
+        request.setLookbackDays(lookbackDays);
+        request.setHoldDays(holdDays);
+        request.setLimit(limit);
+        return quantPythonClient.runBacktest(request);
+    }
+
     @GetMapping("/evaluation/ai")
     public Map<String, Object> evaluateAi(
             @RequestParam(defaultValue = "3") int holdDays,

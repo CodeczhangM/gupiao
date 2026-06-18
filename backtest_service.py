@@ -5,7 +5,7 @@ import pandas as pd
 
 from data_service import get_market_data_by_date, get_recent_daily_data, get_trade_dates
 from quant_service import dataframe_to_records
-from strategy import pick_dip_stocks, pick_stocks
+from strategy import pick_dip_stocks, pick_stocks, pick_strong_base_candidates
 
 
 def _pct_return(entry_price, exit_price):
@@ -71,7 +71,7 @@ def _append_result(rows, strategy, trade_date, exit_date, stock, exit_prices):
 def run_backtest(lookback_days: int = 30, hold_days: int = 3, limit: int = 20):
     """
     回测当前选股规则：
-    - 选股日复用现有强势股/抄底股规则。
+    - 选股日复用现有优势股/抄底股规则。
     - 收益按选股日收盘价买入，持有 hold_days 个交易日后按收盘价卖出。
     """
     lookback_days = max(1, min(int(lookback_days), 120))
@@ -96,14 +96,16 @@ def run_backtest(lookback_days: int = 30, hold_days: int = 3, limit: int = 20):
 
         exit_prices = dict(zip(exit_df["ts_code"], exit_df["close"]))
 
-        strong = pick_stocks(df).head(limit)
-        for stock in dataframe_to_records(strong):
-            _append_result(rows, "strong", trade_date, exit_date, stock, exit_prices)
-
+        strong_base = pick_strong_base_candidates(df)
         try:
-            hist_df = get_recent_daily_data(trade_date, n=40)
+            hist_days = 61 if not strong_base.empty else 40
+            hist_df = get_recent_daily_data(trade_date, n=hist_days)
         except Exception:
             hist_df = pd.DataFrame()
+
+        strong = pick_stocks(df, hist_df).head(limit)
+        for stock in dataframe_to_records(strong):
+            _append_result(rows, "strong", trade_date, exit_date, stock, exit_prices)
 
         dip = pick_dip_stocks(df, hist_df).head(limit)
         for stock in dataframe_to_records(dip):

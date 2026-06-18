@@ -59,15 +59,31 @@ const StockTable = {
             <th>行业</th>
             <th>收盘</th>
             <th>涨跌幅</th>
-            <th>换手率</th>
-            <th>量比</th>
-            <th>抄底原因</th>
-            <th>高点回撤</th>
-            <th>缩量率</th>
-            <th>MA20</th>
-            <th>MA40</th>
-            <th>守线</th>
-            <th>评分</th>
+            <template v-if="mode === 'strong'">
+              <th>总分</th>
+              <th>行业排名</th>
+              <th>命中原因</th>
+              <th>20日强度</th>
+              <th>底部区域</th>
+              <th>60日跌幅</th>
+              <th>放量上涨</th>
+              <th>换手>8%</th>
+              <th>量比>2</th>
+              <th>站上20日线</th>
+              <th>MACD金叉</th>
+              <th>热点行业</th>
+            </template>
+            <template v-else>
+              <th>换手率</th>
+              <th>量比</th>
+              <th>抄底原因</th>
+              <th>高点回撤</th>
+              <th>缩量率</th>
+              <th>MA20</th>
+              <th>MA40</th>
+              <th>守线</th>
+              <th>评分</th>
+            </template>
           </tr>
         </thead>
         <tbody>
@@ -77,18 +93,34 @@ const StockTable = {
             <td>{{ row.industry || '--' }}</td>
             <td>{{ formatNumber(row.close) }}</td>
             <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</td>
-            <td>{{ formatNumber(row.turnover_rate) }}%</td>
-            <td>{{ formatNumber(row.volume_ratio) }}</td>
-            <td>{{ row.dip_reason || '--' }}</td>
-            <td :class="signedClass(row.high_drawdown)">{{ displayPercent(row.high_drawdown) }}</td>
-            <td>{{ displayMetric(row.volume_shrink_rate) }}</td>
-            <td>{{ displayMetric(row.ma20) }}</td>
-            <td>{{ displayMetric(row.ma40) }}</td>
-            <td>{{ row.support_line || '--' }}</td>
-            <td>{{ formatNumber(row.score ?? row.dip_score) }}</td>
+            <template v-if="mode === 'strong'">
+              <td><strong>{{ formatNumber(row.score, 0) }}</strong></td>
+              <td>{{ formatNumber(row.relative_strength_rank, 0) }}</td>
+              <td>{{ row.strong_reason || '--' }}</td>
+              <td>{{ formatNumber(row.strength20_score, 0) }}</td>
+              <td>{{ formatNumber(row.in_bottom_area_score, 0) }}</td>
+              <td>{{ formatNumber(row.ret60_oversold_score, 0) }}</td>
+              <td>{{ formatNumber(row.volume_price_rise_score, 0) }}</td>
+              <td>{{ formatNumber(row.turnover_active_score, 0) }}</td>
+              <td>{{ formatNumber(row.volume_ratio_active_score, 0) }}</td>
+              <td>{{ formatNumber(row.close_above_ma20_score, 0) }}</td>
+              <td>{{ formatNumber(row.macd_golden_cross_score, 0) }}</td>
+              <td>{{ formatNumber(row.hot_theme_score, 0) }}</td>
+            </template>
+            <template v-else>
+              <td>{{ formatNumber(row.turnover_rate) }}%</td>
+              <td>{{ formatNumber(row.volume_ratio) }}</td>
+              <td>{{ row.dip_reason || '--' }}</td>
+              <td :class="signedClass(row.high_drawdown)">{{ displayPercent(row.high_drawdown) }}</td>
+              <td>{{ displayMetric(row.volume_shrink_rate) }}</td>
+              <td>{{ displayMetric(row.ma20) }}</td>
+              <td>{{ displayMetric(row.ma40) }}</td>
+              <td>{{ row.support_line || '--' }}</td>
+              <td>{{ formatNumber(row.score ?? row.dip_score) }}</td>
+            </template>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="14" class="empty">暂无数据</td>
+            <td :colspan="mode === 'strong' ? 17 : 14" class="empty">暂无数据</td>
           </tr>
         </tbody>
       </table>
@@ -154,7 +186,7 @@ const BacktestTable = {
         </thead>
         <tbody>
           <tr v-for="(row, index) in rows" :key="row.strategy + row.trade_date + row.ts_code + index">
-            <td>{{ row.strategy === 'strong' ? '强势' : '抄底' }}</td>
+            <td>{{ row.strategy === 'strong' ? '优势' : '抄底' }}</td>
             <td>{{ row.trade_date || '--' }}</td>
             <td>{{ row.exit_date || '--' }}</td>
             <td class="mono">{{ row.ts_code || '--' }}</td>
@@ -208,7 +240,7 @@ createApp({
     pageTitle() {
       const titles = {
         overview: '选股总览',
-        strong: '强势股',
+        strong: '优势股',
         dip: '抄底候选',
         sectors: '板块机会',
         reports: '历史报告',

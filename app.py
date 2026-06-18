@@ -33,7 +33,7 @@ def database_health():
 
 @app.post("/api/scan/run")
 def run_scan(
-    include_ai: bool = Query(False, description="是否调用 Ollama 生成 AI 分析"),
+    include_ai: bool = Query(False, description="是否调用 AI 生成分析"),
     limit: int = Query(20, ge=1, le=100, description="每类结果最多返回多少条"),
 ):
     try:

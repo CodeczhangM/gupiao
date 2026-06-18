@@ -1,6 +1,7 @@
 import tushare as ts
 import pandas as pd
 import os
+import requests
 import time
 from datetime import datetime, timedelta
 
@@ -17,9 +18,9 @@ tushare_http_url = os.getenv("TUSHARE_HTTP_URL", "https://fastapia.stockai888.to
 if tushare_http_url:
     pro._DataApi__http_url = tushare_http_url
 
-# ── 主板交易所前缀 ──────────────────────────────────────────────
+# ── 沪深A股过滤：先排除创业板，后续如需也可排除科创板/北交所 ─────────────────────
 MAINBOARD_SUFFIX = (".SH", ".SZ")
-MAINBOARD_EXCLUDE_PREFIX = ("3",)   # 创业板 300xxx、科创板 688xxx 用后缀过滤更准
+MAINBOARD_EXCLUDE_PREFIX = ("3",)   # 创业板 300xxx、301xxx
 TUSHARE_RETRY_DELAYS = (3, 6, 10)
 
 _query_cache = {}
@@ -29,9 +30,23 @@ class MarketDataUnavailable(Exception):
     """行情接口当天数据尚未可用。"""
 
 
+def _filter_mainboard_a(df: pd.DataFrame) -> pd.DataFrame:
+    """只保留沪深A股，并排除创业板。"""
+    if df.empty or "ts_code" not in df.columns:
+        return df
+
+    code = df["ts_code"].astype(str)
+    mask = code.str.endswith(MAINBOARD_SUFFIX) & ~code.str.startswith(MAINBOARD_EXCLUDE_PREFIX)
+    return df[mask].copy()
+
+
 def _is_rate_limited(exc: Exception) -> bool:
     message = str(exc).lower()
     return "rate limited" in message or "reduce the concurrency" in message
+
+
+def _is_retryable_tushare_error(exc: Exception) -> bool:
+    return _is_rate_limited(exc) or isinstance(exc, requests.exceptions.RequestException)
 
 
 def _query_tushare(api_name: str, **kwargs):
@@ -52,11 +67,11 @@ def _query_tushare(api_name: str, **kwargs):
             return result
         except Exception as exc:
             last_error = exc
-            if not _is_rate_limited(exc) or attempt >= len(TUSHARE_RETRY_DELAYS):
+            if not _is_retryable_tushare_error(exc) or attempt >= len(TUSHARE_RETRY_DELAYS):
                 break
 
             delay = TUSHARE_RETRY_DELAYS[attempt]
-            print(f"Tushare 限流，{delay} 秒后重试 {api_name}（第 {attempt + 1} 次）...")
+            print(f"Tushare 请求失败，{delay} 秒后重试 {api_name}（第 {attempt + 1} 次）: {exc}")
             time.sleep(delay)
 
     raise last_error
@@ -102,6 +117,9 @@ def get_market_data_by_date(trade_date: str):
         fields="ts_code,name,industry",
     )
 
+    df = _filter_mainboard_a(df)
+    basic = _filter_mainboard_a(basic)
+
     df = pd.merge(df, basic, on="ts_code", how="inner", suffixes=("", "_basic"))
     df = pd.merge(df, stock_basic, on="ts_code", how="left")
 
@@ -134,10 +152,12 @@ def get_recent_daily_data(end_trade_date: str, n=20):
     dates = get_trade_dates(n=n, end_date=end_trade_date)
     start_date = dates[-1]
 
-    hist = _query_tushare("daily", start_date=start_date, end_date=end_trade_date)
+    daily_fields = "ts_code,trade_date,close,high,low,vol,pct_chg"
+    hist = _query_tushare("daily", start_date=start_date, end_date=end_trade_date, fields=daily_fields)
     if hist.empty:
         hist = pd.DataFrame()
     else:
+        hist = _filter_mainboard_a(hist)
         hist = hist[hist["trade_date"].astype(str).isin(dates)].copy()
 
     loaded_dates = set(hist["trade_date"].astype(str)) if "trade_date" in hist.columns else set()
@@ -147,9 +167,9 @@ def get_recent_daily_data(end_trade_date: str, n=20):
         extra_frames = []
         print(f"区间历史数据不足，逐日补拉 {len(missing_dates)} 个交易日...")
         for trade_date in missing_dates:
-            daily = _query_tushare("daily", trade_date=trade_date)
+            daily = _query_tushare("daily", trade_date=trade_date, fields=daily_fields)
             if not daily.empty:
-                extra_frames.append(daily)
+                extra_frames.append(_filter_mainboard_a(daily))
 
         if extra_frames:
             hist = pd.concat([hist, *extra_frames], ignore_index=True)
@@ -187,6 +207,9 @@ def get_sector_data(trade_date: str):
 
     if df_daily.empty or stock_basic.empty:
         return pd.DataFrame()
+
+    df_daily = _filter_mainboard_a(df_daily)
+    stock_basic = _filter_mainboard_a(stock_basic)
 
     merged = pd.merge(df_daily, stock_basic[["ts_code", "name", "industry"]], on="ts_code", how="inner")
     merged["pct_chg"] = pd.to_numeric(merged["pct_chg"], errors="coerce")

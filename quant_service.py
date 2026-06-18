@@ -10,6 +10,7 @@ from strategy import (
     format_sectors_for_ai,
     pick_dip_sectors,
     pick_dip_stocks,
+    pick_strong_base_candidates,
     pick_stocks,
 )
 
@@ -40,17 +41,19 @@ def dataframe_to_records(df: pd.DataFrame, limit: int | None = None):
 def run_quant_scan(include_ai: bool = False, limit: int = 20):
     df, trade_date = get_market_data()
 
-    strong = pick_stocks(df)
-    strong_text = (
-        format_for_ai(strong, label="强势推荐股", limit=10)
-        if not strong.empty
-        else "【强势股】无符合条件的股票。"
-    )
-
+    strong_base = pick_strong_base_candidates(df)
     try:
-        hist_df = get_recent_daily_data(trade_date, n=40)
+        hist_days = 61 if not strong_base.empty else 40
+        hist_df = get_recent_daily_data(trade_date, n=hist_days)
     except Exception:
         hist_df = pd.DataFrame()
+
+    strong = pick_stocks(df, hist_df)
+    strong_text = (
+        format_for_ai(strong, label="优势股", limit=10)
+        if not strong.empty
+        else "【优势股】无符合条件的股票。"
+    )
 
     dip = pick_dip_stocks(df, hist_df)
 
