@@ -1,9 +1,12 @@
 import unittest
 from unittest.mock import patch
+import json
+import math
 
 import pandas as pd
 
 import data_service
+from stock_detail_service import build_ai_prompt, build_technical_snapshot, find_strategy_signals
 
 
 class StockDailyHistoryTests(unittest.TestCase):
@@ -37,6 +40,125 @@ class StockDailyHistoryTests(unittest.TestCase):
         )
         self.assertEqual(history["trade_date"].tolist(), ["20260613", "20260615"])
         self.assertEqual(history.loc[history["trade_date"] == "20260613", "close"].iloc[0], 11.5)
+
+
+def _history(days=120):
+    dates = pd.date_range("2026-01-01", periods=days, freq="B")
+    close = pd.Series(range(10, 10 + days), dtype=float)
+    return pd.DataFrame({
+        "ts_code": "600001.SH",
+        "trade_date": dates.strftime("%Y%m%d"),
+        "open": close - 0.5,
+        "high": close + 1,
+        "low": close - 1,
+        "close": close,
+        "vol": close * 100,
+        "pct_chg": 1.0,
+    })
+
+
+class StockDetailServiceTests(unittest.TestCase):
+    def test_builds_complete_snapshot_for_exactly_120_candles(self):
+        history = _history()
+        history["turnover_rate"] = 3.25
+        snapshot = build_technical_snapshot(history)
+
+        self.assertTrue(snapshot["history_complete"])
+        self.assertEqual(len(snapshot["candles"]), 120)
+        self.assertEqual(snapshot["candles"][-1]["trade_date"], "20260617")
+        self.assertEqual(snapshot["latest"]["moving_averages"]["ma5"], 127.0)
+        self.assertEqual(snapshot["latest"]["volume"]["ma5"], 12700.0)
+        self.assertEqual(snapshot["latest"]["support_resistance"]["support20"], 109.0)
+        self.assertEqual(snapshot["latest"]["support_resistance"]["resistance60"], 130.0)
+        self.assertIn("dif", snapshot["latest"]["macd"])
+        self.assertIn("k", snapshot["latest"]["kdj"])
+        self.assertIn("upper", snapshot["latest"]["bollinger"])
+        self.assertEqual(snapshot["latest"]["ohlcv"]["turnover_rate"], 3.25)
+        self.assertEqual(snapshot["latest"]["volume"]["turnover_rate"], 3.25)
+        candle = snapshot["candles"][-1]
+        self.assertEqual(candle["open"], 128.5)
+        self.assertEqual(candle["vol"], 12900.0)
+        self.assertEqual(candle["turnover_rate"], 3.25)
+        self.assertEqual(candle["ma5"], 127.0)
+        self.assertIn("dif", candle)
+        self.assertIn("dea", candle)
+        self.assertIn("histogram", candle)
+        self.assertIn("k", candle)
+        self.assertIn("d", candle)
+        self.assertIn("j", candle)
+        self.assertIn("rsi6", candle)
+        self.assertIn("rsi12", candle)
+        self.assertIn("rsi24", candle)
+        self.assertIn("boll_upper", candle)
+        self.assertIn("boll_middle", candle)
+        self.assertIn("boll_lower", candle)
+        self.assertEqual(candle["volume_ma5"], 12700.0)
+        self.assertEqual(candle["support_20"], 109.0)
+        self.assertEqual(candle["resistance_60"], 130.0)
+        self.assertEqual(json.loads(json.dumps(snapshot)), snapshot)
+
+    def test_uses_simple_rolling_average_gain_and_loss_for_rsi(self):
+        close = [10, 12, 11, 14, 13, 15, 14]
+        history = _history(len(close))
+        history["close"] = close
+        history["open"] = close
+        history["high"] = [value + 1 for value in close]
+        history["low"] = [value - 1 for value in close]
+
+        snapshot = build_technical_snapshot(history)
+
+        # Six changes: gains 2 + 3 + 2 and losses 1 + 1 + 1 => RSI = 70.
+        self.assertEqual(snapshot["latest"]["rsi"]["rsi6"], 70.0)
+        self.assertEqual(snapshot["candles"][-1]["rsi6"], 70.0)
+
+    def test_short_history_keeps_unavailable_indicators_json_safe(self):
+        history = _history(3)
+        history.loc[2, "close"] = math.nan
+
+        snapshot = build_technical_snapshot(history)
+
+        self.assertFalse(snapshot["history_complete"])
+        self.assertEqual(len(snapshot["candles"]), 3)
+        self.assertIsNone(snapshot["candles"][-1]["close"])
+        self.assertIsNone(snapshot["candles"][-1]["turnover_rate"])
+        self.assertIsNone(snapshot["latest"]["ohlcv"]["turnover_rate"])
+        self.assertIsNone(snapshot["latest"]["volume"]["turnover_rate"])
+        self.assertIsNone(snapshot["latest"]["moving_averages"]["ma5"])
+        self.assertIsNone(snapshot["latest"]["bollinger"]["middle"])
+
+    def test_finds_stock_in_pools_and_legacy_report_fields(self):
+        pool_stock = {"ts_code": "600001.SH", "name": "示例股"}
+        legacy_stock = {"ts_code": "000001.SZ", "name": "旧字段股"}
+        report = {
+            "pools": {"breakout": [pool_stock]},
+            "dip": [legacy_stock],
+        }
+
+        self.assertEqual(find_strategy_signals(report, "600001.SH"), [{"strategy": "breakout", **pool_stock}])
+        self.assertEqual(find_strategy_signals(report, "000001.SZ"), [{"strategy": "reversal", **legacy_stock}])
+        self.assertEqual(find_strategy_signals({}, "600001.SH"), [])
+
+    def test_builds_chinese_prompt_without_calling_an_ai(self):
+        snapshot = build_technical_snapshot(_history())
+        detail = {
+            "identity": {"ts_code": "600001.SH", "name": "示例股"},
+            "trade_date": "20260617",
+            **snapshot,
+            "strategy_signals": [{"strategy": "breakout", "ts_code": "600001.SH", "score": 88}],
+            "signals": [{"strategy": "obsolete", "ts_code": "600001.SH"}],
+        }
+
+        prompt = build_ai_prompt(detail)
+
+        self.assertIn("600001.SH", prompt)
+        self.assertIn("20260617", prompt)
+        self.assertIn("MACD", prompt)
+        self.assertIn("breakout", prompt)
+        self.assertNotIn("obsolete", prompt)
+        self.assertIn("建仓", prompt)
+        self.assertIn("减仓", prompt)
+        self.assertIn("止损", prompt)
+        self.assertIn("不执行交易、不保证收益", prompt)
 
 
 if __name__ == "__main__":
