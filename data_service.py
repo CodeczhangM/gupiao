@@ -181,6 +181,30 @@ def get_recent_daily_data(end_trade_date: str, n=20):
     return hist[hist["trade_date"].astype(str).isin(dates)].copy()
 
 
+def get_stock_daily_history(ts_code: str, end_trade_date: str, n=120):
+    """获取单只股票截至指定交易日的最近日线数据。"""
+    dates = get_trade_dates(n=n, end_date=end_trade_date)
+    daily_fields = "ts_code,trade_date,open,high,low,close,vol,pct_chg"
+    columns = daily_fields.split(",")
+    hist = _query_tushare(
+        "daily",
+        ts_code=ts_code,
+        start_date=dates[-1],
+        end_date=end_trade_date,
+        fields=daily_fields,
+    )
+
+    if hist.empty:
+        return pd.DataFrame(columns=columns)
+
+    hist = hist.reindex(columns=columns)
+    hist = hist[
+        (hist["ts_code"].astype(str) == ts_code)
+        & hist["trade_date"].astype(str).isin(dates)
+    ].copy()
+    return hist.drop_duplicates(subset=["ts_code", "trade_date"]).sort_values("trade_date").reset_index(drop=True)
+
+
 def get_sector_data(trade_date: str):
     """
     获取申万行业板块当日涨跌数据。
