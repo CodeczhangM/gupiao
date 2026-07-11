@@ -1,0 +1,68 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.0",
+  "base_commit_sha": "626eb36716f1d4c05b8a73dcb9d639f02772194c",
+  "prompts": {
+    "a254c475fb851a25": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3bc9-2975-7721-bb20-b39f50744101",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 113,
+      "total_deletions": 26,
+      "accepted_lines": 107,
+      "overriden_lines": 0
+    },
+    "a53edac972e9f0c7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f51d2-e3cc-7f11-83dc-32a0d13af3cf",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 530,
+      "total_deletions": 3,
+      "accepted_lines": 530,
+      "overriden_lines": 0
+    },
+    "b63b6638e0df729c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3029-18cb-7482-9bf4-5eff457236bb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 4802,
+      "total_deletions": 990,
+      "accepted_lines": 5228,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 150,
+    "git_diff_deleted_lines": 0,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 150,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "docs/superpowers/specs/2026-07-11-market-data-cache-design.md": {
+        "BYMC": [
+          "1-150"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1783785010,
+  "requirement_id": ""
+}
