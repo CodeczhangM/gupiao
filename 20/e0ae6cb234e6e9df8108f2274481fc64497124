@@ -1,0 +1,68 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.0",
+  "base_commit_sha": "20e0ae6cb234e6e9df8108f2274481fc64497124",
+  "prompts": {
+    "a254c475fb851a25": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3bc9-2975-7721-bb20-b39f50744101",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 105,
+      "overriden_lines": 0
+    },
+    "a53edac972e9f0c7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f51d2-e3cc-7f11-83dc-32a0d13af3cf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 498,
+      "total_deletions": 67,
+      "accepted_lines": 2034,
+      "overriden_lines": 0
+    },
+    "b63b6638e0df729c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3029-18cb-7482-9bf4-5eff457236bb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4831,
+      "overriden_lines": 1
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 237,
+    "git_diff_deleted_lines": 0,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 237,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "docs/superpowers/specs/2026-07-14-sector-potential-ranking-design.md": {
+        "BYMC": [
+          "1-237"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1784022762,
+  "requirement_id": ""
+}
