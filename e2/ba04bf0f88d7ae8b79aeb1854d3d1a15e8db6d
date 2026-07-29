@@ -1,0 +1,961 @@
+main.py
+  94c3d7e2c64f4ff4 7-8,23,29-30,35-40,42-44,46-47,49-50,52-60,62,64-65,70,72,74,79-80,82,84,86-91,93-97,99-103,105,112-113
+quantClient/index.html
+  6689fadfdd5dbdb3 7,26,33,76-81,98-101,108,119,122-126,171,173-174,176,228-232,236-237,403-459,745-747
+  94c3d7e2c64f4ff4 22-24,31,83-84,87-88,91-95,109-114,116-118,120-121,128-170,189-190,192,197-198,200-208,214,221,533-544,547-551,656-740
+  25d656b10b0fbb91 27-28,233-235,238-365
+quantClient/main.js
+  c4e00ef1b768d846 144-145,218-219
+  94c3d7e2c64f4ff4 46-55,136-137,139,141-143,146,148,153,159-160,208,210,263-276,463,513-514,525-534,538-545,552-554,562,638,645-653,698-707,905-906,1010-1042
+  b63b6638e0df729c 199
+  b7804ed8371a6fb4 311-315,321,332-347,371-412,426-429
+  25d656b10b0fbb91 322-331,413-425,515-524,557-558,572-577,619,624-634,654-697,757-758,765-867
+  a53edac972e9f0c7 433-438
+  6689fadfdd5dbdb3 60-102,105,108-130,154-158,172-195,198,203-207,209,211-217,222-247,251,306-310,316-320,348-370,430-432,487,498-501,556,563,570-571,578-618,708,750,868-904
+quantServer/quantServer/target/surefire-reports/com.codec.quantserver.controller.QuantControllerTest.txt
+  25d656b10b0fbb91 4
+data_service.py
+  94c3d7e2c64f4ff4 20,22,24-27,31,33,62,183,236-257,335-354,369-371,375,396-414,419-420,423-429
+  6689fadfdd5dbdb3 9-16,39-54,283-293,355-368,372-374,376-395,415-418,421-422
+  25d656b10b0fbb91 258-276
+strategy.py
+  25d656b10b0fbb91 257-289,291-293,298,304-306,318-328,339,346-624
+  b7804ed8371a6fb4 129-233,236,244-251,256,290,294-297,337,730
+  94c3d7e2c64f4ff4 21,30,35-36,44,46,770-771,775,784-786,788-825,827-835,842-843,845,847-974,982-996,1000-1006,1008-1024,1026-1028,1034-1035,1037,1039-1068,1074-1077,1246-1249,1251-1257,1260,1263-1266,1268-1280,1287-1308,1312-1340,1369,1386-1389,1391,1406,1438-1439,1441,1444-1469,1481-1483,1493-1498,1501-1506,1512-1518,1521-1523,1540-1543,1546,1549-1554,1562-1575,1603-1695,1700-1706,1710-1744,1750-1755,1757-1758,1765-1875,1878-1971,1974-1977,2018-2019,2024-2033,2044-2081,2088-2100,2107-2112,2114-2115,2122-2129,2131,2134-2136,2152-2178,2198-2207,2212-2216,2224-2235,2242-2263,2281,2285,2572-2573,2575,2582-2594,2596-2597,2599-2603,2605-2606,2608,2614,2616,2618-2619,2627-2633,2635-2643,2645-2648,2656,2659-2665,2670,2679-2682,2687-2700,2705,2714,2716-2718,2721,2727
+  c4e00ef1b768d846 1078-1080,1258-1259,1390,1470-1480,1484-1492,1499-1500,1519-1520,1536-1539,1547-1548,1576-1602,2082-2087,2101-2104,2106,2130,2132-2133,2137-2151,2179-2197,2208-2211,2217-2223,2236-2241,2264-2268,2655,2668-2669,2671-2672,2701-2704
+  6689fadfdd5dbdb3 65-128,234-235,237-243,252-255,299-303,307-317,329-336,338,340-345,625-729,731-754,1081-1239,1267,1281-1286,1309-1311,1364-1368,1378-1380,1384-1385,1696-1699,1707-1709,1745-1749,1756,1759-1764,1972-1973,1978-2017,2020-2023,2034-2043,2105,2113,2116-2121,2269-2280,2282-2284,2634,2644,2683-2686
+ai_agent.py
+  94c3d7e2c64f4ff4 12,20-21,23-24,27,31,37-41,43-45,54,59-65
+  6689fadfdd5dbdb3 13,17-18,26,29,42,46-53
+DEPLOY_SERVER.md
+  a53edac972e9f0c7 641,643
+  6689fadfdd5dbdb3 720-735
+  94c3d7e2c64f4ff4 18,22,24,45,221-225,409-446,561-592,595-633,637-640,642,644-653,655-657,659,662-677,681-683,688-699
+verify_start.sh
+  94c3d7e2c64f4ff4 1-118
+quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java
+  25d656b10b0fbb91 77-100
+  94c3d7e2c64f4ff4 4,19,24,37-52
+  a53edac972e9f0c7 53
+  6689fadfdd5dbdb3 25-36
+docs/superpowers/specs/2026-06-22-stock-technical-detail-design.md
+  94c3d7e2c64f4ff4 1-8,45,49
+tests/test_advantage_stock_scoring.py
+  b7804ed8371a6fb4 99,104,106-116,123,139,1188-1194,1201-1211
+  c4e00ef1b768d846 65,79,209,465-466,541-544,547-548,579,581-584,587-588,596-670,1003,1029-1080,1082-1111,1113-1132,1134-1139,1141-1145,1475-1516,1554
+  6689fadfdd5dbdb3 2,7-9,13,17,24,83-98,100-103,105,117-122,124-138,140-141,271-330,687-736,791-842,923-945,1148-1150,1152,1154-1158,1160-1161,1163-1164,1166-1175,1177-1187,1252-1258,1465-1474,1517-1553,1616-1703,1743-1773
+  25d656b10b0fbb91 15,142-202,1195-1200,1212-1251,1259-1369,1371-1390,1392-1393,1395-1398,1400-1419,1421-1422,1424-1426
+  94c3d7e2c64f4ff4 12,14,16,18-23,25-26,203-208,210-270,331-444,446-450,454-464,467,469-470,472-540,545-546,549-578,580,585-586,589-595,671-686,737-790,843-844,846-851,853-854,856-861,863,865-922,946-953,956,958-962,964-967,969,971,973-985,989-1002,1004,1006,1008-1016,1018-1028,1435-1439,1442,1446,1460-1464,1555-1615,1704-1742,1798-1884
+trade_review_service.py
+  94c3d7e2c64f4ff4 1-165
+app.py
+  94c3d7e2c64f4ff4 9-10,167-196
+  6689fadfdd5dbdb3 11,13,40-54
+  25d656b10b0fbb91 12,14,147-166
+docs/superpowers/plans/2026-06-22-stock-technical-detail.md
+  94c3d7e2c64f4ff4 1-372
+tests/test_trade_review_api.py
+  94c3d7e2c64f4ff4 1-25
+quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java
+  6689fadfdd5dbdb3 37-45
+  25d656b10b0fbb91 109-118
+  94c3d7e2c64f4ff4 5,80-82
+quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
+  94c3d7e2c64f4ff4 4
+quantServer/quantServer/target/surefire-reports/TEST-com.codec.quantserver.controller.QuantControllerTest.xml
+  6689fadfdd5dbdb3 60-61,66-67
+  25d656b10b0fbb91 2,14,16,31,56-59,62-65,68-83
+tests/test_stock_detail_service.py
+  94c3d7e2c64f4ff4 9-14,66-102
+.env.example
+  94c3d7e2c64f4ff4 1-2
+  6689fadfdd5dbdb3 14-18
+quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst
+  94c3d7e2c64f4ff4 9
+quantServer/quantServer/src/main/java/com/codec/quantserver/dto/TradeReviewRequest.java
+  94c3d7e2c64f4ff4 1-30
+quantServer/quantServer/target/surefire-reports/TEST-com.codec.quantserver.QuantServerApplicationTests.xml
+  6689fadfdd5dbdb3 15
+  25d656b10b0fbb91 2,17,34,50,62-66,77-79
+stock_detail_service.py
+  94c3d7e2c64f4ff4 6,11-12,26,205-254
+  a53edac972e9f0c7 255-256
+quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java
+  94c3d7e2c64f4ff4 5,81-84
+  6689fadfdd5dbdb3 28-36
+  25d656b10b0fbb91 119-133
+database.py
+  6689fadfdd5dbdb3 72,86-88,96,99-100,112,137
+  94c3d7e2c64f4ff4 71,83-85,111,136
+tests/test_stock_detail_api.py
+  94c3d7e2c64f4ff4 1-58
+quantServer/quantServer/target/surefire-reports/com.codec.quantserver.QuantServerApplicationTests.txt
+  25d656b10b0fbb91 4
+quant_service.py
+  94c3d7e2c64f4ff4 14,17,114,119-122,124-131,139-141,156-157,159,161,164,174-175,177-183,187,195-200,204
+  6689fadfdd5dbdb3 8,16,24-25,89-90,101-107,111-113,115,123,142-147,155,170,203,207-209
+  c4e00ef1b768d846 132-138
+  25d656b10b0fbb91 1,7,10,37-88,148-154
+quantClient/styles.css
+  b7804ed8371a6fb4 926-957,965-966,968-978,984-985,1148-1149
+  6689fadfdd5dbdb3 267-413,754-779,921-925,1059-1087,1112,1139
+  25d656b10b0fbb91 958-964,967,979-983,986-1058
+  94c3d7e2c64f4ff4 442-590,659,670-677,733,780-781,791-868,1113-1114,1119-1122,1140-1142
+  a53edac972e9f0c7 869-870
+tests/test_trade_review_service.py
+  94c3d7e2c64f4ff4 1-75
+ai_evaluation_service.py
+  94c3d7e2c64f4ff4 161-177
+backtest_service.py
+  94c3d7e2c64f4ff4 8,74,101,106-109,111-113,123-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "e2ba04bf0f88d7ae8b79aeb1854d3d1a15e8db6d",
+  "prompts": {
+    "1ac4803eba8c0949": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5ff9-f8c8-72b0-97cc-507b011c6112",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 562,
+      "total_deletions": 3,
+      "accepted_lines": 378,
+      "overriden_lines": 0
+    },
+    "25d656b10b0fbb91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa793-199e-7c50-9966-4b31b964e17a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 1363,
+      "total_deletions": 206,
+      "accepted_lines": 1284,
+      "overriden_lines": 0
+    },
+    "2a57c9eaacbc661b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6a1b-6ff9-73d1-84d3-daba7529f811",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 8,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "6689fadfdd5dbdb3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9343-090a-72c1-9de2-9a3ef0e182a9",
+        "model": "unknown"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 1964,
+      "total_deletions": 115,
+      "accepted_lines": 2041,
+      "overriden_lines": 0
+    },
+    "94c3d7e2c64f4ff4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2ac0-edd3-7ea0-8c62-26341545ba5e",
+        "model": "unknown"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 3879,
+      "total_deletions": 927,
+      "accepted_lines": 4765,
+      "overriden_lines": 1
+    },
+    "a254c475fb851a25": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3bc9-2975-7721-bb20-b39f50744101",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "a53edac972e9f0c7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f51d2-e3cc-7f11-83dc-32a0d13af3cf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    },
+    "b63b6638e0df729c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3029-18cb-7482-9bf4-5eff457236bb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 4257,
+      "total_deletions": 927,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    },
+    "b7804ed8371a6fb4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9341-a5f7-7851-a2cb-a8728f9d0c30",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 287,
+      "total_deletions": 25,
+      "accepted_lines": 278,
+      "overriden_lines": 0
+    },
+    "c4e00ef1b768d846": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2ac0-1593-78b2-90cd-21156c8b2f71",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 421,
+      "total_deletions": 43,
+      "accepted_lines": 485,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 10272,
+    "git_diff_deleted_lines": 811,
+    "ai_additions": 7374,
+    "ai_accepted": 7374,
+    "BYMC": 2870,
+    "mixed_additions": 0,
+    "BYAC": 7374,
+    "BYRC": 0,
+    "per_file": {
+      ".env.example": {
+        "BYMC": [],
+        "BYAC": [
+          "1-2",
+          "14-18"
+        ],
+        "BYRC": []
+      },
+      ".runtime/python.log": {
+        "BYMC": [
+          "1-15"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      ".runtime/python.pid": {
+        "BYMC": [
+          "1"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      ".runtime/spring.log": {
+        "BYMC": [
+          "1-21"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      ".runtime/spring.pid": {
+        "BYMC": [
+          "1"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      ".superpowers/brainstorm/2-1782112138/state/server.pid": {
+        "BYMC": [
+          "1"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "DEPLOY_SERVER.md": {
+        "BYMC": [],
+        "BYAC": [
+          "18",
+          "22",
+          "24",
+          "45",
+          "221-225",
+          "409-446",
+          "561-592",
+          "595-633",
+          "637-653",
+          "655-657",
+          "659",
+          "662-677",
+          "681-683",
+          "688-699",
+          "720-735"
+        ],
+        "BYRC": []
+      },
+      "README_BACKEND.md": {
+        "BYMC": [
+          "32-35",
+          "58-68"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "ai_agent.py": {
+        "BYMC": [],
+        "BYAC": [
+          "12-13",
+          "17-18",
+          "20-21",
+          "23-24",
+          "26-27",
+          "29",
+          "31",
+          "37-54",
+          "59-65"
+        ],
+        "BYRC": []
+      },
+      "ai_evaluation_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "161-177"
+        ],
+        "BYRC": []
+      },
+      "app.py": {
+        "BYMC": [],
+        "BYAC": [
+          "9-14",
+          "40-54",
+          "147-196"
+        ],
+        "BYRC": []
+      },
+      "backtest_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "8",
+          "74",
+          "101",
+          "106-109",
+          "111-113",
+          "123-127"
+        ],
+        "BYRC": []
+      },
+      "data_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "9-16",
+          "20",
+          "22",
+          "24-27",
+          "31",
+          "33",
+          "39-54",
+          "62",
+          "183",
+          "236-276",
+          "283-293",
+          "335-429"
+        ],
+        "BYRC": []
+      },
+      "database.py": {
+        "BYMC": [],
+        "BYAC": [
+          "71-72",
+          "83-88",
+          "96",
+          "99-100",
+          "111-112",
+          "136-137"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-06-22-stock-technical-detail.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-372"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-11-market-data-cache.md": {
+        "BYMC": [
+          "1-179"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-12-cache-dashboard.md": {
+        "BYMC": [
+          "1-101"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-14-sector-potential-ranking.md": {
+        "BYMC": [
+          "1-914"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-24-sector-potential-expand-and-leader-filter.md": {
+        "BYMC": [
+          "1-92"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/specs/2026-06-22-stock-technical-detail-design.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-8",
+          "45",
+          "49"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/specs/2026-07-24-sector-potential-expand-and-leader-filter-design.md": {
+        "BYMC": [
+          "1-30"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "intraday_monitor_service.py": {
+        "BYMC": [
+          "1-143"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "main.py": {
+        "BYMC": [],
+        "BYAC": [
+          "7-8",
+          "23",
+          "29-30",
+          "35-40",
+          "42-44",
+          "46-47",
+          "49-50",
+          "52-60",
+          "62",
+          "64-65",
+          "70",
+          "72",
+          "74",
+          "79-80",
+          "82",
+          "84",
+          "86-91",
+          "93-97",
+          "99-103",
+          "105",
+          "112-113"
+        ],
+        "BYRC": []
+      },
+      "market_cache.py": {
+        "BYMC": [
+          "1-266"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "overnight_monitor_service.py": {
+        "BYMC": [
+          "1-334"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/cache-utils.js": {
+        "BYMC": [
+          "1-36"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/cache-utils.test.js": {
+        "BYMC": [
+          "1-23"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/cache-view-model.test.js": {
+        "BYMC": [
+          "1-27"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [],
+        "BYAC": [
+          "7",
+          "22-24",
+          "26-28",
+          "31",
+          "33",
+          "76-81",
+          "83-84",
+          "87-88",
+          "91-95",
+          "98-101",
+          "108-114",
+          "116-126",
+          "128-171",
+          "173-174",
+          "176",
+          "189-190",
+          "192",
+          "197-198",
+          "200-208",
+          "214",
+          "221",
+          "228-365",
+          "403-459",
+          "533-544",
+          "547-551",
+          "656-740",
+          "745-747"
+        ],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "220-221"
+        ],
+        "BYAC": [
+          "46-55",
+          "60-102",
+          "105",
+          "108-130",
+          "136-137",
+          "139",
+          "141-146",
+          "148",
+          "153-160",
+          "172-195",
+          "198-199",
+          "203-219",
+          "222-247",
+          "251",
+          "263-276",
+          "306-438",
+          "463",
+          "487",
+          "498-501",
+          "513-534",
+          "538-545",
+          "552-554",
+          "556-558",
+          "562-563",
+          "570-619",
+          "624-634",
+          "638",
+          "645-708",
+          "750",
+          "757-758",
+          "765-906",
+          "1010-1042"
+        ],
+        "BYRC": []
+      },
+      "quantClient/sector-potential-utils.js": {
+        "BYMC": [
+          "1-41"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/sector-potential-utils.test.js": {
+        "BYMC": [
+          "1-20"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [],
+        "BYAC": [
+          "267-413",
+          "442-590",
+          "659",
+          "670-677",
+          "733",
+          "754-781",
+          "791-870",
+          "921-1087",
+          "1112-1114",
+          "1119-1122",
+          "1139-1142",
+          "1148-1149"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java": {
+        "BYMC": [
+          "83-84"
+        ],
+        "BYAC": [
+          "5",
+          "37-45",
+          "80-82",
+          "109-118"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/dto/TradeReviewRequest.java": {
+        "BYMC": [],
+        "BYAC": [
+          "1-30"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java": {
+        "BYMC": [
+          "85-88"
+        ],
+        "BYAC": [
+          "5",
+          "28-36",
+          "81-84",
+          "119-133"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java": {
+        "BYMC": [],
+        "BYAC": [
+          "4",
+          "19",
+          "24-53",
+          "77-100"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst": {
+        "BYMC": [],
+        "BYAC": [
+          "4"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst": {
+        "BYMC": [],
+        "BYAC": [
+          "9"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/surefire-reports/TEST-com.codec.quantserver.QuantServerApplicationTests.xml": {
+        "BYMC": [],
+        "BYAC": [
+          "2",
+          "15",
+          "17",
+          "34",
+          "50",
+          "62-66",
+          "77-79"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/surefire-reports/TEST-com.codec.quantserver.controller.QuantControllerTest.xml": {
+        "BYMC": [],
+        "BYAC": [
+          "2",
+          "14",
+          "16",
+          "31",
+          "56-83"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/surefire-reports/com.codec.quantserver.QuantServerApplicationTests.txt": {
+        "BYMC": [],
+        "BYAC": [
+          "4"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/surefire-reports/com.codec.quantserver.controller.QuantControllerTest.txt": {
+        "BYMC": [],
+        "BYAC": [
+          "4"
+        ],
+        "BYRC": []
+      },
+      "quant_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "1",
+          "7-8",
+          "10",
+          "14",
+          "16-17",
+          "24-25",
+          "37-90",
+          "101-107",
+          "111-115",
+          "119-157",
+          "159",
+          "161",
+          "164",
+          "170",
+          "174-175",
+          "177-183",
+          "187",
+          "195-200",
+          "203-204",
+          "207-209"
+        ],
+        "BYRC": []
+      },
+      "stock_detail_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "6",
+          "11-12",
+          "26",
+          "205-256"
+        ],
+        "BYRC": []
+      },
+      "strategy.py": {
+        "BYMC": [],
+        "BYAC": [
+          "21",
+          "30",
+          "35-36",
+          "44",
+          "46",
+          "65-754",
+          "770-771",
+          "775",
+          "784-786",
+          "788-825",
+          "827-835",
+          "842-843",
+          "845",
+          "847-974",
+          "982-996",
+          "1000-1006",
+          "1008-1024",
+          "1026-1028",
+          "1034-1035",
+          "1037",
+          "1039-1068",
+          "1074-1239",
+          "1246-1249",
+          "1251-1260",
+          "1263-1340",
+          "1364-1369",
+          "1378-1380",
+          "1384-1391",
+          "1406",
+          "1438-1439",
+          "1441",
+          "1444-1506",
+          "1512-1523",
+          "1536-1543",
+          "1546-1554",
+          "1562-1875",
+          "1878-2285",
+          "2572-2573",
+          "2575",
+          "2582-2594",
+          "2596-2597",
+          "2599-2603",
+          "2605-2606",
+          "2608",
+          "2614",
+          "2616",
+          "2618-2619",
+          "2627-2648",
+          "2655-2656",
+          "2659-2665",
+          "2668-2672",
+          "2679-2705",
+          "2714",
+          "2716-2718",
+          "2721",
+          "2727"
+        ],
+        "BYRC": []
+      },
+      "tests/test_advantage_stock_scoring.py": {
+        "BYMC": [],
+        "BYAC": [
+          "2",
+          "7-9",
+          "12-26",
+          "65",
+          "79",
+          "83-444",
+          "446-450",
+          "454-467",
+          "469-470",
+          "472-844",
+          "846-851",
+          "853-854",
+          "856-861",
+          "863",
+          "865-953",
+          "956",
+          "958-962",
+          "964-967",
+          "969",
+          "971",
+          "973-985",
+          "989-1004",
+          "1006",
+          "1008-1016",
+          "1018-1080",
+          "1082-1111",
+          "1113-1132",
+          "1134-1139",
+          "1141-1145",
+          "1148-1150",
+          "1152",
+          "1154-1158",
+          "1160-1161",
+          "1163-1164",
+          "1166-1175",
+          "1177-1369",
+          "1371-1390",
+          "1392-1393",
+          "1395-1398",
+          "1400-1419",
+          "1421-1422",
+          "1424-1426",
+          "1435-1439",
+          "1442",
+          "1446",
+          "1460-1773",
+          "1798-1884"
+        ],
+        "BYRC": []
+      },
+      "tests/test_intraday_monitor_api.py": {
+        "BYMC": [
+          "1-31"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_intraday_monitor_service.py": {
+        "BYMC": [
+          "1-120"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_market_cache.py": {
+        "BYMC": [
+          "1-198"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_market_cache_api.py": {
+        "BYMC": [
+          "1-17"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_api.py": {
+        "BYMC": [
+          "1-26"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_service.py": {
+        "BYMC": [
+          "1-210"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_stock_detail_api.py": {
+        "BYMC": [],
+        "BYAC": [
+          "1-58"
+        ],
+        "BYRC": []
+      },
+      "tests/test_stock_detail_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "9-14",
+          "66-102"
+        ],
+        "BYRC": []
+      },
+      "tests/test_trade_review_api.py": {
+        "BYMC": [],
+        "BYAC": [
+          "1-25"
+        ],
+        "BYRC": []
+      },
+      "tests/test_trade_review_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "1-75"
+        ],
+        "BYRC": []
+      },
+      "trade_review_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "1-165"
+        ],
+        "BYRC": []
+      },
+      "verify_start.sh": {
+        "BYMC": [],
+        "BYAC": [
+          "1-118"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785291402,
+  "requirement_id": ""
+}
