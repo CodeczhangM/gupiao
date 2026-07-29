@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 
 from data_service import get_cached_scan_inputs, get_market_data, get_stock_minute_bars
-from strategy import _macd_kdj_60m_signal
+from strategy import _macd_kdj_60m_signal, rank_sector_potential
 
 
 _MINUTE_BAR_CACHE: dict[tuple[str, str, str, str], tuple[float, pd.DataFrame]] = {}
@@ -73,25 +73,76 @@ def _history_window(trade_date: str, lookback_days=70) -> tuple[str, str]:
     return start_day.strftime("%Y-%m-%d 09:30:00"), end_day.strftime("%Y-%m-%d 15:00:00")
 
 
-def _candidate_universe(market: pd.DataFrame, max_fetch: int) -> pd.DataFrame:
+def _leader_codes_from_sector_potential(market: pd.DataFrame, history: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    if market is None or market.empty or history is None:
+        return {}
+    try:
+        sector_potential = rank_sector_potential(market, history, limit=50, leaders_per_sector=5)
+    except Exception as exc:
+        print(f"隔夜溢价龙头池生成失败: {exc}")
+        return {}
+    if sector_potential is None or sector_potential.empty or "leader_stocks" not in sector_potential.columns:
+        return {}
+
+    leaders: dict[str, dict[str, Any]] = {}
+    for leaders_value in sector_potential["leader_stocks"]:
+        if not isinstance(leaders_value, list):
+            continue
+        for item in leaders_value:
+            if not isinstance(item, dict):
+                continue
+            ts_code = str(item.get("ts_code") or "")
+            if ts_code:
+                leaders[ts_code] = item
+    return leaders
+
+
+def _candidate_universe(market: pd.DataFrame, max_fetch: int, leader_codes: dict[str, dict[str, Any]] | None = None) -> pd.DataFrame:
     data = market.copy()
     for column in ["pct_chg", "turnover_rate", "volume_ratio", "amount", "close"]:
         data[column] = pd.to_numeric(data[column], errors="coerce") if column in data else 0
-    data = data[
+    base = data[
         data["pct_chg"].between(2, 8.5, inclusive="both")
         & data["turnover_rate"].between(2, 15, inclusive="both")
         & (data["volume_ratio"] > 1.3)
         & (data["amount"] >= 100_000)
     ].copy()
-    if data.empty:
-        return data
-    data["prefilter_score"] = (
-        data["pct_chg"].clip(0, 8.5) * 4
-        + data["volume_ratio"].clip(0, 4) * 8
-        + (15 - (data["turnover_rate"] - 7).abs()).clip(lower=0) * 1.2
-        + (data["amount"] / 100_000).clip(0, 10)
+    if not base.empty:
+        base["prefilter_score"] = (
+            base["pct_chg"].clip(0, 8.5) * 4
+            + base["volume_ratio"].clip(0, 4) * 8
+            + (15 - (base["turnover_rate"] - 7).abs()).clip(lower=0) * 1.2
+            + (base["amount"] / 100_000).clip(0, 10)
+        )
+        base = base.sort_values("prefilter_score", ascending=False).head(max_fetch)
+    else:
+        base = data.iloc[0:0].copy()
+        base["prefilter_score"] = pd.Series(dtype="float64")
+    base["overnight_pool_source"] = "常规"
+    base["overnight_sector_leader"] = False
+
+    leader_codes = leader_codes or {}
+    leaders = data[data["ts_code"].astype(str).isin(leader_codes.keys())].copy()
+    if not leaders.empty:
+        leaders["prefilter_score"] = (
+            leaders["pct_chg"].clip(-3, 8.5) * 3
+            + leaders["volume_ratio"].clip(0, 4) * 6
+            + leaders["turnover_rate"].clip(0, 15) * 0.8
+            + (leaders["amount"] / 100_000).clip(0, 10)
+        )
+        leaders["overnight_pool_source"] = "龙头"
+        leaders["overnight_sector_leader"] = True
+        leaders["sector_leader_score"] = leaders["ts_code"].astype(str).map(
+            lambda code: leader_codes.get(code, {}).get("leader_score")
+        )
+    result = pd.concat([base, leaders], ignore_index=True) if not leaders.empty else base
+    if result.empty:
+        return result
+    result["overnight_sector_leader"] = result.groupby("ts_code")["overnight_sector_leader"].transform("max").astype(bool)
+    result["overnight_pool_source"] = result.groupby("ts_code")["overnight_pool_source"].transform(
+        lambda values: "龙头" if "龙头" in set(values) else "常规"
     )
-    return data.sort_values("prefilter_score", ascending=False).head(max_fetch)
+    return result.drop_duplicates(subset=["ts_code"], keep="last").sort_values("prefilter_score", ascending=False).reset_index(drop=True)
 
 
 def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, pd.DataFrame]) -> dict[str, dict[str, Any]]:
@@ -272,16 +323,18 @@ def _build_row(stock: dict[str, Any], trade_date: str, sector_macd_map: dict[str
     }
 
 
-def build_overnight_monitor(limit: int = 30, max_fetch: int = 30, now: datetime | None = None) -> dict[str, Any]:
+def build_overnight_monitor(limit: int = 10, max_fetch: int = 30, now: datetime | None = None) -> dict[str, Any]:
     phase, should_refresh = _market_phase(now)
     try:
-        market, _history, metadata = get_cached_scan_inputs(100)
+        market, history, metadata = get_cached_scan_inputs(100)
         trade_date = str(metadata.get("data_trade_date") or "")
     except Exception:
         market, trade_date = get_market_data()
+        history = pd.DataFrame()
         trade_date = str(trade_date)
 
-    candidates = _candidate_universe(market, max_fetch=max_fetch)
+    leader_codes = _leader_codes_from_sector_potential(market, history)
+    candidates = _candidate_universe(market, max_fetch=max_fetch, leader_codes=leader_codes)
     start_60m, end_60m = _history_window(trade_date)
     bars_by_code = {}
     rows = []
@@ -316,6 +369,7 @@ def build_overnight_monitor(limit: int = 30, max_fetch: int = 30, now: datetime 
         rows,
         key=lambda item: (
             item.get("buyable_tail_signal") == "尾盘可买",
+            item.get("overnight_sector_leader") is True,
             float(item.get("overnight_candidate_score") or 0),
             float(item.get("tail_strength_score") or 0),
         ),

@@ -5,7 +5,13 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from overnight_monitor_service import build_overnight_monitor, _json_safe, _overnight_labels, _sector_60m_signal_from_bars
+from overnight_monitor_service import (
+    _MINUTE_BAR_CACHE,
+    build_overnight_monitor,
+    _json_safe,
+    _overnight_labels,
+    _sector_60m_signal_from_bars,
+)
 from tests.test_advantage_stock_scoring import (
     build_60min_bars,
     build_tail_1min_bars,
@@ -37,6 +43,9 @@ def market_fixture():
 
 
 class OvernightMonitorServiceTests(unittest.TestCase):
+    def setUp(self):
+        _MINUTE_BAR_CACHE.clear()
+
     @patch("overnight_monitor_service.get_stock_minute_bars")
     @patch("overnight_monitor_service.get_cached_scan_inputs")
     def test_overnight_monitor_prefers_buyable_tail_accumulation_not_limit_up(
@@ -103,6 +112,55 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         self.assertEqual(result["failed_count"], 1)
         self.assertIn("600103.SH", result["warnings"][0])
         self.assertIn("请求速度过快", result["warnings"][0])
+
+    @patch("overnight_monitor_service.rank_sector_potential")
+    @patch("overnight_monitor_service.get_stock_minute_bars")
+    @patch("overnight_monitor_service.get_cached_scan_inputs")
+    def test_overnight_monitor_adds_sector_leaders_to_candidate_pool(
+        self,
+        get_cached_scan_inputs,
+        get_stock_minute_bars,
+        rank_sector_potential,
+    ):
+        market = pd.concat([
+            market_fixture(),
+            pd.DataFrame([{
+                "ts_code": "600105.SH",
+                "name": "板块龙头",
+                "industry": "机器人",
+                "close": 15,
+                "pct_chg": 1.2,
+                "turnover_rate": 1.2,
+                "volume_ratio": 1.0,
+                "amount": 90_000,
+                "vol": 1000,
+                "total_mv": 1_000_000,
+            }]),
+        ], ignore_index=True)
+        get_cached_scan_inputs.return_value = (market, pd.DataFrame(), {"data_trade_date": "20260728"})
+        rank_sector_potential.return_value = pd.DataFrame([{
+            "industry_name": "机器人",
+            "leader_stocks": [{"ts_code": "600105.SH", "name": "板块龙头", "leader_score": 88}],
+        }])
+
+        def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
+            if freq == "60min":
+                return build_60min_bars(ts_code, water_macd_kdj_continuation_closes())
+            return build_tail_1min_bars(
+                ts_code,
+                [10, 10, 10, 10, 10, 10.02, 10.05, 10.08, 10.12, 10.16, 10.2, 10.24, 10.32],
+                [3000, 3000, 3000, 3000, 3000, 4200, 4300, 4500, 4600, 4800, 5200, 5400, 8000],
+            )
+
+        get_stock_minute_bars.side_effect = fake_bars
+
+        result = build_overnight_monitor(limit=10, max_fetch=2, now=datetime(2026, 7, 28, 14, 50))
+
+        by_code = {row["ts_code"]: row for row in result["stocks"]}
+        self.assertLessEqual(len(result["stocks"]), 10)
+        self.assertIn("600105.SH", by_code)
+        self.assertEqual(by_code["600105.SH"]["overnight_pool_source"], "龙头")
+        self.assertTrue(by_code["600105.SH"]["overnight_sector_leader"])
 
     def test_json_safe_converts_non_finite_numbers_to_null(self):
         payload = _json_safe({

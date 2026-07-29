@@ -158,7 +158,7 @@ def intraday_monitor():
 
 
 @app.get("/api/overnight-monitor")
-def overnight_monitor(limit: int = Query(30, ge=1, le=100)):
+def overnight_monitor(limit: int = Query(10, ge=1, le=100)):
     try:
         return build_overnight_monitor(limit=limit)
     except Exception as exc:

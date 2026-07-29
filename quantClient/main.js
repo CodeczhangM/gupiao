@@ -812,7 +812,7 @@ createApp({
     async loadOvernightMonitor(showError = true) {
       this.overnightLoading = true;
       try {
-        this.overnightMonitor = (await this.request(`/overnight-monitor?limit=${this.limit}`)) || {};
+        this.overnightMonitor = (await this.request('/overnight-monitor?limit=10')) || {};
         if (!this.overnightMonitor.auto_refresh_enabled && this.overnightAutoRefresh) {
           this.stopOvernightMonitor();
           this.overnightAutoRefresh = false;

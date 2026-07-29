@@ -278,7 +278,11 @@
             </thead>
             <tbody>
               <tr v-for="row in intradayMonitorRows" :key="row.ts_code" :class="monitorRowClass(row)">
-                <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
+                <td>
+                  <strong>{{ row.name || '--' }}</strong>
+                  <span v-if="row.overnight_sector_leader" class="monitor-badge watch">龙头</span>
+                  <br><span class="mono">{{ row.ts_code }}</span>
+                </td>
                 <td>{{ row.industry || '--' }}</td>
                 <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</td>
                 <td>{{ monitorSignalText(row) }}</td>
@@ -342,7 +346,11 @@
             </thead>
             <tbody>
               <tr v-for="row in overnightMonitorRows" :key="row.ts_code" :class="overnightRowClass(row)">
-                <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
+                <td>
+                  <strong>{{ row.name || '--' }}</strong>
+                  <span v-if="row.overnight_sector_leader" class="monitor-badge watch">龙头</span>
+                  <br><span class="mono">{{ row.ts_code }}</span>
+                </td>
                 <td>{{ row.industry || '--' }}</td>
                 <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</td>
                 <td><strong>{{ formatNumber(row.overnight_candidate_score) }}</strong></td>
