@@ -2,6 +2,7 @@ package com.codec.quantserver.service;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
+import com.codec.quantserver.dto.TradeReviewRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -22,6 +23,17 @@ public class QuantPythonClient {
 
     public Map<String, Object> databaseHealth() {
         return getMap("/health/db");
+    }
+
+    public Map<String, Object> cacheStatus() {
+        return getMap("/api/cache/status");
+    }
+
+    public Map<String, Object> syncCache(boolean forceCurrent) {
+        return restClient.post()
+                .uri(uriBuilder -> uriBuilder.path("/api/cache/sync")
+                        .queryParam("force_current", forceCurrent).build())
+                .retrieve().body(mapType());
     }
 
     public Map<String, Object> runScan(QuantScanRequest request) {
@@ -66,6 +78,14 @@ public class QuantPythonClient {
                 .body(mapType());
     }
 
+    public Map<String, Object> reviewTrade(TradeReviewRequest request) {
+        return restClient.post()
+                .uri("/api/trade-review/analyze")
+                .body(request)
+                .retrieve()
+                .body(mapType());
+    }
+
     public Object listReports(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         return restClient.get()
@@ -94,6 +114,21 @@ public class QuantPythonClient {
 
     public Map<String, Object> latestDip() {
         return getMap("/api/scan/latest/dip");
+    }
+
+    public Map<String, Object> intradayMonitor() {
+        return getMap("/api/intraday-monitor");
+    }
+
+    public Map<String, Object> overnightMonitor(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/overnight-monitor")
+                        .queryParam("limit", safeLimit)
+                        .build())
+                .retrieve()
+                .body(mapType());
     }
 
     private Map<String, Object> getMap(String uri) {

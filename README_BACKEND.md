@@ -29,6 +29,10 @@ export MYSQL_PASSWORD=你的mysql密码
 export MYSQL_DATABASE=quant
 
 export OLLAMA_MODEL=deepseek-r1:7b
+
+export MARKET_CACHE_ENABLED=true
+export MARKET_CACHE_BOOTSTRAP_DAYS=120
+export MARKET_CACHE_REQUIRED_DAYS=100
 ```
 
 ## 4. 启动服务
@@ -49,6 +53,19 @@ curl http://127.0.0.1:8000/health
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/scan/run?include_ai=false&limit=20"
+```
+
+首次扫描会把最近 120 个交易日的日线、每日指标、股票基础信息和板块资金流写入 MySQL，后续只补缺失的新交易日；交易日 15:30 前会覆盖刷新当天数据。也可以先手动同步并查看状态：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/cache/sync"
+curl http://127.0.0.1:8000/api/cache/status
+```
+
+强制刷新当前交易日：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/cache/sync?force_current=true"
 ```
 
 运行一次选股扫描，并调用本地 Ollama：
@@ -109,4 +126,3 @@ GET  http://127.0.0.1:8000/api/reports/latest
 ```
 
 后续如果要把它迁成纯 Spring Boot 后端，可以保留 `strategy.py` 作为策略计算服务，也可以把策略逻辑翻译成 Java。
-

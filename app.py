@@ -6,6 +6,12 @@ from ai_evaluation_service import evaluate_ai_recommendations
 from backtest_service import run_backtest
 from database import get_latest_report, get_report, init_db, list_reports, save_report
 from quant_service import run_quant_scan
+from stock_detail_service import get_stock_technical_detail
+from trade_review_service import review_trade
+from data_service import get_trade_dates, sync_cached_market_data
+from intraday_monitor_service import build_intraday_monitor
+from market_cache import get_cache_status
+from overnight_monitor_service import build_overnight_monitor
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +34,24 @@ def database_health():
         init_db()
         return {"status": "ok"}
     except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/cache/sync")
+def cache_sync(force_current: bool = Query(False)):
+    try:
+        return sync_cached_market_data(force_current=force_current)
+    except Exception as exc:
+        logger.exception("同步行情缓存失败")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/cache/status")
+def cache_status():
+    try:
+        return get_cache_status(trade_date_loader=get_trade_dates)
+    except Exception as exc:
+        logger.exception("读取行情缓存状态失败")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -120,3 +144,53 @@ def latest_dip():
         "sectors": report["sectors"],
         "rep_stocks": report["rep_stocks"],
     }
+
+
+@app.get("/api/intraday-monitor")
+def intraday_monitor():
+    try:
+        return build_intraday_monitor()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("获取实时共振监控失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/overnight-monitor")
+def overnight_monitor(limit: int = Query(30, ge=1, le=100)):
+    try:
+        return build_overnight_monitor(limit=limit)
+    except Exception as exc:
+        logger.exception("获取隔夜溢价监控失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/stocks/{ts_code}/technical")
+def stock_technical_detail(
+    ts_code: str,
+    trade_date: str = Query(..., pattern=r"^\d{8}$"),
+    report_id: int | None = Query(None, ge=1),
+):
+    try:
+        return get_stock_technical_detail(ts_code, trade_date, report_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("获取个股技术面失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/trade-review/analyze")
+def trade_review(payload: dict):
+    try:
+        return review_trade(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("运行交易复盘失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

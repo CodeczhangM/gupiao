@@ -158,8 +158,23 @@ def evaluate_ai_recommendations(hold_days: int = 3, report_limit: int = 50, stoc
                 status = "skipped"
                 skipped.append({"report_id": report["id"], "trade_date": report["trade_date"], "reason": str(exc)})
 
-        _append_rows(rows, report, "strong", report.get("strong", [])[:stock_limit], report.get("ai_analysis"), exit_date, exit_prices, status)
-        _append_rows(rows, report, "dip", report.get("dip", [])[:stock_limit], report.get("ai_analysis"), exit_date, exit_prices, status)
+        pools = report.get("pools") or {}
+        pool_sources = {
+            "reversal": pools.get("reversal", report.get("dip", [])),
+            "breakout": pools.get("breakout", report.get("strong", [])),
+            "first_limit": pools.get("first_limit", report.get("first_limit", [])),
+        }
+        for strategy, stocks in pool_sources.items():
+            _append_rows(
+                rows,
+                report,
+                strategy,
+                stocks[:stock_limit],
+                report.get("ai_analysis"),
+                exit_date,
+                exit_prices,
+                status,
+            )
 
     recommended = [row for row in rows if row["ai_recommended"]]
     not_recommended = [row for row in rows if not row["ai_recommended"]]
@@ -185,4 +200,3 @@ def evaluate_ai_recommendations(hold_days: int = 3, report_limit: int = 50, stoc
         "skipped": skipped,
         "note": "当前版本通过股票代码或名称是否出现在 AI 分析文本中判断是否被 AI 推荐。更严谨的版本需要让 AI 输出结构化推荐结果。",
     }
-

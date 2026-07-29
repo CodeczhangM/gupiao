@@ -9,38 +9,61 @@ DEFAULT_TRAECLI_MODEL = "DeepSeek-V4-Pro"
 DEFAULT_TRAECLI_TIMEOUT_SECONDS = 300
 
 
-def _build_prompt(strong_text: str, dip_text: str, trade_date: str) -> str:
+def _build_prompt(breakout_text: str, reversal_text: str, trade_date: str, first_limit_text: str = "") -> str:
+    first_limit_section = first_limit_text or "【主升浪启动】无符合条件的股票。"
     return f"""
 你是A股短线分析师，今天分析的是 {trade_date} 的市场数据。
 
-请基于给定数据做辅助分析，不要编造未提供的数据。输出必须简洁、专业，并提醒市场风险。
+请基于给定的三个池子做辅助分析，不要编造未提供的数据。输出必须简洁、专业，并提醒市场风险。
+你的核心任务是：综合比较三个池子中的全部候选，筛出最近最值得建仓的股票。
 
-=== 一、优势股 ===
-{strong_text}
+=== 一、超跌反转（目标：抄底） ===
+{reversal_text}
 
-=== 二、抄底候选（板块 + 个股） ===
-{dip_text}
+=== 二、趋势突破（目标：追强） ===
+{breakout_text}
 
-请分别针对两类数据给出分析：
+=== 三、主升浪启动（目标：打板预备） ===
+{first_limit_section}
 
-【优势股分析】
-1. 哪几只最值得关注？理由是什么（结合涨幅、换手率、成交量）？
-2. 主要风险点？
-3. 短线操作建议（买入时机、止损位）
+请先分别针对三类池子给出分析：
 
-【抄底分析】
+【超跌反转分析】
 1. 哪个板块最具反弹潜力？为什么？
 2. 板块内哪只个股最值得抄底？
 3. 抄底风险提示（是否存在继续下跌风险）
 4. 建议的介入策略（分批建仓 or 等企稳信号）
 
+【趋势突破分析】
+1. 哪几只最值得关注？理由是什么（结合突破、量能、行业相对强度）？
+2. 主要追高风险点？
+3. 短线操作建议（回踩确认、突破跟随、止损位）
+
+【主升浪启动分析】
+1. 哪几只具备次日继续走强的观察价值？
+2. 主要打板风险点（炸板、量能过热、题材不足）？
+3. 次日观察策略（竞价、开盘承接、是否等分歧）
+
+最后必须给出一个跨池结论：
+
+【最近建仓优先级】
+请从三个池子的全部候选中综合排序，输出 Top 3。
+1. 第 1 名必须明确写出“最值得最近建仓”的股票。
+2. 每只股票说明：所属池子、入选理由、适合的介入方式、主要风险。
+3. 如果三个池子都没有足够可建仓标的，请明确说明“暂无适合最近建仓的股票”，不要硬选。
+
 请用中文回答，每条建议控制在2~3句话。最后补充一句：以上为量化筛选后的辅助分析，不构成投资建议。
 """.strip()
 
 
-def analyze_stocks(strong_text: str, dip_text: str, trade_date: str) -> str:
+def analyze_stocks(breakout_text: str, reversal_text: str, trade_date: str, first_limit_text: str = "") -> str:
+    prompt = _build_prompt(breakout_text, reversal_text, trade_date, first_limit_text)
+    return analyze_prompt(prompt)
+
+
+def analyze_prompt(prompt: str) -> str:
+    """Run a prepared research prompt through the configured AI provider."""
     provider = os.getenv("AI_PROVIDER", "traecli").strip().lower()
-    prompt = _build_prompt(strong_text, dip_text, trade_date)
 
     if provider in {"ollama", "local"}:
         return _analyze_with_ollama(prompt)

@@ -1,6 +1,7 @@
 com/codec/quantserver/controller/ApiExceptionHandler.class
 com/codec/quantserver/QuantServerApplication.class
 com/codec/quantserver/service/QuantPythonClient.class
+com/codec/quantserver/dto/TradeReviewRequest.class
 com/codec/quantserver/config/CorsConfig$1.class
 com/codec/quantserver/config/QuantClientConfig.class
 com/codec/quantserver/dto/QuantScanRequest.class

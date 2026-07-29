@@ -6,24 +6,52 @@ import time
 from datetime import datetime, timedelta
 
 import settings
+from market_cache import (
+    ensure_market_cache,
+    get_cache_config,
+    load_market_snapshot,
+    load_moneyflow,
+    load_recent_daily,
+    sync_market_cache,
+)
 
 token = os.getenv("TUSHARE_TOKEN")
 
-pro = ts.pro_api(token) if token else ts.pro_api()
+ts.set_token(token)
 
-if token:
-    pro._DataApi__token = token
+pro = ts.pro_api()
 
-tushare_http_url = os.getenv("TUSHARE_HTTP_URL", "https://fastapia.stockai888.top")
+# if token:
+#     pro._DataApi__token = token
+
+tushare_http_url = os.getenv("TUSHARE_HTTP_URL", "https://ts.gyzcloud.top/api")
 if tushare_http_url:
     pro._DataApi__http_url = tushare_http_url
 
-# ── 沪深A股过滤：先排除创业板，后续如需也可排除科创板/北交所 ─────────────────────
+# ── 沪深A股过滤：排除创业板、科创板，后续如需也可排除北交所 ─────────────────────
 MAINBOARD_SUFFIX = (".SH", ".SZ")
-MAINBOARD_EXCLUDE_PREFIX = ("3",)   # 创业板 300xxx、301xxx
+MAINBOARD_EXCLUDE_PREFIX = ("3", "688", "689")   # 创业板、科创板
 TUSHARE_RETRY_DELAYS = (3, 6, 10)
 
 _query_cache = {}
+
+
+def get_cached_scan_inputs(history_days=100):
+    """同步缺失行情，并从 MySQL 返回扫描所需的市场快照和历史日线。"""
+    metadata = ensure_market_cache(_query_tushare, get_trade_dates)
+    trade_date = metadata.get("data_trade_date")
+    if not trade_date:
+        raise RuntimeError("行情缓存中没有完整交易日")
+    history = load_recent_daily(trade_date, history_days)
+    required = get_cache_config().required_days
+    available_days = history["trade_date"].astype(str).nunique() if "trade_date" in history.columns else 0
+    if available_days < min(required, history_days):
+        raise RuntimeError(f"行情缓存仅有 {available_days} 个完整交易日，需要 {min(required, history_days)} 个")
+    return load_market_snapshot(trade_date), history, metadata
+
+
+def sync_cached_market_data(force_current=False):
+    return sync_market_cache(_query_tushare, get_trade_dates, force_current=force_current)
 
 
 class MarketDataUnavailable(Exception):
@@ -31,7 +59,7 @@ class MarketDataUnavailable(Exception):
 
 
 def _filter_mainboard_a(df: pd.DataFrame) -> pd.DataFrame:
-    """只保留沪深A股，并排除创业板。"""
+    """只保留沪深A股，并排除创业板、科创板。"""
     if df.empty or "ts_code" not in df.columns:
         return df
 
@@ -152,7 +180,7 @@ def get_recent_daily_data(end_trade_date: str, n=20):
     dates = get_trade_dates(n=n, end_date=end_trade_date)
     start_date = dates[-1]
 
-    daily_fields = "ts_code,trade_date,close,high,low,vol,pct_chg"
+    daily_fields = "ts_code,trade_date,close,high,low,vol,amount,pct_chg"
     hist = _query_tushare("daily", start_date=start_date, end_date=end_trade_date, fields=daily_fields)
     if hist.empty:
         hist = pd.DataFrame()
@@ -205,12 +233,64 @@ def get_stock_daily_history(ts_code: str, end_trade_date: str, n=120):
     return hist.drop_duplicates(subset=["ts_code", "trade_date"]).sort_values("trade_date").reset_index(drop=True)
 
 
+def get_stock_daily_history_range(ts_code: str, start_trade_date: str, end_trade_date: str):
+    """获取单只股票在指定日期区间内的 OHLCV 日线。"""
+    daily_fields = "ts_code,trade_date,open,high,low,close,vol,pct_chg"
+    columns = daily_fields.split(",")
+    hist = _query_tushare(
+        "daily",
+        ts_code=ts_code,
+        start_date=start_trade_date,
+        end_date=end_trade_date,
+        fields=daily_fields,
+    )
+    if hist.empty:
+        return pd.DataFrame(columns=columns)
+
+    hist = hist.reindex(columns=columns)
+    hist = hist[
+        (hist["ts_code"].astype(str) == ts_code)
+        & hist["trade_date"].astype(str).between(start_trade_date, end_trade_date)
+    ].copy()
+    return hist.drop_duplicates(subset=["ts_code", "trade_date"]).sort_values("trade_date").reset_index(drop=True)
+
+
+def get_stock_minute_bars(ts_code: str, start_datetime: str, end_datetime: str, freq="60min"):
+    """获取单只股票分钟线，时间格式为 YYYY-MM-DD HH:MM:SS。"""
+    fields = "ts_code,trade_time,open,close,high,low,vol,amount"
+    columns = fields.split(",")
+    hist = _query_tushare(
+        "stk_mins",
+        ts_code=ts_code,
+        freq=freq,
+        start_date=start_datetime,
+        end_date=end_datetime,
+        fields=fields,
+    )
+    if hist is None or hist.empty:
+        return pd.DataFrame(columns=columns)
+    hist = hist.reindex(columns=columns)
+    hist = hist[hist["ts_code"].astype(str) == ts_code].copy()
+    return hist.drop_duplicates(subset=["ts_code", "trade_time"]).sort_values("trade_time").reset_index(drop=True)
+
+
 def get_sector_data(trade_date: str):
     """
     获取申万行业板块当日涨跌数据。
     返回 DataFrame，包含 industry_name, avg_pct_chg, stock_count 等字段。
     通过个股数据 + 行业映射聚合计算。
     """
+    if get_cache_config().enabled:
+        merged = load_market_snapshot(trade_date)
+        if merged.empty:
+            return pd.DataFrame()
+        merged = _filter_mainboard_a(merged)
+        sector_df = (
+            merged.dropna(subset=["industry"]).groupby("industry")["pct_chg"]
+            .agg([("avg_pct_chg", "mean"), ("stock_count", "count"), ("max_pct_chg", "max")])
+            .reset_index().rename(columns={"industry": "industry_name"})
+        )
+        return sector_df, merged
     try:
         # 获取股票基本信息（含行业）
         stock_basic = _query_tushare(
@@ -252,3 +332,98 @@ def get_sector_data(trade_date: str):
     )
 
     return sector_df, merged
+
+
+def _moneyflow_records(df: pd.DataFrame, limit: int, ascending: bool) -> list[dict]:
+    sorted_df = df.sort_values("net_amount", ascending=ascending).head(limit)
+    wanted_cols = [
+        "content_type",
+        "ts_code",
+        "name",
+        "pct_change",
+        "close",
+        "net_amount",
+        "net_amount_rate",
+        "buy_elg_amount",
+        "buy_lg_amount",
+        "rank",
+    ]
+    cols = [col for col in wanted_cols if col in sorted_df.columns]
+    return sorted_df[cols].to_dict(orient="records")
+
+
+def _empty_moneyflow_summary(requested_trade_date: str, trade_date: str | None = None) -> dict:
+    actual_trade_date = trade_date or requested_trade_date
+    return {
+        "requested_trade_date": requested_trade_date,
+        "trade_date": actual_trade_date,
+        "source": "moneyflow_ind_dc",
+        "total_net_amount": 0,
+        "inflow_count": 0,
+        "outflow_count": 0,
+        "top_inflow": [],
+        "top_outflow": [],
+    }
+
+
+def get_moneyflow_summary(trade_date: str, limit: int = 8):
+    """获取东方财富板块资金流汇总，用于总览展示。"""
+    limit = max(1, min(int(limit), 20))
+    requested_trade_date = str(trade_date)
+    moneyflow_trade_date = requested_trade_date
+    df = load_moneyflow(requested_trade_date) if get_cache_config().enabled else _query_tushare("moneyflow_ind_dc", trade_date=requested_trade_date)
+    if df is None or df.empty:
+        fallback_dates = []
+        try:
+            fallback_dates = get_trade_dates(n=5, end_date=requested_trade_date)
+        except Exception as exc:
+            print(f"板块资金流日期 {requested_trade_date} 无数据，获取回退交易日失败: {exc}")
+
+        for fallback_trade_date in fallback_dates:
+            fallback_trade_date = str(fallback_trade_date)
+            if fallback_trade_date == requested_trade_date:
+                continue
+            fallback_df = _query_tushare("moneyflow_ind_dc", trade_date=fallback_trade_date)
+            if fallback_df is not None and not fallback_df.empty:
+                df = fallback_df
+                moneyflow_trade_date = fallback_trade_date
+                print(f"板块资金流日期 {requested_trade_date} 无数据，使用最近可用日期: {moneyflow_trade_date}")
+                break
+
+    if df is None or df.empty:
+        print(f"板块资金流日期: {requested_trade_date}，无可用数据")
+        return _empty_moneyflow_summary(requested_trade_date)
+
+    result = df.copy()
+    numeric_cols = [
+        "pct_change",
+        "close",
+        "net_amount",
+        "net_amount_rate",
+        "buy_elg_amount",
+        "buy_lg_amount",
+        "buy_md_amount",
+        "buy_sm_amount",
+        "rank",
+    ]
+    for col in numeric_cols:
+        if col in result.columns:
+            result[col] = pd.to_numeric(result[col], errors="coerce")
+
+    result = result.dropna(subset=["net_amount"])
+    if result.empty:
+        print(f"板块资金流日期: {moneyflow_trade_date}，净流入字段无有效数据")
+        return _empty_moneyflow_summary(requested_trade_date, moneyflow_trade_date)
+
+    print(f"板块资金流日期: {moneyflow_trade_date}")
+
+    return {
+        "requested_trade_date": requested_trade_date,
+        "trade_date": moneyflow_trade_date,
+        "source": "moneyflow_ind_dc",
+        "total_net_amount": float(result["net_amount"].sum()),
+        "inflow_count": int((result["net_amount"] > 0).sum()),
+        "outflow_count": int((result["net_amount"] < 0).sum()),
+        "top_inflow": _moneyflow_records(result[result["net_amount"] > 0], limit, ascending=False),
+        "top_outflow": _moneyflow_records(result[result["net_amount"] < 0], limit, ascending=True),
+    }

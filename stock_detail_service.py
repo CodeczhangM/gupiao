@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 import pandas as pd
+
+from data_service import get_stock_daily_history
+from database import get_latest_report, get_report
 
 
 _CANDLE_COLUMNS = (
@@ -19,6 +23,7 @@ _CANDLE_COLUMNS = (
     "pct_chg",
     "turnover_rate",
 )
+_TS_CODE_PATTERN = re.compile(r"\d{6}\.(SH|SZ)")
 
 
 def _json_safe(value: Any) -> Any:
@@ -195,6 +200,58 @@ def find_strategy_signals(report: dict[str, Any] | None, ts_code: str) -> list[d
                 found.append({"strategy": strategy, **_json_safe(stock)})
                 seen.add(key)
     return found
+
+
+def _report_stock(signals: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return the report row associated with the first matching strategy signal."""
+    return signals[0] if signals else {}
+
+
+def _apply_report_turnover(history: Any, report_stock: dict[str, Any]) -> Any:
+    """Fill the latest history row from the selected report when daily data lacks turnover."""
+    turnover_rate = report_stock.get("turnover_rate")
+    if turnover_rate is None or not isinstance(history, pd.DataFrame) or history.empty:
+        return history
+    frame = history.copy()
+    if "turnover_rate" not in frame:
+        frame["turnover_rate"] = None
+    turnover = pd.to_numeric(frame["turnover_rate"], errors="coerce")
+    if turnover.notna().any():
+        return frame
+    frame.loc[frame.index[-1], "turnover_rate"] = turnover_rate
+    return frame
+
+
+def get_stock_technical_detail(
+    ts_code: str, trade_date: str, report_id: int | None = None
+) -> dict[str, Any]:
+    """Assemble one report-linked stock technical detail response without calling an AI."""
+    if not _TS_CODE_PATTERN.fullmatch(ts_code or ""):
+        raise ValueError("invalid ts_code")
+
+    report = get_report(report_id) if report_id is not None else get_latest_report()
+    if not report:
+        raise LookupError("report not found")
+
+    signals = find_strategy_signals(report, ts_code)
+    stock = _report_stock(signals)
+    history = _apply_report_turnover(
+        get_stock_daily_history(ts_code, trade_date, n=120), stock
+    )
+    snapshot = build_technical_snapshot(history)
+    detail = {
+        "report_id": report.get("id"),
+        "trade_date": trade_date,
+        "identity": {
+            "ts_code": ts_code,
+            "name": stock.get("name"),
+            "industry": stock.get("industry"),
+        },
+        **snapshot,
+        "strategy_signals": signals,
+    }
+    detail["prompt"] = build_ai_prompt(detail)
+    return detail
 
 
 def build_ai_prompt(detail: dict[str, Any]) -> str:

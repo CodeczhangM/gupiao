@@ -1,0 +1,15 @@
+INFO:     Started server process [32035]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:10447 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47525 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47525 - "GET /health/db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46235 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46235 - "GET /api/reports/latest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46239 - "GET /api/reports?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47737 - "POST /api/trade-review/analyze HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:47737 - "POST /api/trade-review/analyze HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:47737 - "POST /api/trade-review/analyze HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:47737 - "POST /api/trade-review/analyze HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:47185 - "POST /api/trade-review/analyze HTTP/1.1" 200 OK

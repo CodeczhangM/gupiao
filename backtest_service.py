@@ -5,7 +5,7 @@ import pandas as pd
 
 from data_service import get_market_data_by_date, get_recent_daily_data, get_trade_dates
 from quant_service import dataframe_to_records
-from strategy import pick_dip_stocks, pick_stocks, pick_strong_base_candidates
+from strategy import pick_strong_base_candidates, select_stock_pools
 
 
 def _pct_return(entry_price, exit_price):
@@ -71,7 +71,7 @@ def _append_result(rows, strategy, trade_date, exit_date, stock, exit_prices):
 def run_backtest(lookback_days: int = 30, hold_days: int = 3, limit: int = 20):
     """
     回测当前选股规则：
-    - 选股日复用现有优势股/抄底股规则。
+    - 选股日复用三池规则：超跌反转、趋势突破、首板启动。
     - 收益按选股日收盘价买入，持有 hold_days 个交易日后按收盘价卖出。
     """
     lookback_days = max(1, min(int(lookback_days), 120))
@@ -98,21 +98,19 @@ def run_backtest(lookback_days: int = 30, hold_days: int = 3, limit: int = 20):
 
         strong_base = pick_strong_base_candidates(df)
         try:
-            hist_days = 61 if not strong_base.empty else 40
+            hist_days = 100 if not strong_base.empty else 40
             hist_df = get_recent_daily_data(trade_date, n=hist_days)
         except Exception:
             hist_df = pd.DataFrame()
 
-        strong = pick_stocks(df, hist_df).head(limit)
-        for stock in dataframe_to_records(strong):
-            _append_result(rows, "strong", trade_date, exit_date, stock, exit_prices)
+        pools = select_stock_pools(df, hist_df)
+        for strategy, stocks in pools.items():
+            for stock in dataframe_to_records(stocks.head(limit)):
+                _append_result(rows, strategy, trade_date, exit_date, stock, exit_prices)
 
-        dip = pick_dip_stocks(df, hist_df).head(limit)
-        for stock in dataframe_to_records(dip):
-            _append_result(rows, "dip", trade_date, exit_date, stock, exit_prices)
-
-    strong_rows = [row for row in rows if row["strategy"] == "strong"]
-    dip_rows = [row for row in rows if row["strategy"] == "dip"]
+    reversal_rows = [row for row in rows if row["strategy"] == "reversal"]
+    breakout_rows = [row for row in rows if row["strategy"] == "breakout"]
+    first_limit_rows = [row for row in rows if row["strategy"] == "first_limit"]
 
     return {
         "lookback_days": lookback_days,
@@ -122,8 +120,11 @@ def run_backtest(lookback_days: int = 30, hold_days: int = 3, limit: int = 20):
         "end_trade_date": test_dates[0] if test_dates else None,
         "summary": {
             "all": _summary(rows),
-            "strong": _summary(strong_rows),
-            "dip": _summary(dip_rows),
+            "reversal": _summary(reversal_rows),
+            "breakout": _summary(breakout_rows),
+            "first_limit": _summary(first_limit_rows),
+            "strong": _summary(breakout_rows),
+            "dip": _summary(reversal_rows),
         },
         "results": rows,
         "skipped": skipped,

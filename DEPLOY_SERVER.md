@@ -15,10 +15,13 @@
 ```text
 /mnt/d/piao
 ├── app.py
+├── ai_agent.py
 ├── database.py
 ├── data_service.py
 ├── quant_service.py
+├── stock_detail_service.py
 ├── strategy.py
+├── trade_review_service.py
 ├── requirements.txt
 ├── .env
 ├── quantClient
@@ -38,6 +41,8 @@
 ```
 
 后文以 `/opt/quant` 为例。若你继续用 `/mnt/d/piao`，把命令里的路径替换即可。
+
+如果服务器实际目录是 `/opt/quaut`，同样把下文所有 `/opt/quant` 统一替换成 `/opt/quaut`，Python、Spring 和 Nginx 的目录必须保持一致。
 
 ## 2. 服务器基础环境
 
@@ -213,6 +218,11 @@ ExecStart=/usr/bin/python3 -m uvicorn app:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# TRAE CLI 在 systemd 下需要可用的 HOME/XDG 缓存目录。
+Environment=HOME=/root
+Environment=XDG_CACHE_HOME=/root/.cache
+Environment=XDG_CONFIG_HOME=/root/.config
+Environment=XDG_DATA_HOME=/root/.local/share
 
 [Install]
 WantedBy=multi-user.target
@@ -396,6 +406,44 @@ curl -X POST http://127.0.0.1:8081/api/quant/scan/run \
 curl http://127.0.0.1:8081/api/quant/reports/latest
 ```
 
+验证个股技术详情：
+
+```bash
+curl 'http://127.0.0.1:8081/api/quant/stocks/600000.SH/technical?tradeDate=20260620'
+```
+
+验证 AI 交易复盘。`positionStatus` 可为 `holding`（仍持仓）或 `sold`（已卖出）；已卖出时必须带上卖出日期和卖出价格：
+
+```bash
+curl -X POST http://127.0.0.1:8081/api/quant/trade-review/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "tsCode":"600000.SH",
+    "buyDate":"20260601",
+    "buyPrice":12.35,
+    "positionStatus":"holding",
+    "lossStatus":"当前浮亏，未设置明确止损",
+    "holdingNote":"突破后追入，回落时曾补仓一次"
+  }'
+```
+
+已卖出示例：
+
+```bash
+curl -X POST http://127.0.0.1:8081/api/quant/trade-review/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "tsCode":"600000.SH",
+    "buyDate":"20260601",
+    "buyPrice":12.35,
+    "positionStatus":"sold",
+    "sellDate":"20260618",
+    "sellPrice":11.80,
+    "lossStatus":"止损卖出",
+    "holdingNote":"未按计划设置止损，跌破均线后才卖出"
+  }'
+```
+
 ## 10. 常见问题
 
 ### 10.1 前端显示接口失败
@@ -510,27 +558,145 @@ journalctl -u quant-spring -f
 journalctl -u quant-python -f
 ```
 
+### 10.6 TRAE CLI 无法执行或 AI 复盘失败
+
+确认 `.env` 至少包含：
+
+```text
+AI_PROVIDER=traecli
+TRAECLI_BIN=/root/.local/bin/traecli
+TRAECLI_MODEL=DeepSeek-V4-Pro
+TRAECLI_PERSONAL_ACCESS_TOKEN=你的登录令牌
+```
+
+确认程序和缓存目录可用：
+
+```bash
+ls -l /root/.local/bin/traecli
+mkdir -p /root/.cache /root/.config /root/.local/share
+/root/.local/bin/traecli --help
+```
+
+如果日志出现 `failed to get cache directory`，检查 `quant-python.service` 是否包含本文件第 6 节列出的 `HOME` 和 `XDG_*` 环境变量，然后执行：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart quant-python
+```
+
+### 10.7 交易复盘提示没有可用 K 线
+
+检查股票代码必须为 Tushare 格式，例如 `600000.SH`、`000001.SZ`；买入日期必须是 `YYYYMMDD`。已卖出记录的卖出日期不得早于买入日期。
+
+复盘服务会以实际交易日对齐：非交易日买入会使用买入日之后的第一个有日线数据的交易日，持仓状态会以当前可获得的最近交易日作为截止日。
+
 ## 11. 更新部署
 
-上传新代码后：
+本次交易复盘、个股技术详情或前端页面更新后，按以下顺序更新。命令以 `/opt/quant` 为例；实际使用 `/opt/quaut` 时替换路径。
+
+### 11.1 备份配置和数据库
+
+`.env` 不应被代码覆盖：
+
+```bash
+cp /opt/quant/.env /opt/quant/.env.backup.$(date +%Y%m%d_%H%M%S)
+mysqldump -uquant_user -p quant > /opt/quant/quant_backup_$(date +%Y%m%d_%H%M%S).sql
+```
+
+### 11.2 同步代码
+
+将本地项目文件同步到服务器，保留服务器 `.env`：
+
+```bash
+rsync -avz --delete \
+  --exclude '.env' \
+  --exclude '__pycache__' \
+  --exclude '.git' \
+  /本地项目目录/ root@你的服务器:/opt/quant/
+```
+
+至少确认以下新增/更新文件已上传：
+
+```text
+ai_agent.py
+app.py
+data_service.py
+stock_detail_service.py
+trade_review_service.py
+quantClient/index.html
+quantClient/main.js
+quantClient/styles.css
+quantServer/quantServer/src/
+quantServer/quantServer/pom.xml
+```
+
+### 11.3 更新 Python 服务
 
 ```bash
 cd /opt/quant
-python3 -m py_compile app.py database.py data_service.py quant_service.py strategy.py
+python3 -m pip install -r requirements.txt
+python3 -m py_compile \
+  app.py ai_agent.py database.py data_service.py quant_service.py strategy.py \
+  stock_detail_service.py trade_review_service.py
 
-cd /opt/quant/quantServer/quantServer
-mvn clean package
-
+sudo systemctl daemon-reload
 sudo systemctl restart quant-python
+sudo systemctl status quant-python --no-pager
+```
+
+如果 Python 服务启动失败：
+
+```bash
+sudo journalctl -u quant-python -n 100 --no-pager
+```
+
+### 11.4 更新 Spring 网关
+
+交易复盘新增了 `TradeReviewRequest` 和 `/api/quant/trade-review/analyze` 转发端点，因此必须重新打包 Spring：
+
+```bash
+cd /opt/quant/quantServer/quantServer
+mvn clean package -DskipTests
+
 sudo systemctl restart quant-spring
+sudo systemctl status quant-spring --no-pager
+```
+
+生产环境建议先执行完整测试再打包：
+
+```bash
+mvn test
+mvn clean package -DskipTests
+```
+
+### 11.5 更新 Vue 静态文件与 Nginx
+
+前端为静态文件，无需 npm 构建。确认 `quantClient/index.html` 中 `main.js` 和 `styles.css` 的版本参数已随本次发布更新，然后：
+
+```bash
+sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-验证：
+浏览器使用 `Ctrl+F5` 强制刷新，或清理站点缓存后打开“交易复盘”。
+
+### 11.6 发布后验证
 
 ```bash
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8081/api/quant/health
+curl 'http://127.0.0.1:8081/api/quant/stocks/600000.SH/technical?tradeDate=20260620'
+```
+
+然后执行本文件第 9 节的交易复盘 `curl` 示例。确认返回 JSON 中至少包含：
+
+```text
+trade
+metrics
+entry_snapshot
+exit_snapshot
+trade_kline
+ai_summary
 ```
 
 ## 12. 建议的安全加固
@@ -551,3 +717,19 @@ chmod 600 /opt/quant/.env
 
 ## 查看启动问题
 sudo journalctl -u quant-python -f
+# 行情缓存配置
+
+Python 服务默认把扫描所需行情增量缓存到 MySQL：
+
+```bash
+export MARKET_CACHE_ENABLED=true
+export MARKET_CACHE_BOOTSTRAP_DAYS=120
+export MARKET_CACHE_REQUIRED_DAYS=100
+```
+
+首次扫描前可手动初始化，后续只同步缺失日期；交易日 15:30 前会刷新当天数据：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/cache/sync
+curl http://127.0.0.1:8000/api/cache/status
+```

@@ -68,6 +68,8 @@ def init_db():
         dip_json LONGTEXT NOT NULL,
         sectors_json LONGTEXT NOT NULL,
         rep_stocks_json LONGTEXT NOT NULL,
+        moneyflow_json LONGTEXT NULL,
+        sector_potential_json LONGTEXT NULL,
         ai_analysis MEDIUMTEXT NULL,
         error_message TEXT NULL,
         created_at DATETIME NOT NULL,
@@ -78,6 +80,12 @@ def init_db():
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(sql)
+            cursor.execute("SHOW COLUMNS FROM quant_reports LIKE 'moneyflow_json'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE quant_reports ADD COLUMN moneyflow_json LONGTEXT NULL AFTER rep_stocks_json")
+            cursor.execute("SHOW COLUMNS FROM quant_reports LIKE 'sector_potential_json'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE quant_reports ADD COLUMN sector_potential_json LONGTEXT NULL AFTER moneyflow_json")
 
 
 def save_report(report: dict) -> int:
@@ -85,11 +93,11 @@ def save_report(report: dict) -> int:
     sql = """
     INSERT INTO quant_reports (
         trade_date, status, include_ai, strong_json, dip_json, sectors_json,
-        rep_stocks_json, ai_analysis, error_message, created_at
+        rep_stocks_json, moneyflow_json, sector_potential_json, ai_analysis, error_message, created_at
     ) VALUES (
         %(trade_date)s, %(status)s, %(include_ai)s, %(strong_json)s, %(dip_json)s,
-        %(sectors_json)s, %(rep_stocks_json)s, %(ai_analysis)s, %(error_message)s,
-        %(created_at)s
+        %(sectors_json)s, %(rep_stocks_json)s, %(moneyflow_json)s, %(sector_potential_json)s,
+        %(ai_analysis)s, %(error_message)s, %(created_at)s
     )
     """
     payload = {
@@ -100,6 +108,8 @@ def save_report(report: dict) -> int:
         "dip_json": json.dumps(report.get("dip", []), ensure_ascii=False),
         "sectors_json": json.dumps(report.get("sectors", []), ensure_ascii=False),
         "rep_stocks_json": json.dumps(report.get("rep_stocks", []), ensure_ascii=False),
+        "moneyflow_json": json.dumps(report.get("moneyflow_summary", {}), ensure_ascii=False),
+        "sector_potential_json": json.dumps(report.get("sector_potential", []), ensure_ascii=False),
         "ai_analysis": report.get("ai_analysis"),
         "error_message": report.get("error_message"),
         "created_at": report.get("created_at") or datetime.now(),
@@ -123,6 +133,8 @@ def _decode_report(row: dict | None):
         "dip": json.loads(row["dip_json"] or "[]"),
         "sectors": json.loads(row["sectors_json"] or "[]"),
         "rep_stocks": json.loads(row["rep_stocks_json"] or "[]"),
+        "moneyflow_summary": json.loads(row.get("moneyflow_json") or "{}"),
+        "sector_potential": json.loads(row.get("sector_potential_json") or "[]"),
         "ai_analysis": row["ai_analysis"],
         "error_message": row["error_message"],
         "created_at": row["created_at"].isoformat(sep=" "),

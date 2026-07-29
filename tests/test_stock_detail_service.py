@@ -6,7 +6,12 @@ import math
 import pandas as pd
 
 import data_service
-from stock_detail_service import build_ai_prompt, build_technical_snapshot, find_strategy_signals
+from stock_detail_service import (
+    build_ai_prompt,
+    build_technical_snapshot,
+    find_strategy_signals,
+    get_stock_technical_detail,
+)
 
 
 class StockDailyHistoryTests(unittest.TestCase):
@@ -58,6 +63,43 @@ def _history(days=120):
 
 
 class StockDetailServiceTests(unittest.TestCase):
+    @patch("stock_detail_service.get_stock_daily_history")
+    @patch("stock_detail_service.get_report")
+    def test_orchestrates_selected_report_history_and_prompt(self, get_report, get_history):
+        report_stock = {
+            "ts_code": "600001.SH",
+            "name": "示例股份",
+            "industry": "电子",
+            "turnover_rate": 6.8,
+            "breakout_score": 91,
+        }
+        get_report.return_value = {
+            "id": 7,
+            "trade_date": "20260615",
+            "pools": {"breakout": [report_stock]},
+        }
+        get_history.return_value = _history(2).drop(columns=["turnover_rate"], errors="ignore")
+
+        detail = get_stock_technical_detail("600001.SH", "20260615", report_id=7)
+
+        get_report.assert_called_once_with(7)
+        get_history.assert_called_once_with("600001.SH", "20260615", n=120)
+        self.assertEqual(detail["report_id"], 7)
+        self.assertEqual(detail["identity"], {"ts_code": "600001.SH", "name": "示例股份", "industry": "电子"})
+        self.assertEqual(detail["strategy_signals"][0]["strategy"], "breakout")
+        self.assertEqual(detail["latest"]["ohlcv"]["turnover_rate"], 6.8)
+        self.assertFalse(detail["history_complete"])
+        self.assertIn("示例股份", detail["prompt"])
+
+    @patch("stock_detail_service.get_latest_report", return_value=None)
+    def test_orchestration_rejects_invalid_code_and_absent_report(self, get_latest_report):
+        with self.assertRaisesRegex(ValueError, "ts_code"):
+            get_stock_technical_detail("bad", "20260615")
+
+        with self.assertRaisesRegex(LookupError, "report"):
+            get_stock_technical_detail("600001.SH", "20260615")
+        get_latest_report.assert_called_once_with()
+
     def test_builds_complete_snapshot_for_exactly_120_candles(self):
         history = _history()
         history["turnover_rate"] = 3.25

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260615">
+  <link rel="stylesheet" href="./styles.css?v=20260712-cache-progress-v1">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -19,12 +19,18 @@
 
       <nav class="nav">
         <button :class="{ active: activeTab === 'overview' }" @click="activeTab = 'overview'">总览</button>
-        <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">优势股</button>
-        <button :class="{ active: activeTab === 'dip' }" @click="activeTab = 'dip'">抄底候选</button>
+        <button :class="{ active: activeTab === 'dip' }" @click="activeTab = 'dip'">超跌反转</button>
+        <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">趋势突破</button>
+        <button :class="{ active: activeTab === 'first_limit' }" @click="activeTab = 'first_limit'">主升浪启动</button>
         <button :class="{ active: activeTab === 'sectors' }" @click="activeTab = 'sectors'">板块</button>
+        <button :class="{ active: activeTab === 'sector_potential' }" @click="activeTab = 'sector_potential'">板块潜力</button>
+        <button :class="{ active: activeTab === 'intraday_monitor' }" @click="activeTab = 'intraday_monitor'; loadIntradayMonitor(false)">实时共振</button>
+        <button :class="{ active: activeTab === 'overnight_monitor' }" @click="activeTab = 'overnight_monitor'; loadOvernightMonitor(false)">隔夜溢价</button>
         <button :class="{ active: activeTab === 'backtest' }" @click="activeTab = 'backtest'">回测</button>
         <button :class="{ active: activeTab === 'evaluation' }" @click="activeTab = 'evaluation'">AI评估</button>
+        <button :class="{ active: activeTab === 'review' }" @click="activeTab = 'review'">交易复盘</button>
         <button :class="{ active: activeTab === 'reports' }" @click="activeTab = 'reports'">历史</button>
+        <button :class="{ active: activeTab === 'cache' }" @click="activeTab = 'cache'; loadCacheStatus()">数据缓存</button>
       </nav>
 
       <div class="connection">
@@ -67,18 +73,31 @@
         <span>{{ error }}</span>
       </section>
 
-      <section class="metrics">
+      <section v-if="latest.cache_warnings && latest.cache_warnings.length" class="cache-warning">
+        <strong>缓存降级提示</strong>
+        <span v-for="warning in latest.cache_warnings" :key="warning">{{ warning }}</span>
+      </section>
+
+      <section v-if="activeTab !== 'cache'" class="metrics">
         <article>
-          <span>优势股</span>
-          <strong>{{ listCount(latest.strong) }}</strong>
+          <span>超跌反转</span>
+          <strong>{{ listCount(rowsFor('reversal', 'dip')) }}</strong>
         </article>
         <article>
-          <span>抄底个股</span>
-          <strong>{{ listCount(latest.dip) }}</strong>
+          <span>趋势突破</span>
+          <strong>{{ listCount(rowsFor('breakout', 'strong')) }}</strong>
         </article>
         <article>
-          <span>候选板块</span>
+          <span>主升浪启动</span>
+          <strong>{{ listCount(rowsFor('first_limit', 'first_limit')) }}</strong>
+        </article>
+        <article>
+          <span>强势板块</span>
           <strong>{{ listCount(latest.sectors) }}</strong>
+        </article>
+        <article>
+          <span>潜力板块</span>
+          <strong>{{ listCount(sectorPotentialRows) }}</strong>
         </article>
         <article>
           <span>报告编号</span>
@@ -86,20 +105,75 @@
         </article>
       </section>
 
-      <section v-show="activeTab === 'overview'" class="grid two">
-        <div class="panel">
-          <div class="panel-head">
-            <h3>优势股 Top</h3>
-            <button @click="activeTab = 'strong'">查看全部</button>
+      <section v-if="activeTab !== 'cache'" class="stage-guide">
+        <article v-for="item in stageDefinitions" :key="item.code">
+          <strong>{{ item.code }}</strong>
+          <div>
+            <b>{{ item.title }}</b>
+            <span>{{ item.action }}</span>
+            <p>{{ item.detail }}</p>
           </div>
-          <stock-table :rows="topRows(latest.strong, 8)" mode="strong"></stock-table>
+        </article>
+      </section>
+
+      <section v-if="activeTab !== 'cache'" class="panel moneyflow-panel">
+        <div class="panel-head">
+          <h3>当天板块资金流</h3>
+          <span>
+            {{ latest.moneyflow_summary && latest.moneyflow_summary.trade_date ? '日期 ' + latest.moneyflow_summary.trade_date : '暂无数据' }}
+            ·
+            {{ latest.moneyflow_summary && latest.moneyflow_summary.source ? latest.moneyflow_summary.source : '暂无数据' }}
+          </span>
         </div>
-        <div class="panel">
-          <div class="panel-head">
-            <h3>抄底候选 Top</h3>
-            <button @click="activeTab = 'dip'">查看全部</button>
+        <div class="moneyflow-body">
+          <div class="moneyflow-summary">
+            <article>
+              <span>板块净流入</span>
+              <strong :class="signedClass(latest.moneyflow_summary && latest.moneyflow_summary.total_net_amount)">
+                {{ displayMoney(latest.moneyflow_summary && latest.moneyflow_summary.total_net_amount) }}
+              </strong>
+            </article>
+            <article>
+              <span>流入板块</span>
+              <strong>{{ latest.moneyflow_summary ? latest.moneyflow_summary.inflow_count : '--' }}</strong>
+            </article>
+            <article>
+              <span>流出板块</span>
+              <strong>{{ latest.moneyflow_summary ? latest.moneyflow_summary.outflow_count : '--' }}</strong>
+            </article>
           </div>
-          <stock-table :rows="topRows(latest.dip, 8)" mode="dip"></stock-table>
+          <div class="moneyflow-list">
+            <div>
+              <h4>流入 Top</h4>
+              <ol>
+                <li v-for="item in moneyflowTop('top_inflow')" :key="'in' + item.ts_code">
+                  <span>{{ item.name }}</span>
+                  <b class="up">{{ displayMoney(item.net_amount) }}</b>
+                </li>
+                <li v-if="moneyflowTop('top_inflow').length === 0" class="empty-line">暂无</li>
+              </ol>
+            </div>
+            <div>
+              <h4>流出 Top</h4>
+              <ol>
+                <li v-for="item in moneyflowTop('top_outflow')" :key="'out' + item.ts_code">
+                  <span>{{ item.name }}</span>
+                  <b class="down">{{ displayMoney(item.net_amount) }}</b>
+                </li>
+                <li v-if="moneyflowTop('top_outflow').length === 0" class="empty-line">暂无</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'overview'" class="grid two">
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>板块潜力 Top</h3>
+            <button @click="activeTab = 'sector_potential'">查看全部</button>
+          </div>
+          <sector-potential-table :rows="topRows(sectorPotentialRows, 8)" compact></sector-potential-table>
         </div>
         <div class="panel wide">
           <div class="panel-head">
@@ -112,34 +186,183 @@
 
       <section v-show="activeTab === 'strong'" class="panel">
         <div class="panel-head">
-          <h3>优势股列表</h3>
-          <span>{{ listCount(latest.strong) }} 条</span>
+          <h3>趋势突破列表</h3>
+          <span>{{ listCount(rowsFor('breakout', 'strong')) }} 条</span>
         </div>
-        <stock-table :rows="latest.strong || []" mode="strong"></stock-table>
+        <stock-table :rows="rowsFor('breakout', 'strong')" mode="breakout"></stock-table>
       </section>
 
       <section v-show="activeTab === 'dip'" class="panel">
         <div class="panel-head">
-          <h3>抄底候选个股</h3>
-          <span>{{ listCount(latest.dip) }} 条</span>
+          <h3>超跌反转列表</h3>
+          <span>{{ listCount(rowsFor('reversal', 'dip')) }} 条</span>
         </div>
-        <stock-table :rows="latest.dip || []" mode="dip"></stock-table>
+        <stock-table :rows="rowsFor('reversal', 'dip')" mode="reversal"></stock-table>
+      </section>
+
+      <section v-show="activeTab === 'first_limit'" class="panel">
+        <div class="panel-head">
+          <h3>主升浪启动列表</h3>
+          <span>{{ listCount(rowsFor('first_limit', 'first_limit')) }} 条</span>
+        </div>
+        <stock-table :rows="rowsFor('first_limit', 'first_limit')" mode="first_limit"></stock-table>
       </section>
 
       <section v-show="activeTab === 'sectors'" class="grid two">
         <div class="panel">
           <div class="panel-head">
-            <h3>候选板块</h3>
+            <h3>强势板块</h3>
             <span>{{ listCount(latest.sectors) }} 条</span>
           </div>
           <sector-table :rows="latest.sectors || []"></sector-table>
         </div>
         <div class="panel">
           <div class="panel-head">
-            <h3>板块代表股</h3>
+            <h3>板块尾盘候选股</h3>
             <span>{{ listCount(latest.rep_stocks) }} 条</span>
           </div>
           <stock-table :rows="latest.rep_stocks || []" mode="rep"></stock-table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'sector_potential'" class="grid two">
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>板块上涨潜力排序</h3>
+            <span>{{ listCount(sectorPotentialRows) }} 条 · 短线 {{ topShortSector }} · 波段 {{ topSwingSector }}</span>
+            <button class="secondary" @click="refreshSectorPotential" :disabled="sectorPotentialRefreshing">
+              {{ sectorPotentialRefreshing ? '更新中' : '更新板块信息' }}
+            </button>
+          </div>
+          <sector-potential-table :rows="sectorPotentialRows"></sector-potential-table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'intraday_monitor'" class="panel">
+        <div class="panel-head monitor-head">
+          <div>
+            <h3>实时共振监控</h3>
+            <span>
+              {{ intradayMonitor.market_phase || '未加载' }}
+              · {{ intradayMonitor.updated_at || '--' }}
+              · {{ intradayMonitorRows.length }} 只
+            </span>
+          </div>
+          <div class="monitor-actions">
+            <label class="switch">
+              <input type="checkbox" v-model="intradayAutoRefresh" @change="toggleIntradayMonitor">
+              <span></span>
+              <b>30秒更新</b>
+            </label>
+            <button class="secondary" @click="loadIntradayMonitor" :disabled="intradayLoading">
+              {{ intradayLoading ? '更新中' : '立即更新' }}
+            </button>
+          </div>
+        </div>
+        <div class="table-wrap intraday-monitor-table">
+          <table>
+            <thead>
+              <tr>
+                <th>股票</th>
+                <th>板块</th>
+                <th>涨跌幅</th>
+                <th>60分信号</th>
+                <th>主力状态</th>
+                <th>次日倾向</th>
+                <th>尾盘分</th>
+                <th>14:30后</th>
+                <th>集合竞价</th>
+                <th>量能</th>
+                <th>原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in intradayMonitorRows" :key="row.ts_code" :class="monitorRowClass(row)">
+                <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
+                <td>{{ row.industry || '--' }}</td>
+                <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</td>
+                <td>{{ monitorSignalText(row) }}</td>
+                <td><span class="monitor-badge" :class="monitorBadgeClass(row.main_force_status)">{{ row.main_force_status || '观察' }}</span></td>
+                <td><span class="monitor-badge" :class="monitorBadgeClass(row.next_day_bias)">{{ row.next_day_bias || '数据不足' }}</span></td>
+                <td><strong>{{ formatNumber(row.tail_strength_score) }}</strong></td>
+                <td :class="signedClass(row.tail_return_after_1430)">{{ formatNumber(row.tail_return_after_1430) }}%</td>
+                <td :class="signedClass(row.tail_auction_return)">{{ formatNumber(row.tail_auction_return) }}%</td>
+                <td>{{ formatNumber(row.tail_volume_ratio) }}倍</td>
+                <td class="monitor-reason-cell" :title="row.next_day_bias_reason || row.main_force_reason || '--'">
+                  {{ row.next_day_bias_reason || row.main_force_reason || '--' }}
+                </td>
+              </tr>
+              <tr v-if="intradayMonitorRows.length === 0">
+                <td colspan="11" class="empty">暂无实时共振股票，请先运行扫描或等待分时数据</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'overnight_monitor'" class="panel">
+        <div class="panel-head monitor-head">
+          <div>
+            <h3>隔夜溢价候选</h3>
+            <span>
+              {{ overnightMonitor.market_phase || '未加载' }}
+              · {{ overnightMonitor.updated_at || '--' }}
+              · {{ overnightMonitorRows.length }} 只
+            </span>
+          </div>
+          <div class="monitor-actions">
+            <label class="switch">
+              <input type="checkbox" v-model="overnightAutoRefresh" @change="toggleOvernightMonitor">
+              <span></span>
+              <b>30秒更新</b>
+            </label>
+            <button class="secondary" @click="loadOvernightMonitor" :disabled="overnightLoading">
+              {{ overnightLoading ? '更新中' : '立即更新' }}
+            </button>
+          </div>
+        </div>
+        <div class="table-wrap intraday-monitor-table">
+          <table>
+            <thead>
+              <tr>
+                <th>股票</th>
+                <th>板块</th>
+                <th>涨跌幅</th>
+                <th>隔夜分</th>
+                <th>买点</th>
+                <th>隔夜倾向</th>
+                <th>板块60m</th>
+                <th>尾盘分</th>
+                <th>14:30后</th>
+                <th>集合竞价</th>
+                <th>量能</th>
+                <th>过热</th>
+                <th>计划/原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in overnightMonitorRows" :key="row.ts_code" :class="overnightRowClass(row)">
+                <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
+                <td>{{ row.industry || '--' }}</td>
+                <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</td>
+                <td><strong>{{ formatNumber(row.overnight_candidate_score) }}</strong></td>
+                <td><span class="monitor-badge" :class="overnightBadgeClass(row.buyable_tail_signal)">{{ row.buyable_tail_signal || '观察' }}</span></td>
+                <td><span class="monitor-badge" :class="overnightBadgeClass(row.overnight_bias)">{{ row.overnight_bias || '--' }}</span></td>
+                <td><span class="monitor-badge" :class="sectorMacdBadgeClass(row)">{{ row.sector_macd_status || '--' }}</span></td>
+                <td>{{ formatNumber(row.tail_strength_score) }}</td>
+                <td :class="signedClass(row.tail_return_after_1430)">{{ formatNumber(row.tail_return_after_1430) }}%</td>
+                <td :class="signedClass(row.tail_auction_return)">{{ formatNumber(row.tail_auction_return) }}%</td>
+                <td>{{ formatNumber(row.tail_volume_ratio) }}倍</td>
+                <td>{{ row.overheat_risk || '--' }}</td>
+                <td class="monitor-reason-cell" :title="(row.overnight_reason || '') + ' ' + (row.next_morning_sell_plan || '')">
+                  {{ row.overnight_reason || '--' }} · {{ row.next_morning_sell_plan || '--' }}
+                </td>
+              </tr>
+              <tr v-if="overnightMonitorRows.length === 0">
+                <td colspan="13" class="empty">暂无隔夜溢价候选，尾盘临近时可手动更新</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -174,6 +397,63 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'cache'" class="cache-page">
+        <div class="panel-head cache-page-head">
+          <div>
+            <h3>市场数据缓存</h3>
+            <span>首次补齐 120 日，后续仅同步缺失日期</span>
+          </div>
+          <div class="cache-actions">
+            <button class="secondary" @click="syncCache(false)" :disabled="cacheSyncing">
+              {{ cacheSyncing ? '同步中' : '增量同步' }}
+            </button>
+            <button class="primary" @click="syncCache(true)" :disabled="cacheSyncing">
+              {{ cacheSyncing ? '同步中' : '强制刷新当天' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="cache-metrics">
+          <article><span>完整交易日</span><strong>{{ cacheStatus.complete_dates ?? '--' }}</strong></article>
+          <article><span>最新缓存交易日</span><strong>{{ cacheLatestDate }}</strong></article>
+          <article><span>最近同步时间</span><strong>{{ cacheLatestTime }}</strong></article>
+          <article><span>整体状态</span><strong>{{ cacheOverallStatus }}</strong></article>
+        </div>
+
+        <div class="cache-progress" :class="{ active: cacheSyncing }">
+          <div class="cache-progress-head">
+            <span>更新进度</span>
+            <strong>{{ cacheProgressText }}</strong>
+          </div>
+          <div class="cache-progress-bar" aria-label="缓存更新进度">
+            <div class="cache-progress-fill" :style="{ width: cacheProgressPercent + '%' }"></div>
+          </div>
+          <p>{{ cacheSyncing ? '正在同步，页面会自动刷新当前个数' : '点击增量同步后会显示实时缓存个数' }}</p>
+        </div>
+
+        <div class="panel cache-source-panel">
+          <div class="panel-head">
+            <h3>数据源状态</h3>
+            <span>{{ cacheLoading ? '加载中' : cacheRows.length + ' 个数据源' }}</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>数据源</th><th>最新日期</th><th>状态</th><th>记录数</th><th>最近同步</th><th>错误信息</th></tr></thead>
+              <tbody>
+                <tr v-for="row in cacheRows" :key="row.source_name">
+                  <td><strong>{{ row.source_name }}</strong></td>
+                  <td>{{ row.trade_date || '--' }}</td>
+                  <td><span class="cache-status" :class="row.status || 'empty'">{{ row.status || '--' }}</span></td>
+                  <td>{{ row.row_count ?? '--' }}</td>
+                  <td>{{ row.updated_at || row.completed_at || '--' }}</td>
+                  <td class="cache-error-cell">{{ row.error_message || '--' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -250,18 +530,25 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>优势股</td>
-                  <td>{{ summaryValue('strong', 'count') }}</td>
-                  <td>{{ summaryValue('strong', 'win_rate', '%') }}</td>
-                  <td :class="signedClass(summaryMetric('strong', 'avg_return'))">{{ summaryValue('strong', 'avg_return', '%') }}</td>
-                  <td :class="signedClass(summaryMetric('strong', 'median_return'))">{{ summaryValue('strong', 'median_return', '%') }}</td>
+                  <td>超跌反转</td>
+                  <td>{{ summaryValue('reversal', 'count') }}</td>
+                  <td>{{ summaryValue('reversal', 'win_rate', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('reversal', 'avg_return'))">{{ summaryValue('reversal', 'avg_return', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('reversal', 'median_return'))">{{ summaryValue('reversal', 'median_return', '%') }}</td>
                 </tr>
                 <tr>
-                  <td>抄底候选</td>
-                  <td>{{ summaryValue('dip', 'count') }}</td>
-                  <td>{{ summaryValue('dip', 'win_rate', '%') }}</td>
-                  <td :class="signedClass(summaryMetric('dip', 'avg_return'))">{{ summaryValue('dip', 'avg_return', '%') }}</td>
-                  <td :class="signedClass(summaryMetric('dip', 'median_return'))">{{ summaryValue('dip', 'median_return', '%') }}</td>
+                  <td>趋势突破</td>
+                  <td>{{ summaryValue('breakout', 'count') }}</td>
+                  <td>{{ summaryValue('breakout', 'win_rate', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('breakout', 'avg_return'))">{{ summaryValue('breakout', 'avg_return', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('breakout', 'median_return'))">{{ summaryValue('breakout', 'median_return', '%') }}</td>
+                </tr>
+                <tr>
+                  <td>主升浪启动</td>
+                  <td>{{ summaryValue('first_limit', 'count') }}</td>
+                  <td>{{ summaryValue('first_limit', 'win_rate', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('first_limit', 'avg_return'))">{{ summaryValue('first_limit', 'avg_return', '%') }}</td>
+                  <td :class="signedClass(summaryMetric('first_limit', 'median_return'))">{{ summaryValue('first_limit', 'median_return', '%') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -366,10 +653,97 @@
           <backtest-table :rows="evaluationRanking('missed_best')"></backtest-table>
         </div>
       </section>
+
+      <section v-show="activeTab === 'review'" class="grid two">
+        <div class="panel wide">
+          <div class="panel-head">
+            <h3>AI 交易复盘</h3>
+            <span>{{ tradeReview ? tradeReview.trade.entry_trade_date + ' 至 ' + tradeReview.trade.exit_trade_date : '填写交易信息后分析' }}</span>
+          </div>
+          <div class="form-grid review-form">
+            <label>
+              <span>股票代码</span>
+              <input v-model.trim="reviewForm.tsCode" placeholder="例如 600000.SH">
+            </label>
+            <label>
+              <span>买入日期</span>
+              <input v-model="reviewForm.buyDate" type="date">
+            </label>
+            <label>
+              <span>买入价格</span>
+              <input v-model="reviewForm.buyPrice" type="number" min="0" step="0.01" placeholder="例如 12.35">
+            </label>
+            <label>
+              <span>当前状态</span>
+              <select v-model="reviewForm.positionStatus">
+                <option value="holding">仍持仓</option>
+                <option value="sold">已卖出</option>
+              </select>
+            </label>
+            <label v-if="reviewForm.positionStatus === 'sold'">
+              <span>卖出日期</span>
+              <input v-model="reviewForm.sellDate" type="date">
+            </label>
+            <label v-if="reviewForm.positionStatus === 'sold'">
+              <span>卖出价格</span>
+              <input v-model="reviewForm.sellPrice" type="number" min="0" step="0.01" placeholder="例如 11.80">
+            </label>
+            <label class="review-note">
+              <span>盈亏状态</span>
+              <input v-model.trim="reviewForm.lossStatus" placeholder="例如 浮亏12%，曾补仓一次">
+            </label>
+            <label class="review-note">
+              <span>操作说明</span>
+              <input v-model.trim="reviewForm.holdingNote" placeholder="例如 买入理由、是否加仓、卖出原因">
+            </label>
+            <button class="primary inline-action" @click="runTradeReview" :disabled="tradeReviewLoading">
+              {{ tradeReviewLoading ? 'AI复盘中' : '生成复盘' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>阶段表现</h3>
+            <span>{{ reviewMetric('trade_days') || '--' }} 个交易日</span>
+          </div>
+          <div class="summary-list">
+            <div><span>阶段收益</span><strong :class="signedClass(reviewMetric('return_pct'))">{{ reviewMetric('return_pct') === null ? '--' : formatNumber(reviewMetric('return_pct')) + '%' }}</strong></div>
+            <div><span>最大浮盈</span><strong :class="signedClass(reviewMetric('max_gain_pct'))">{{ reviewMetric('max_gain_pct') === null ? '--' : formatNumber(reviewMetric('max_gain_pct')) + '%' }}</strong></div>
+            <div><span>最大回撤</span><strong :class="signedClass(reviewMetric('max_drawdown_pct'))">{{ reviewMetric('max_drawdown_pct') === null ? '--' : formatNumber(reviewMetric('max_drawdown_pct')) + '%' }}</strong></div>
+            <div><span>当前/卖出价</span><strong>{{ reviewMetric('exit_or_current_price') === null ? '--' : formatNumber(reviewMetric('exit_or_current_price')) }}</strong></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>交易期日K</h3>
+            <span>{{ tradeReview && tradeReview.trade_kline ? tradeReview.trade_kline.length : 0 }} 根</span>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead><tr><th>日期</th><th>收盘</th><th>涨跌幅</th><th>MA20</th><th>MACD柱</th></tr></thead>
+              <tbody>
+                <tr v-for="item in (tradeReview && tradeReview.trade_kline ? tradeReview.trade_kline.slice(-15).reverse() : [])" :key="item.trade_date">
+                  <td>{{ item.trade_date }}</td><td>{{ formatNumber(item.close) }}</td><td :class="signedClass(item.pct_chg)">{{ formatNumber(item.pct_chg) }}%</td><td>{{ formatNumber(item.ma20) }}</td><td :class="signedClass(item.histogram)">{{ formatNumber(item.histogram) }}</td>
+                </tr>
+                <tr v-if="!tradeReview"><td colspan="5" class="empty">暂无复盘数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel wide">
+          <div class="panel-head"><h3>AI 复盘结论</h3><span>仅供研究参考</span></div>
+          <pre class="analysis">{{ tradeReview ? tradeReview.ai_summary : '提交交易信息后，将结合买入日前后技术状态与交易期日K进行复盘。' }}</pre>
+        </div>
+      </section>
     </main>
   </div>
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <script src="./main.js?v=20260615"></script>
+  <script src="./cache-utils.js?v=20260712-cache-date-v2"></script>
+  <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
+  <script src="./main.js?v=20260712-cache-date-v2"></script>
 </body>
 </html>
