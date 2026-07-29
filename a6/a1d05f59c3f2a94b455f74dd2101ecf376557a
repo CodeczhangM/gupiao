@@ -1,0 +1,92 @@
+app.py
+  25d656b10b0fbb91 161
+quantClient/index.html
+  25d656b10b0fbb91 281-285,349-353
+tests/test_overnight_monitor_service.py
+  25d656b10b0fbb91 8-14,46-48,116-163
+quantClient/main.js
+  25d656b10b0fbb91 815
+overnight_monitor_service.py
+  25d656b10b0fbb91 11,76-100,104,110-143,145,326,329,333,336-337,372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "a6a1d05f59c3f2a94b455f74dd2101ecf376557a",
+  "prompts": {
+    "25d656b10b0fbb91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa793-199e-7c50-9966-4b31b964e17a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 139,
+      "total_deletions": 19,
+      "accepted_lines": 139,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 139,
+    "git_diff_deleted_lines": 19,
+    "ai_additions": 138,
+    "ai_accepted": 138,
+    "BYMC": 0,
+    "mixed_additions": 0,
+    "BYAC": 138,
+    "BYRC": 0,
+    "per_file": {
+      "app.py": {
+        "BYMC": [],
+        "BYAC": [
+          "161"
+        ],
+        "BYRC": []
+      },
+      "overnight_monitor_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "11",
+          "76-100",
+          "104",
+          "110-143",
+          "145",
+          "326",
+          "329",
+          "333",
+          "336-337",
+          "372"
+        ],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [],
+        "BYAC": [
+          "281-285",
+          "349-353"
+        ],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [],
+        "BYAC": [
+          "815"
+        ],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "8-14",
+          "46-48",
+          "116-163"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785292797,
+  "requirement_id": ""
+}
