@@ -1,0 +1,70 @@
+docs/superpowers/specs/2026-07-29-next-morning-follow-design.md
+  48cda5810ac8e6a3 70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "c3d3a5078ed1ce915483ea3f5dbe04f67283e9f6",
+  "prompts": {
+    "25d656b10b0fbb91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa793-199e-7c50-9966-4b31b964e17a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 385,
+      "overriden_lines": 0
+    },
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 236,
+      "overriden_lines": 0
+    },
+    "48cda5810ac8e6a3": {
+      "agent_id": {
+        "tool": "iHome",
+        "id": "2987e4b3-9f3c-4df6-8d26-129926bc2aa1",
+        "model": "qwen"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 192,
+      "total_deletions": 3,
+      "accepted_lines": 192,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 1,
+    "git_diff_deleted_lines": 1,
+    "ai_additions": 1,
+    "ai_accepted": 1,
+    "BYMC": 0,
+    "mixed_additions": 0,
+    "BYAC": 1,
+    "BYRC": 0,
+    "per_file": {
+      "docs/superpowers/specs/2026-07-29-next-morning-follow-design.md": {
+        "BYMC": [],
+        "BYAC": [
+          "70"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785317301,
+  "requirement_id": ""
+}
