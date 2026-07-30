@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 
 from ai_evaluation_service import evaluate_ai_recommendations
 from backtest_service import run_backtest
@@ -14,6 +14,17 @@ from intraday_monitor_service import build_intraday_monitor
 from market_cache import get_cache_status
 from morning_follow_service import build_morning_follow_monitor
 from overnight_monitor_service import build_overnight_monitor
+from free_review_models import FreeReviewQuery
+from free_review_repository import (
+    load_build_status as load_free_review_build_status,
+)
+from free_review_service import (
+    export_free_review_csv,
+    free_review_meta,
+    free_review_sectors,
+    query_free_review,
+    start_free_review_build,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -189,6 +200,94 @@ def realtime_info(
         )
     except Exception as exc:
         logger.exception("获取实时信息失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/free-review/build")
+def free_review_build(force: bool = Query(False)):
+    try:
+        return start_free_review_build(force=force)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("启动自由复盘选股构建失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/free-review/build-status")
+def free_review_build_status(
+    trade_date: str | None = Query(None, pattern=r"^\d{8}$"),
+):
+    try:
+        result = load_free_review_build_status(trade_date)
+        if not result:
+            raise LookupError("自由复盘选股尚无构建记录")
+        return result
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("读取自由复盘选股构建状态失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/free-review/meta")
+def free_review_metadata(
+    trade_date: str | None = Query(None, pattern=r"^\d{8}$"),
+):
+    try:
+        return free_review_meta(trade_date)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("读取自由复盘选股元数据失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/free-review/query")
+def free_review_query(request: FreeReviewQuery):
+    try:
+        return query_free_review(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("查询自由复盘选股失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/free-review/sectors")
+def free_review_sector_summary(
+    trade_date: str | None = Query(None, pattern=r"^\d{8}$"),
+):
+    try:
+        return free_review_sectors(trade_date)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("读取自由复盘板块汇总失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/free-review/export")
+def free_review_export(request: FreeReviewQuery):
+    try:
+        filename, content = export_free_review_csv(request)
+        return Response(
+            content=content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("导出自由复盘选股失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
