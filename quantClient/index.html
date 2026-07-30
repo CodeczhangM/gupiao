@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260730-morning-follow-layout-v1">
+  <link rel="stylesheet" href="./styles.css?v=20260730-snapshot-fallback-v1">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -317,6 +317,13 @@
               {{ overnightMonitor.market_phase || '未加载' }}
               · 候选日 {{ overnightMonitor.candidate_trade_date || '--' }}
               · {{ overnightMonitorRows.length }} 只
+            </span>
+            <span
+              class="monitor-badge morning-follow-data-status"
+              :class="morningFollowDataState.state"
+              :title="morningFollowDataState.detail"
+            >
+              {{ morningFollowDataState.text }} · {{ morningFollowDataState.detail }}
             </span>
           </div>
           <div class="monitor-actions">
@@ -914,7 +921,7 @@
   <script src="./cache-utils.js?v=20260712-cache-date-v2"></script>
   <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
   <script src="./realtime-info-utils.js?v=20260730-realtime-cache-v1"></script>
-  <script src="./morning-follow-utils.js?v=20260730-relaxed-tier-v1"></script>
-  <script src="./main.js?v=20260730-relaxed-tier-v1"></script>
+  <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
+  <script src="./main.js?v=20260730-snapshot-fallback-v1"></script>
 </body>
 </html>

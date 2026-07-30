@@ -581,6 +581,9 @@ createApp({
     overnightMonitorRows() {
       return Array.isArray(this.overnightMonitor.stocks) ? this.overnightMonitor.stocks : [];
     },
+    morningFollowDataState() {
+      return morningFollowDataStatus(this.overnightMonitor);
+    },
     realtimeIntradayRows() {
       return this.realtimeInfo && this.realtimeInfo.intraday && Array.isArray(this.realtimeInfo.intraday.stocks)
         ? this.realtimeInfo.intraday.stocks

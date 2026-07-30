@@ -1096,6 +1096,10 @@ tr:hover td {
   color: var(--muted);
 }
 
+.morning-follow-data-status {
+  margin-top: 6px;
+}
+
 .intraday-monitor-table tr.monitor-strong td {
   background: #fbfffd;
 }
