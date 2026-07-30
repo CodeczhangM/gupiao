@@ -41,6 +41,8 @@ assert.match(html, /freeReviewFilters\.ranges\[metric\.key\]\.min/);
 assert.match(html, /freeReviewVisibleMetrics/);
 assert.match(css, /\.free-review-range-grid/);
 assert.match(css, /\.free-review-table th:first-child/);
+assert.match(css, /\.free-review-table th:nth-child\(4\)/);
+assert.doesNotMatch(html, /class="stage-guide"/);
 assert.match(main, /activeTab:\s*'free_review'/);
 assert.match(main, /page_size/);
 assert.match(main, /response\.blob\(\)/);

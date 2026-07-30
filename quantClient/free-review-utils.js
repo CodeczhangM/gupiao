@@ -32,7 +32,7 @@
       key: 'market',
       label: '行情与估值',
       metrics: [
-        metric('close', '收盘价', 'number', { filterable: false, defaultVisible: true }),
+        metric('close', '收盘价', 'number', { filterable: false, sortable: false, defaultVisible: true }),
         metric('pct_chg', '涨跌幅', 'percent', { defaultVisible: true }),
         metric('amount', '成交额', 'money', { defaultVisible: true }),
         metric('turnover_rate', '换手率', 'percent', { defaultVisible: true }),
@@ -67,12 +67,12 @@
       key: 'momentum',
       label: '动量与波动',
       metrics: [
-        metric('macd_hist', 'MACD柱', 'number', { filterable: false }),
+        metric('macd_hist', 'MACD柱', 'number', { filterable: false, sortable: false }),
         metric('rsi6', 'RSI6', 'number'),
         metric('rsi12', 'RSI12', 'number', { defaultVisible: true }),
         metric('rsi24', 'RSI24', 'number'),
         metric('atr_pct', 'ATR波动率', 'percent'),
-        metric('boll_position', '布林位置', 'ratio', { filterable: false }),
+        metric('boll_position', '布林位置', 'ratio', { filterable: false, sortable: false }),
       ],
     },
     {

@@ -225,8 +225,8 @@
                 <th
                   v-for="metric in freeReviewVisibleMetrics"
                   :key="'head-' + metric.key"
-                  class="sortable"
-                  @click="sortFreeReview(metric.key)"
+                  :class="{ sortable: metric.sortable }"
+                  @click="metric.sortable && sortFreeReview(metric.key)"
                 >
                   {{ metric.label }}
                   <b v-if="freeReviewSort.by === metric.key">{{ freeReviewSort.direction === 'desc' ? '↓' : '↑' }}</b>
@@ -298,17 +298,6 @@
         <article>
           <span>报告编号</span>
           <strong>{{ latest.id || '--' }}</strong>
-        </article>
-      </section>
-
-      <section v-if="activeTab === 'overview'" class="stage-guide">
-        <article v-for="item in stageDefinitions" :key="item.code">
-          <strong>{{ item.code }}</strong>
-          <div>
-            <b>{{ item.title }}</b>
-            <span>{{ item.action }}</span>
-            <p>{{ item.detail }}</p>
-          </div>
         </article>
       </section>
 

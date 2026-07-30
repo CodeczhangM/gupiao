@@ -1465,6 +1465,41 @@ tr:hover td {
   background: #f8faf9;
 }
 
+.free-review-table th:nth-child(2),
+.free-review-table td:nth-child(2) {
+  position: sticky;
+  left: 128px;
+  z-index: 2;
+  min-width: 112px;
+  background: #fff;
+}
+
+.free-review-table th:nth-child(3),
+.free-review-table td:nth-child(3) {
+  position: sticky;
+  left: 240px;
+  z-index: 2;
+  min-width: 126px;
+  background: #fff;
+}
+
+.free-review-table th:nth-child(4),
+.free-review-table td:nth-child(4) {
+  position: sticky;
+  left: 366px;
+  z-index: 2;
+  min-width: 132px;
+  border-right: 1px solid var(--line);
+  background: #fff;
+}
+
+.free-review-table th:nth-child(2),
+.free-review-table th:nth-child(3),
+.free-review-table th:nth-child(4) {
+  z-index: 4;
+  background: #f8faf9;
+}
+
 .free-review-table .sortable {
   color: var(--blue);
   cursor: pointer;

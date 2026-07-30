@@ -9,10 +9,13 @@ import pandas as pd
 
 SCORE_VERSION = "free-review-v1"
 FINANCIAL_COLUMNS = [
+    "eps", "dt_eps", "cfps",
     "roe", "roe_dt", "roa", "roic", "grossprofit_margin",
     "netprofit_margin", "current_ratio", "debt_to_assets",
-    "ocf_to_or", "cfps", "tr_yoy", "netprofit_yoy",
-    "dt_netprofit_yoy", "ocf_yoy", "basic_eps_yoy",
+    "ocf_to_or", "q_ocf_to_sales",
+    "tr_yoy", "or_yoy", "netprofit_yoy", "dt_netprofit_yoy",
+    "q_sales_yoy", "q_netprofit_yoy", "ocf_yoy",
+    "basic_eps_yoy", "rd_exp",
 ]
 
 

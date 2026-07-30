@@ -577,14 +577,6 @@ createApp({
       error: '',
       healthOk: false,
       healthText: '未连接',
-      stageDefinitions: [
-        { code: 'S1', title: '底部吸筹', action: '观察，不动手', detail: '长期下跌后横盘，均线粘合，成交量缩到低位。' },
-        { code: 'S2', title: '启动突破', action: '试仓 20%-30%', detail: '放量突破平台，MA5 上穿 MA10，K线站上 MA20/MA30。' },
-        { code: 'S3', title: '回踩确认', action: '主建仓区', detail: '突破后回踩不破关键位，成交量缩或良性换手。' },
-        { code: 'S4', title: '二次启动', action: '加仓', detail: '回踩结束后再次向上，放量突破回踩高点。' },
-        { code: 'S5', title: '主升浪', action: '持股，不追高', detail: 'MA5 斜率陡，每次回踩有承接，不破 MA10。' },
-        { code: 'S6', title: '出货风险', action: '减仓/清仓', detail: '放天量不涨、长上影、跌破 MA5 或前低。' },
-      ],
     };
   },
   computed: {
