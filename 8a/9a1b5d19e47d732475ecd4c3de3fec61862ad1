@@ -1,0 +1,109 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "8a9a1b5d19e47d732475ecd4c3de3fec61862ad1",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4654,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 465,
+    "git_diff_deleted_lines": 1,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 459,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "free_review_models.py": {
+        "BYMC": [
+          "46",
+          "52-53",
+          "59"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_repository.py": {
+        "BYMC": [
+          "22-23",
+          "329-334"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_scoring.py": {
+        "BYMC": [
+          "357-372"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java": {
+        "BYMC": [
+          "4",
+          "15-16",
+          "135-186"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/dto/FreeReviewQueryRequest.java": {
+        "BYMC": [
+          "1-167"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/dto/FreeReviewRange.java": {
+        "BYMC": [
+          "1-26"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java": {
+        "BYMC": [
+          "4",
+          "7",
+          "165-238"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java": {
+        "BYMC": [
+          "4",
+          "9-11",
+          "25-26",
+          "134-230"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_repository.py": {
+        "BYMC": [
+          "137-138",
+          "155-156"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785416317,
+  "requirement_id": ""
+}
