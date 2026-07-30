@@ -1,0 +1,84 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "19d838aa662d26d0884e795a3f59ef04fc51f3f9",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4338,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 333,
+    "git_diff_deleted_lines": 67,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 323,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "DEPLOY_SERVER.md": {
+        "BYMC": [
+          "21-22",
+          "24-26",
+          "119-129",
+          "610-631",
+          "634-636",
+          "638-639",
+          "641",
+          "643",
+          "646-662",
+          "665-668",
+          "670",
+          "672",
+          "675-676",
+          "679",
+          "681-683",
+          "686",
+          "689-691",
+          "693-698",
+          "701",
+          "704-722",
+          "725",
+          "727",
+          "730-747",
+          "749-763",
+          "766-779",
+          "782-797",
+          "800-803",
+          "805",
+          "807",
+          "812",
+          "814",
+          "816",
+          "819-840",
+          "843",
+          "845",
+          "848-849",
+          "852",
+          "854-957",
+          "960-961",
+          "979",
+          "981",
+          "983-986",
+          "995-1000"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785411426,
+  "requirement_id": ""
+}
