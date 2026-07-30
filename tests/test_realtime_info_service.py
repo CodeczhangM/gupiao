@@ -311,6 +311,20 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(sync_market.call_count, 1)
         self.assertEqual(intraday_builder.call_count, 1)
         self.assertEqual(overnight_builder.call_count, 1)
+        self.assertEqual(
+            set(first["performance"]),
+            {
+                "market_sync_ms",
+                "intraday_60m_ms",
+                "tail_1m_ms",
+                "overnight_ms",
+                "minute_request_count",
+                "minute_cache_hit_count",
+                "provider_failure_count",
+                "used_stale_fallback",
+            },
+        )
+        self.assertFalse(first["performance"]["used_stale_fallback"])
 
     def test_empty_live_refresh_returns_last_success_as_stale(self):
         live_section = {
@@ -417,7 +431,9 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         eastmoney.return_value = (
             pd.DataFrame([{
                 "ts_code": "600298.SH", "trade_date": "20260730",
-                "close": 39.12, "high": 39.80,
+                "close": 39.12, "high": 39.80, "industry": "食品",
+                "pct_chg": 4.2, "turnover_rate": 5.1,
+                "volume_ratio": 2.4, "amount": 620_000_000,
             }]),
             None,
         )
@@ -432,6 +448,44 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertTrue(result[4])
         self.assertEqual(result[0].iloc[0]["close"], 39.12)
         self.assertEqual(result[5], [])
+
+    @patch("realtime_info_service.load_eastmoney_market_snapshot")
+    @patch("realtime_info_service.load_recent_daily")
+    @patch("realtime_info_service.load_market_snapshot")
+    def test_market_inputs_reject_external_snapshot_without_filter_fields(
+        self, load_snapshot, load_history, eastmoney
+    ):
+        previous = pd.DataFrame([{
+            "ts_code": "600298.SH",
+            "trade_date": "20260729",
+            "close": 38.62,
+            "industry": "食品",
+            "pct_chg": 4.2,
+            "turnover_rate": 5.1,
+            "volume_ratio": 2.4,
+            "amount": 620_000_000,
+        }])
+        load_snapshot.side_effect = [pd.DataFrame(), previous]
+        eastmoney.return_value = (
+            pd.DataFrame([{
+                "ts_code": "600298.SH",
+                "trade_date": "20260730",
+                "close": 39.12,
+                "turnover_rate": None,
+                "volume_ratio": None,
+            }]),
+            None,
+        )
+        load_history.return_value = pd.DataFrame()
+
+        result = _load_realtime_market_inputs(
+            "20260730", {"data_trade_date": "20260729"}
+        )
+
+        self.assertEqual(result[2], "20260729")
+        self.assertEqual(result[3], "previous_snapshot")
+        self.assertFalse(result[4])
+        self.assertIn("筛选字段不可用", "；".join(result[5]))
 
     @patch("realtime_info_service.load_eastmoney_market_snapshot")
     @patch("realtime_info_service.get_trade_dates", return_value=["20260730", "20260729"])

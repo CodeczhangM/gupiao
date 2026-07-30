@@ -167,9 +167,9 @@ def _parse_sina_klines(text, ts_code, trade_date, end_datetime):
 
 def _run_curl(url: str) -> str:
     completed = subprocess.run(
-        ["curl", "-fsSL", "--max-time", "6", "--retry", "2",
+        ["curl", "-fsSL", "--max-time", "3", "--retry", "1",
          "--retry-all-errors", "--retry-delay", "1", url],
-        capture_output=True, text=True, check=True, timeout=15,
+        capture_output=True, text=True, check=True, timeout=8,
     )
     return completed.stdout
 
@@ -243,9 +243,12 @@ def _minutes_are_usable(bars: pd.DataFrame, freq: str, trade_date: str) -> bool:
         return False
     parsed = pd.to_datetime(bars["trade_time"], errors="coerce")
     close = pd.to_numeric(bars["close"], errors="coerce") if "close" in bars else pd.Series(dtype=float)
+    has_trade_date = parsed.dt.strftime("%Y%m%d").eq(
+        str(trade_date)
+    ).any()
     if freq == "1min":
-        return bool(parsed.dt.strftime("%Y%m%d").eq(str(trade_date)).any())
-    return bool(close.notna().sum() >= 35)
+        return bool(has_trade_date)
+    return bool(close.notna().sum() >= 35 and has_trade_date)
 
 
 def load_minutes_with_fallback(

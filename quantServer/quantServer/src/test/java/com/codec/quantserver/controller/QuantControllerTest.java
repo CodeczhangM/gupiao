@@ -98,4 +98,30 @@ class QuantControllerTest {
 
         verify(quantPythonClient).overnightMonitor(15);
     }
+
+    @Test
+    void morningFollowMonitorForwardsLimitToPythonClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.morningFollowMonitor(10)).thenReturn(Map.of("market_phase", "早盘确认"));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/morning-follow-monitor").param("limit", "10"))
+                .andExpect(status().isOk());
+
+        verify(client).morningFollowMonitor(10);
+    }
+
+    @Test
+    void realtimeInfoForwardsLimitAndForceRefreshToPythonClient() throws Exception {
+        QuantPythonClient quantPythonClient = mock(QuantPythonClient.class);
+        when(quantPythonClient.realtimeInfo(10, true)).thenReturn(Map.of("trade_date", "20260729"));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new QuantController(quantPythonClient)).build();
+
+        mockMvc.perform(get("/api/quant/realtime-info")
+                        .param("limit", "10")
+                        .param("force_refresh", "true"))
+                .andExpect(status().isOk());
+
+        verify(quantPythonClient).realtimeInfo(10, true);
+    }
 }

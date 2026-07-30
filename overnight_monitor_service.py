@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import math
 import time
@@ -160,14 +161,9 @@ def _history_window(trade_date: str, lookback_days=70) -> tuple[str, str]:
     return start_day.strftime("%Y-%m-%d 09:30:00"), end_day.strftime("%Y-%m-%d 15:00:00")
 
 
-def _leader_codes_from_sector_potential(market: pd.DataFrame, history: pd.DataFrame) -> dict[str, dict[str, Any]]:
-    if market is None or market.empty or history is None:
-        return {}
-    try:
-        sector_potential = rank_sector_potential(market, history, limit=50, leaders_per_sector=5)
-    except Exception as exc:
-        print(f"隔夜溢价龙头池生成失败: {exc}")
-        return {}
+def _leader_codes_from_ranked_sector_potential(
+    sector_potential: pd.DataFrame,
+) -> dict[str, dict[str, Any]]:
     if sector_potential is None or sector_potential.empty or "leader_stocks" not in sector_potential.columns:
         return {}
 
@@ -182,6 +178,17 @@ def _leader_codes_from_sector_potential(market: pd.DataFrame, history: pd.DataFr
             if ts_code:
                 leaders[ts_code] = item
     return leaders
+
+
+def _leader_codes_from_sector_potential(market: pd.DataFrame, history: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    if market is None or market.empty or history is None:
+        return {}
+    try:
+        sector_potential = rank_sector_potential(market, history, limit=50, leaders_per_sector=5)
+    except Exception as exc:
+        print(f"隔夜溢价龙头池生成失败: {exc}")
+        return {}
+    return _leader_codes_from_ranked_sector_potential(sector_potential)
 
 
 def _limit_leader_codes(leader_codes: dict[str, dict[str, Any]], max_leaders: int | None = None) -> dict[str, dict[str, Any]]:
@@ -556,6 +563,7 @@ def build_overnight_monitor(
     trade_date_override: str | None = None,
     minute_loader: Callable[..., MinuteLoadResult] | None = None,
     source_metadata: dict[str, Any] | None = None,
+    leader_codes_override: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     use_override = market_override is not None and bool(trade_date_override)
     preload_cache_key = _preload_result_cache_key(limit, max_fetch, now=now)
@@ -596,7 +604,12 @@ def build_overnight_monitor(
         if cached_result is not None:
             return cached_result
 
-    leader_codes = _limit_leader_codes(_leader_codes_from_sector_potential(market, history), max_leaders=max_leaders)
+    leader_codes = _limit_leader_codes(
+        leader_codes_override
+        if leader_codes_override is not None
+        else _leader_codes_from_sector_potential(market, history),
+        max_leaders=max_leaders,
+    )
     candidates = _candidate_universe(market, max_fetch=max_fetch, leader_codes=leader_codes)
     sector_representatives = _sector_representative_universe(market, candidates, per_sector=2)
     start_60m, _default_end_60m = _history_window(trade_date)
@@ -606,37 +619,51 @@ def build_overnight_monitor(
     minute_sources = set()
     rows = []
     warnings = []
-    for stock in sector_representatives.to_dict("records"):
+
+    def load_representative(
+        stock: dict[str, Any],
+    ) -> tuple[str, MinuteLoadResult | None, str | None]:
         ts_code = str(stock.get("ts_code") or "")
         if not ts_code:
-            continue
+            return "", None, None
         try:
             if minute_loader:
                 loaded = minute_loader(
                     ts_code, start_60m, end_60m, "60min", trade_date
                 )
-                bars_by_code[ts_code] = loaded.bars
-                loaded_60m_by_code[ts_code] = loaded
-                minute_sources.add(loaded.source)
-                warnings.extend(loaded.warnings)
             else:
                 bars = _cached_minute_bars(
                     ts_code, start_60m, end_60m, freq="60min"
                 )
-                bars_by_code[ts_code] = bars
-                loaded_60m_by_code[ts_code] = MinuteLoadResult(
-                    bars, "tushare", []
-                )
+                loaded = MinuteLoadResult(bars, "tushare", [])
+            return ts_code, loaded, None
         except Exception as exc:
             warning = f"隔夜溢价候选60分钟更新失败 {stock.get('ts_code')}: {exc}"
             print(warning)
-            warnings.append(warning)
+            return ts_code, None, warning
+
+    representative_records = sector_representatives.to_dict("records")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for ts_code, loaded, warning in executor.map(
+            load_representative, representative_records
+        ):
+            if warning:
+                warnings.append(warning)
+            if not ts_code or loaded is None:
+                continue
+            bars_by_code[ts_code] = loaded.bars
+            loaded_60m_by_code[ts_code] = loaded
+            minute_sources.add(loaded.source)
+            warnings.extend(loaded.warnings)
 
     sector_macd_map = _sector_60m_signal_from_bars(sector_representatives, bars_by_code)
-    for stock in candidates.to_dict("records"):
+
+    def build_candidate(
+        stock: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, str | None]:
         ts_code = str(stock.get("ts_code") or "")
         if ts_code not in bars_by_code:
-            continue
+            return None, None
         try:
             row = _build_row(
                 stock, trade_date, sector_macd_map=sector_macd_map,
@@ -646,9 +673,17 @@ def build_overnight_monitor(
         except Exception as exc:
             warning = f"隔夜溢价候选更新失败 {stock.get('ts_code')}: {exc}"
             print(warning)
-            warnings.append(warning)
-            row = None
-        if row:
+            return None, warning
+        return row, None
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for row, warning in executor.map(
+            build_candidate, candidates.to_dict("records")
+        ):
+            if warning:
+                warnings.append(warning)
+            if not row:
+                continue
             rows.append(row)
             minute_sources.add(str(row.get("minute_data_source") or ""))
 

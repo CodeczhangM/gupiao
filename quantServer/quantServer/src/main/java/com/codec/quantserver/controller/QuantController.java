@@ -116,4 +116,16 @@ public class QuantController {
     public Map<String, Object> overnightMonitor(@RequestParam(defaultValue = "30") int limit) {
         return quantPythonClient.overnightMonitor(limit);
     }
+
+    @GetMapping("/morning-follow-monitor")
+    public Map<String, Object> morningFollowMonitor(@RequestParam(defaultValue = "10") int limit) {
+        return quantPythonClient.morningFollowMonitor(limit);
+    }
+
+    @GetMapping("/realtime-info")
+    public Map<String, Object> realtimeInfo(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh) {
+        return quantPythonClient.realtimeInfo(limit, forceRefresh);
+    }
 }

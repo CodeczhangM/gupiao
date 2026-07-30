@@ -149,14 +149,41 @@ class RealtimeMarketSourceTests(unittest.TestCase):
         self.assertTrue(result.bars.empty)
         self.assertEqual(result.source, "unavailable")
 
+    @patch("realtime_market_source._fetch_sina_minutes")
+    @patch("realtime_market_source._fetch_eastmoney_minutes")
+    def test_stale_sixty_minute_rows_use_current_day_fallback(
+        self, eastmoney, sina
+    ):
+        stale = minute_frame(day="2026-07-29", rows=35)
+        stale["trade_time"] = pd.date_range(
+            "2026-07-20 09:30:00", periods=35, freq="4h"
+        )
+        current = minute_frame(day="2026-07-30", rows=35)
+        eastmoney.return_value = (current, None)
+
+        result = load_minutes_with_fallback(
+            "600298.SH",
+            "2026-05-20 09:30:00",
+            "2026-07-30 14:30:00",
+            "60min",
+            "20260730",
+            primary_loader=lambda *args, **kwargs: stale,
+        )
+
+        self.assertEqual(result.source, "eastmoney_fallback")
+        eastmoney.assert_called_once()
+        sina.assert_not_called()
+
     @patch("realtime_market_source.subprocess.run")
     def test_run_curl_uses_bounded_retry_contract(self, run):
         run.return_value.stdout = "{}"
         self.assertEqual(_run_curl("https://example.invalid/data"), "{}")
         args = run.call_args.args[0]
         self.assertEqual(args[:3], ["curl", "-fsSL", "--max-time"])
+        self.assertEqual(args[3], "3")
         self.assertIn("--retry", args)
-        self.assertEqual(run.call_args.kwargs["timeout"], 15)
+        self.assertEqual(args[args.index("--retry") + 1], "1")
+        self.assertEqual(run.call_args.kwargs["timeout"], 8)
 
     @patch("realtime_market_source._run_curl")
     def test_eastmoney_minute_success_uses_short_cache(self, run_curl):

@@ -22,6 +22,7 @@ from overnight_monitor_service import (
     _datetime_window,
     _history_window,
     _json_safe,
+    _leader_codes_from_ranked_sector_potential,
     _mask_unavailable_tail_fields,
     _realtime_end_datetime,
 )
@@ -54,6 +55,7 @@ def _realtime_result_key(limit: int, now: datetime) -> tuple[int, str]:
 
 def _request_minute_loader(
     result_loader: Callable[..., MinuteLoadResult],
+    stats: dict[str, Any] | None = None,
 ) -> Callable[..., MinuteLoadResult]:
     cache: dict[tuple[str, str, str, str, str], MinuteLoadResult] = {}
     lock = threading.Lock()
@@ -75,12 +77,19 @@ def _request_minute_loader(
         with lock:
             cached = cache.get(key)
         if cached is not None:
+            if stats is not None:
+                with lock:
+                    stats["minute_cache_hit_count"] = int(
+                        stats.get("minute_cache_hit_count", 0)
+                    ) + 1
             return MinuteLoadResult(
                 cached.bars.copy(),
                 cached.source,
                 list(cached.warnings),
             )
+        started = time.perf_counter()
         loaded = result_loader(ts_code, start, end, freq, trade_date)
+        elapsed_ms = (time.perf_counter() - started) * 1000
         stored = MinuteLoadResult(
             loaded.bars.copy(),
             loaded.source,
@@ -88,6 +97,18 @@ def _request_minute_loader(
         )
         with lock:
             cache[key] = stored
+            if stats is not None:
+                stats["minute_request_count"] = int(
+                    stats.get("minute_request_count", 0)
+                ) + 1
+                timing_key = (
+                    "tail_1m_ms"
+                    if str(freq) == "1min"
+                    else "intraday_60m_ms"
+                )
+                stats[timing_key] = float(
+                    stats.get(timing_key, 0.0)
+                ) + elapsed_ms
         return MinuteLoadResult(
             stored.bars.copy(),
             stored.source,
@@ -247,6 +268,39 @@ def _snapshot_matches_trade_date(market: pd.DataFrame, trade_date: str) -> bool:
     return bool(market["trade_date"].astype(str).eq(str(trade_date)).any())
 
 
+def _snapshot_supports_realtime_filters(market: pd.DataFrame) -> bool:
+    required = {
+        "pct_chg",
+        "turnover_rate",
+        "volume_ratio",
+        "amount",
+    }
+    if (
+        market is None
+        or market.empty
+        or not required.issubset(market.columns)
+    ):
+        return False
+    pct_chg = pd.to_numeric(market["pct_chg"], errors="coerce")
+    turnover = pd.to_numeric(
+        market["turnover_rate"], errors="coerce"
+    )
+    volume_ratio = pd.to_numeric(
+        market["volume_ratio"], errors="coerce"
+    )
+    amount = pd.to_numeric(market["amount"], errors="coerce")
+    intraday_candidate = turnover.between(
+        2, 10, inclusive="both"
+    ) & volume_ratio.gt(2)
+    overnight_candidate = (
+        pct_chg.between(2, 8.5, inclusive="both")
+        & turnover.between(2, 15, inclusive="both")
+        & volume_ratio.gt(1.3)
+        & amount.ge(100_000)
+    )
+    return bool((intraday_candidate | overnight_candidate).any())
+
+
 def _load_realtime_market_inputs(
     latest_trade_date: str,
     sync_metadata: dict[str, Any],
@@ -259,11 +313,19 @@ def _load_realtime_market_inputs(
         )
 
     external_market, external_error = load_eastmoney_market_snapshot(latest_trade_date)
-    if _snapshot_matches_trade_date(external_market, latest_trade_date):
+    if (
+        _snapshot_matches_trade_date(external_market, latest_trade_date)
+        and _snapshot_supports_realtime_filters(external_market)
+    ):
         return (
             external_market, load_recent_daily(latest_trade_date, 100),
             latest_trade_date, "eastmoney_snapshot_fallback", True, [],
         )
+    if (
+        _snapshot_matches_trade_date(external_market, latest_trade_date)
+        and not external_error
+    ):
+        external_error = "东方财富快照筛选字段不可用"
 
     fallback_trade_date = str(sync_metadata.get("data_trade_date") or "")
     if not fallback_trade_date or fallback_trade_date == latest_trade_date:
@@ -367,8 +429,12 @@ def _minute_result_with_1459_fallback(
     freq: str,
     trade_date: str,
 ) -> MinuteLoadResult:
+    stale_primary: list[pd.DataFrame] = []
+
     def primary_loader(code, start, end, freq="60min"):
         bars = _cached_minute_bars(code, start, end, freq=freq)
+        if isinstance(bars, pd.DataFrame) and not bars.empty:
+            stale_primary[:] = [bars]
         if _has_trade_date_minutes({freq: bars}, trade_date):
             return bars
         fallback_end = _fallback_1459_end_datetime(trade_date, end)
@@ -377,7 +443,7 @@ def _minute_result_with_1459_fallback(
         fallback = _cached_minute_bars(code, start, fallback_end, freq=freq)
         return fallback if _has_trade_date_minutes({freq: fallback}, trade_date) else bars
 
-    return load_minutes_with_fallback(
+    loaded = load_minutes_with_fallback(
         ts_code,
         start_datetime,
         end_datetime,
@@ -385,6 +451,17 @@ def _minute_result_with_1459_fallback(
         trade_date,
         primary_loader=primary_loader,
     )
+    if (
+        loaded.bars.empty
+        and stale_primary
+        and not stale_primary[0].empty
+    ):
+        return MinuteLoadResult(
+            stale_primary[0].copy(),
+            "tushare_stale",
+            list(loaded.warnings),
+        )
+    return loaded
 
 
 def _minute_missing_reason(trade_date: str, end_datetime: str) -> str:
@@ -528,6 +605,7 @@ def _build_realtime_intraday_section(
     data_source: str = "current_snapshot",
     snapshot_data_current: bool = True,
     minute_loader: Callable[..., MinuteLoadResult] | None = None,
+    shared_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cache_key = (
         str(trade_date),
@@ -539,6 +617,10 @@ def _build_realtime_intraday_section(
     if cached and time.monotonic() - cached[0] <= _REALTIME_INTRADAY_CACHE_TTL_SECONDS:
         result = _json_safe(cached[1])
         result["result_cache_hit"] = True
+        if shared_context is not None:
+            shared_context["leader_codes"] = dict(
+                result.get("_leader_codes") or {}
+            )
         return result
 
     phase, should_refresh = _market_phase(now)
@@ -549,6 +631,11 @@ def _build_realtime_intraday_section(
         now,
     )
     sector_potential = rank_sector_potential(realtime_market, history, limit=_REALTIME_SECTOR_LIMIT)
+    leader_codes = _leader_codes_from_ranked_sector_potential(
+        sector_potential
+    )
+    if shared_context is not None:
+        shared_context["leader_codes"] = leader_codes
     intraday_bars = _load_realtime_intraday_signal_bars(
         realtime_market,
         sector_potential,
@@ -696,6 +783,7 @@ def _build_realtime_intraday_section(
         "refresh_interval_seconds": 30,
         "sector_count": int(0 if sector_potential is None else len(sector_potential)),
         "result_cache_hit": False,
+        "_leader_codes": leader_codes,
         "stocks": rows,
         "minute_data_sources": sorted({
             str(row.get("minute_data_source"))
@@ -716,6 +804,17 @@ def _build_realtime_info_uncached(
     limit: int = 10,
 ) -> dict[str, Any]:
     current = now or datetime.now()
+    performance = {
+        "market_sync_ms": 0.0,
+        "intraday_60m_ms": 0.0,
+        "tail_1m_ms": 0.0,
+        "overnight_ms": 0.0,
+        "minute_request_count": 0,
+        "minute_cache_hit_count": 0,
+        "provider_failure_count": 0,
+        "used_stale_fallback": False,
+    }
+    market_started = time.perf_counter()
     entry_warnings = []
     try:
         latest_trade_date = str(get_trade_dates(n=1)[0])
@@ -735,6 +834,9 @@ def _build_realtime_info_uncached(
         snapshot_data_current,
         source_warnings,
     ) = _load_realtime_market_inputs(latest_trade_date, sync_metadata or {})
+    performance["market_sync_ms"] = (
+        time.perf_counter() - market_started
+    ) * 1000
     fallback_warnings = entry_warnings + source_warnings
     intraday_trade_date, intraday_data_source = _select_intraday_trade_date(
         latest_trade_date,
@@ -745,8 +847,10 @@ def _build_realtime_info_uncached(
     price_map = _market_price_map(market) if base_trade_date == intraday_trade_date else {}
 
     realtime_minute_loader = _request_minute_loader(
-        _minute_result_with_1459_fallback
+        _minute_result_with_1459_fallback,
+        stats=performance,
     )
+    shared_context: dict[str, Any] = {}
     intraday = _build_realtime_intraday_section(
         market,
         history,
@@ -757,8 +861,11 @@ def _build_realtime_info_uncached(
         data_source=intraday_data_source,
         snapshot_data_current=snapshot_data_current,
         minute_loader=realtime_minute_loader,
+        shared_context=shared_context,
     )
+    intraday.pop("_leader_codes", None)
 
+    overnight_started = time.perf_counter()
     try:
         overnight = build_overnight_monitor(
             limit=limit,
@@ -774,6 +881,7 @@ def _build_realtime_info_uncached(
                 "data_current": snapshot_data_current,
                 "data_source": intraday_data_source,
             },
+            leader_codes_override=shared_context.get("leader_codes"),
         )
     except Exception as exc:
         overnight = {
@@ -790,12 +898,24 @@ def _build_realtime_info_uncached(
             "warnings": [f"隔夜选股快速刷新失败: {str(exc)[:160]}"],
             "stocks": [],
         }
+    performance["overnight_ms"] = (
+        time.perf_counter() - overnight_started
+    ) * 1000
 
     combined_warnings = list(dict.fromkeys(
         list(fallback_warnings)
         + list(intraday.get("fallback_warnings") or [])
         + list(overnight.get("warnings") or [])
     ))
+    performance["provider_failure_count"] = sum(
+        1
+        for warning in combined_warnings
+        if "失败" in str(warning) or "熔断" in str(warning)
+    )
+    performance = {
+        key: round(value, 3) if isinstance(value, float) else value
+        for key, value in performance.items()
+    }
     return _json_safe({
         "trade_date": latest_trade_date,
         "base_trade_date": base_trade_date,
@@ -807,6 +927,7 @@ def _build_realtime_info_uncached(
         "fallback_warnings": combined_warnings[:20],
         "updated_at": current.isoformat(sep=" ", timespec="seconds"),
         "sync_metadata": sync_metadata,
+        "performance": performance,
         "intraday": _enrich_section(intraday, price_map, current),
         "overnight": _enrich_section(overnight, price_map, current),
     })
@@ -860,6 +981,16 @@ def build_realtime_info(
             "fallback_warnings": [f"实时信息刷新失败: {build_error}"],
             "updated_at": current.isoformat(sep=" ", timespec="seconds"),
             "sync_metadata": {},
+            "performance": {
+                "market_sync_ms": 0.0,
+                "intraday_60m_ms": 0.0,
+                "tail_1m_ms": 0.0,
+                "overnight_ms": 0.0,
+                "minute_request_count": 0,
+                "minute_cache_hit_count": 0,
+                "provider_failure_count": 1,
+                "used_stale_fallback": False,
+            },
             "intraday": {"stocks": []},
             "overnight": {"stocks": []},
         }
@@ -882,6 +1013,8 @@ def build_realtime_info(
             previous = _LAST_SUCCESSFUL_REALTIME_RESULTS.get(int(limit))
         if previous is not None:
             warnings = list(previous.get("fallback_warnings") or [])
+            stale_performance = dict(previous.get("performance") or {})
+            stale_performance["used_stale_fallback"] = True
             warning = (
                 f"当前实时源未返回可用数据，展示最近成功结果"
                 + (f": {build_error}" if build_error else "")
@@ -894,6 +1027,7 @@ def build_realtime_info(
                     previous.get("data_updated_at"), current
                 ),
                 "result_cache_hit": False,
+                "performance": stale_performance,
                 "fallback_warnings": list(
                     dict.fromkeys(warnings + [warning])
                 )[:20],

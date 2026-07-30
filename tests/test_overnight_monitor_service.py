@@ -1,6 +1,8 @@
 import unittest
 from datetime import datetime
 import math
+import threading
+import time
 from unittest.mock import patch
 
 import pandas as pd
@@ -151,6 +153,103 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         ]
         self.assertTrue(sixty_minute_counts)
         self.assertTrue(all(count == 1 for count in sixty_minute_counts))
+
+    @patch(
+        "overnight_monitor_service.rank_sector_potential",
+        side_effect=AssertionError("不应重复计算板块排名"),
+    )
+    def test_realtime_override_reuses_precomputed_leader_codes(
+        self, rank_sector_potential
+    ):
+        def fake_loader(ts_code, start_datetime, end_datetime, freq, trade_date):
+            bars = (
+                build_60min_bars(
+                    ts_code, water_macd_kdj_continuation_closes()
+                )
+                if freq == "60min"
+                else build_tail_1min_bars(
+                    ts_code,
+                    [10, 10, 10, 10, 10, 10.1, 10.2],
+                    [1000, 1000, 1000, 1000, 1000, 2400, 3200],
+                )
+            )
+            return MinuteLoadResult(bars, "tushare", [])
+
+        result = build_overnight_monitor(
+            limit=10,
+            max_fetch=10,
+            now=datetime(2026, 7, 30, 14, 50),
+            market_override=market_fixture(),
+            history_override=pd.DataFrame(),
+            trade_date_override="20260730",
+            minute_loader=fake_loader,
+            leader_codes_override={
+                "600101.SH": {
+                    "ts_code": "600101.SH",
+                    "leader_score": 90,
+                }
+            },
+        )
+
+        rank_sector_potential.assert_not_called()
+        self.assertIn("stocks", result)
+
+    def test_runtime_override_minute_loads_use_at_most_four_workers(self):
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+        market = pd.DataFrame([
+            {
+                "ts_code": f"6003{index:02d}.SH",
+                "name": f"并发候选{index}",
+                "industry": "机器人",
+                "close": 10 + index / 10,
+                "pct_chg": 4,
+                "turnover_rate": 5,
+                "volume_ratio": 2,
+                "amount": 900_000 - index,
+                "vol": 1000,
+                "total_mv": 1_000_000,
+            }
+            for index in range(8)
+        ])
+
+        def fake_loader(ts_code, start_datetime, end_datetime, freq, trade_date):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                time.sleep(0.02)
+                bars = (
+                    build_60min_bars(
+                        ts_code, water_macd_kdj_continuation_closes()
+                    )
+                    if freq == "60min"
+                    else build_tail_1min_bars(
+                        ts_code,
+                        [10, 10, 10, 10, 10, 10.1, 10.2],
+                        [1000, 1000, 1000, 1000, 1000, 2400, 3200],
+                    )
+                )
+                return MinuteLoadResult(bars, "tushare", [])
+            finally:
+                with lock:
+                    active -= 1
+
+        build_overnight_monitor(
+            limit=10,
+            max_fetch=8,
+            now=datetime(2026, 7, 30, 14, 50),
+            market_override=market,
+            history_override=pd.DataFrame(),
+            trade_date_override="20260730",
+            minute_loader=fake_loader,
+            leader_codes_override={},
+        )
+
+        self.assertGreater(max_active, 1)
+        self.assertLessEqual(max_active, 4)
 
     def test_sector_representatives_use_full_market_for_candidate_industries(self):
         market = pd.DataFrame([

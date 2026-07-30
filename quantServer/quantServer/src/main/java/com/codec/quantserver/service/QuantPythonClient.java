@@ -131,6 +131,29 @@ public class QuantPythonClient {
                 .body(mapType());
     }
 
+    public Map<String, Object> morningFollowMonitor(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/morning-follow-monitor")
+                        .queryParam("limit", safeLimit)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> realtimeInfo(int limit, boolean forceRefresh) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/realtime-info")
+                        .queryParam("limit", safeLimit)
+                        .queryParam("force_refresh", forceRefresh)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
     private Map<String, Object> getMap(String uri) {
         return restClient.get()
                 .uri(uri)
