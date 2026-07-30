@@ -1,0 +1,76 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "5d2e7d9981103eee4d965588c958d99e3f51d14e",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4707,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 541,
+    "git_diff_deleted_lines": 0,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 540,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "free_review_models.py": {
+        "BYMC": [
+          "1-90"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_repository.py": {
+        "BYMC": [
+          "12-16",
+          "279-502"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_service.py": {
+        "BYMC": [
+          "3-4",
+          "17-19",
+          "21",
+          "25",
+          "185-252"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_repository.py": {
+        "BYMC": [
+          "127-238"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_service.py": {
+        "BYMC": [
+          "1-2",
+          "93-124"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785415964,
+  "requirement_id": ""
+}
