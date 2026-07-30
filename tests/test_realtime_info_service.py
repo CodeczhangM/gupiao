@@ -23,6 +23,9 @@ from tests.test_advantage_stock_scoring import build_60min_bars, build_tail_1min
 class RealtimeInfoServiceTests(unittest.TestCase):
     def setUp(self):
         _REALTIME_INTRADAY_RESULT_CACHE.clear()
+        import realtime_info_service
+        if hasattr(realtime_info_service, "_clear_realtime_result_caches"):
+            realtime_info_service._clear_realtime_result_caches()
         clear_realtime_source_caches()
         self.snapshot_fallback = patch(
             "realtime_info_service.load_eastmoney_market_snapshot",
@@ -260,6 +263,149 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertEqual(tail_loader.call_count, 15)
         self.assertEqual(len(result["stocks"]), 10)
+
+    def test_top_level_cache_precedes_market_sync(self):
+        live_section = {
+            "trade_date": "20260730",
+            "stocks": [{"ts_code": "600298.SH", "name": "安琪酵母"}],
+        }
+        with (
+            patch(
+                "realtime_info_service.get_trade_dates",
+                return_value=["20260730"],
+            ) as trade_dates,
+            patch(
+                "realtime_info_service.sync_cached_market_data",
+                return_value={"data_trade_date": "20260730"},
+            ) as sync_market,
+            patch(
+                "realtime_info_service._load_realtime_market_inputs",
+                return_value=(
+                    pd.DataFrame(),
+                    pd.DataFrame(),
+                    "20260730",
+                    "current_snapshot",
+                    True,
+                    [],
+                ),
+            ),
+            patch(
+                "realtime_info_service._build_realtime_intraday_section",
+                return_value=live_section,
+            ) as intraday_builder,
+            patch(
+                "realtime_info_service.build_overnight_monitor",
+                return_value={"trade_date": "20260730", "stocks": []},
+            ) as overnight_builder,
+        ):
+            first = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 30, 2), limit=10
+            )
+            second = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 30, 20), limit=10
+            )
+
+        self.assertFalse(first["result_cache_hit"])
+        self.assertTrue(second["result_cache_hit"])
+        self.assertEqual(trade_dates.call_count, 1)
+        self.assertEqual(sync_market.call_count, 1)
+        self.assertEqual(intraday_builder.call_count, 1)
+        self.assertEqual(overnight_builder.call_count, 1)
+
+    def test_empty_live_refresh_returns_last_success_as_stale(self):
+        live_section = {
+            "trade_date": "20260730",
+            "stocks": [{"ts_code": "600298.SH", "name": "安琪酵母"}],
+        }
+        common_inputs = (
+            pd.DataFrame(),
+            pd.DataFrame(),
+            "20260730",
+            "current_snapshot",
+            True,
+            [],
+        )
+        with (
+            patch("realtime_info_service.get_trade_dates", return_value=["20260730"]),
+            patch(
+                "realtime_info_service.sync_cached_market_data",
+                return_value={"data_trade_date": "20260730"},
+            ),
+            patch(
+                "realtime_info_service._load_realtime_market_inputs",
+                return_value=common_inputs,
+            ),
+            patch(
+                "realtime_info_service._build_realtime_intraday_section",
+                return_value=live_section,
+            ),
+            patch(
+                "realtime_info_service.build_overnight_monitor",
+                return_value={"trade_date": "20260730", "stocks": []},
+            ),
+        ):
+            build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 30, 0), limit=10
+            )
+
+        with (
+            patch("realtime_info_service.get_trade_dates", side_effect=RuntimeError("offline")),
+            patch("realtime_info_service.sync_cached_market_data", side_effect=RuntimeError("offline")),
+            patch(
+                "realtime_info_service._load_realtime_market_inputs",
+                return_value=common_inputs,
+            ),
+            patch(
+                "realtime_info_service._build_realtime_intraday_section",
+                return_value={"trade_date": "20260730", "stocks": []},
+            ),
+            patch(
+                "realtime_info_service.build_overnight_monitor",
+                return_value={"trade_date": "20260730", "stocks": []},
+            ),
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 31, 35), limit=10
+            )
+
+        self.assertEqual(result["data_status"], "stale")
+        self.assertEqual(result["data_status_label"], "备用缓存")
+        self.assertEqual(result["data_updated_at"], "2026-07-30 14:30:00")
+        self.assertEqual(result["stale_age_seconds"], 95)
+        self.assertEqual(result["intraday"]["stocks"][0]["ts_code"], "600298.SH")
+
+    def test_empty_live_refresh_without_history_is_unavailable(self):
+        with (
+            patch("realtime_info_service.get_trade_dates", side_effect=RuntimeError("offline")),
+            patch("realtime_info_service.sync_cached_market_data", side_effect=RuntimeError("offline")),
+            patch(
+                "realtime_info_service._load_realtime_market_inputs",
+                return_value=(
+                    pd.DataFrame(),
+                    pd.DataFrame(),
+                    "20260730",
+                    "current_snapshot",
+                    False,
+                    ["所有市场快照不可用"],
+                ),
+            ),
+            patch(
+                "realtime_info_service._build_realtime_intraday_section",
+                return_value={"trade_date": "20260730", "stocks": []},
+            ),
+            patch(
+                "realtime_info_service.build_overnight_monitor",
+                return_value={"trade_date": "20260730", "stocks": []},
+            ),
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 31, 35), limit=10
+            )
+
+        self.assertEqual(result["data_status"], "unavailable")
+        self.assertEqual(result["data_status_label"], "数据不可用")
+        self.assertEqual(result["intraday"]["stocks"], [])
+        self.assertEqual(result["overnight"]["stocks"], [])
 
     @patch("realtime_info_service.load_eastmoney_market_snapshot")
     @patch("realtime_info_service.load_recent_daily")

@@ -6,11 +6,13 @@ from ai_evaluation_service import evaluate_ai_recommendations
 from backtest_service import run_backtest
 from database import get_latest_report, get_report, init_db, list_reports, save_report
 from quant_service import run_quant_scan
+from realtime_info_service import build_realtime_info
 from stock_detail_service import get_stock_technical_detail
 from trade_review_service import review_trade
 from data_service import get_trade_dates, sync_cached_market_data
 from intraday_monitor_service import build_intraday_monitor
 from market_cache import get_cache_status
+from morning_follow_service import build_morning_follow_monitor
 from overnight_monitor_service import build_overnight_monitor
 
 
@@ -163,6 +165,30 @@ def overnight_monitor(limit: int = Query(10, ge=1, le=100)):
         return build_overnight_monitor(limit=limit)
     except Exception as exc:
         logger.exception("获取隔夜溢价监控失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/morning-follow-monitor")
+def morning_follow_monitor(limit: int = Query(10, ge=1, le=100)):
+    try:
+        return build_morning_follow_monitor(limit=limit)
+    except Exception as exc:
+        logger.exception("获取次日早盘跟进失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/realtime-info")
+def realtime_info(
+    limit: int = Query(10, ge=1, le=100),
+    force_refresh: bool = False,
+):
+    try:
+        return build_realtime_info(
+            limit=limit,
+            force_refresh=force_refresh,
+        )
+    except Exception as exc:
+        logger.exception("获取实时信息失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

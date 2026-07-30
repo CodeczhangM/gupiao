@@ -36,6 +36,20 @@ _REALTIME_OVERNIGHT_MAX_FETCH = 15
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
 _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple[str, str, int, str], tuple[float, dict[str, Any]]] = {}
+_REALTIME_RESULT_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
+_LAST_SUCCESSFUL_REALTIME_RESULTS: dict[int, dict[str, Any]] = {}
+_REALTIME_RESULT_LOCK = threading.Lock()
+
+
+def _clear_realtime_result_caches() -> None:
+    with _REALTIME_RESULT_LOCK:
+        _REALTIME_RESULT_CACHE.clear()
+        _LAST_SUCCESSFUL_REALTIME_RESULTS.clear()
+
+
+def _realtime_result_key(limit: int, now: datetime) -> tuple[int, str]:
+    bucket = "0" if now.second < 30 else "1"
+    return int(limit), f"{now.strftime('%Y%m%d%H%M')}{bucket}"
 
 
 def _request_minute_loader(
@@ -697,7 +711,10 @@ def _build_realtime_intraday_section(
     return result
 
 
-def build_realtime_info(now: datetime | None = None, limit: int = 10) -> dict[str, Any]:
+def _build_realtime_info_uncached(
+    now: datetime | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
     current = now or datetime.now()
     entry_warnings = []
     try:
@@ -793,3 +810,111 @@ def build_realtime_info(now: datetime | None = None, limit: int = 10) -> dict[st
         "intraday": _enrich_section(intraday, price_map, current),
         "overnight": _enrich_section(overnight, price_map, current),
     })
+
+
+def _stale_age_seconds(data_updated_at: str | None, now: datetime) -> int:
+    if not data_updated_at:
+        return 0
+    try:
+        updated = datetime.fromisoformat(str(data_updated_at))
+    except (TypeError, ValueError):
+        return 0
+    return max(0, int((now - updated).total_seconds()))
+
+
+def _has_realtime_stocks(result: dict[str, Any]) -> bool:
+    return bool(
+        (result.get("intraday") or {}).get("stocks")
+        or (result.get("overnight") or {}).get("stocks")
+    )
+
+
+def build_realtime_info(
+    now: datetime | None = None,
+    limit: int = 10,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    current = now or datetime.now()
+    cache_key = _realtime_result_key(limit, current)
+    if not force_refresh:
+        with _REALTIME_RESULT_LOCK:
+            cached = _REALTIME_RESULT_CACHE.get(cache_key)
+        if cached is not None:
+            result = _json_safe(cached)
+            result["result_cache_hit"] = True
+            return result
+
+    build_error = None
+    try:
+        fresh = _build_realtime_info_uncached(now=current, limit=limit)
+    except Exception as exc:
+        build_error = str(exc)
+        fresh = {
+            "trade_date": current.strftime("%Y%m%d"),
+            "base_trade_date": None,
+            "latest_trade_date": current.strftime("%Y%m%d"),
+            "intraday_trade_date": current.strftime("%Y%m%d"),
+            "data_current": False,
+            "data_source": "unavailable",
+            "snapshot_data_source": "unavailable",
+            "fallback_warnings": [f"实时信息刷新失败: {build_error}"],
+            "updated_at": current.isoformat(sep=" ", timespec="seconds"),
+            "sync_metadata": {},
+            "intraday": {"stocks": []},
+            "overnight": {"stocks": []},
+        }
+
+    if _has_realtime_stocks(fresh):
+        result = {
+            **fresh,
+            "data_status": "live",
+            "data_status_label": "实时数据",
+            "data_updated_at": current.isoformat(
+                sep=" ", timespec="seconds"
+            ),
+            "stale_age_seconds": 0,
+            "result_cache_hit": False,
+        }
+        with _REALTIME_RESULT_LOCK:
+            _LAST_SUCCESSFUL_REALTIME_RESULTS[int(limit)] = _json_safe(result)
+    else:
+        with _REALTIME_RESULT_LOCK:
+            previous = _LAST_SUCCESSFUL_REALTIME_RESULTS.get(int(limit))
+        if previous is not None:
+            warnings = list(previous.get("fallback_warnings") or [])
+            warning = (
+                f"当前实时源未返回可用数据，展示最近成功结果"
+                + (f": {build_error}" if build_error else "")
+            )
+            result = {
+                **_json_safe(previous),
+                "data_status": "stale",
+                "data_status_label": "备用缓存",
+                "stale_age_seconds": _stale_age_seconds(
+                    previous.get("data_updated_at"), current
+                ),
+                "result_cache_hit": False,
+                "fallback_warnings": list(
+                    dict.fromkeys(warnings + [warning])
+                )[:20],
+                "updated_at": current.isoformat(
+                    sep=" ", timespec="seconds"
+                ),
+            }
+        else:
+            result = {
+                **fresh,
+                "data_status": "unavailable",
+                "data_status_label": "数据不可用",
+                "data_updated_at": None,
+                "stale_age_seconds": 0,
+                "result_cache_hit": False,
+            }
+
+    safe_result = _json_safe(result)
+    with _REALTIME_RESULT_LOCK:
+        _REALTIME_RESULT_CACHE[cache_key] = safe_result
+        if len(_REALTIME_RESULT_CACHE) > 20:
+            oldest_key = next(iter(_REALTIME_RESULT_CACHE))
+            _REALTIME_RESULT_CACHE.pop(oldest_key, None)
+    return _json_safe(safe_result)
