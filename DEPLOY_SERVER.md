@@ -18,7 +18,12 @@
 ├── ai_agent.py
 ├── database.py
 ├── data_service.py
+├── intraday_monitor_service.py
+├── market_cache.py
 ├── quant_service.py
+├── realtime_cache.py
+├── realtime_info_service.py
+├── realtime_market_source.py
 ├── stock_detail_service.py
 ├── strategy.py
 ├── trade_review_service.py
@@ -110,6 +115,18 @@ FLUSH PRIVILEGES;
 ```sql
 exit;
 ```
+
+实时查询缓存不需要手工执行 SQL 文件。新版本首次部署时会通过
+`realtime_cache.init_realtime_cache()` 自动创建：
+
+```text
+realtime_minute_cache   实时 1 分钟、60 分钟行情缓存
+realtime_result_cache   实时共振、实时信息最终筛选结果
+```
+
+缓存写入后自动只保留最近 5 个交易日。应用数据库用户需要对 `quant`
+库具有 `CREATE`、`SELECT`、`INSERT`、`UPDATE`、`DELETE` 权限；上面的
+`GRANT ALL PRIVILEGES ON quant.*` 已覆盖这些权限。
 
 ## 5. 配置环境变量
 
@@ -590,114 +607,358 @@ sudo systemctl restart quant-python
 
 复盘服务会以实际交易日对齐：非交易日买入会使用买入日之后的第一个有日线数据的交易日，持仓状态会以当前可获得的最近交易日作为截止日。
 
+### 10.8 实时共振或实时信息快速查看为空
+
+首次部署后数据库结果缓存为空，需要先在页面点击一次“强制刷新”，或者
+调用带 `force_refresh=true` 的接口。只有强制刷新成功并筛选出股票后，
+结果才会写入 MySQL。
+
+检查缓存表：
+
+```bash
+mysql -uquant_user -p quant -e "
+SELECT cache_scope, cache_key, trade_date, updated_at
+FROM realtime_result_cache
+ORDER BY updated_at DESC
+LIMIT 10;"
+```
+
+如果表不存在或日志提示权限错误，重新执行第 11.5 节的缓存表初始化命令，
+并确认数据库用户拥有 `quant.*` 的建表和读写权限。
+
+数据库暂时不可用时，实时接口会回退原有行情源继续查询，因此不会直接中断，
+但查询时间会明显变长。
+
 ## 11. 更新部署
 
-本次交易复盘、个股技术详情或前端页面更新后，按以下顺序更新。命令以 `/opt/quant` 为例；实际使用 `/opt/quaut` 时替换路径。
+本节用于通过 SCP 将本地当前版本更新到服务器。命令以服务器目录
+`/opt/quant`、SSH 用户 `root` 为例；如果实际目录、用户或服务器地址不同，
+请统一替换。
 
-### 11.1 备份配置和数据库
+本次版本同时更新 Python、Spring 和 Vue 静态文件，不能只上传单个文件。
+推荐先在本地生成干净发布包，再上传到服务器 `/tmp`。
 
-`.env` 不应被代码覆盖：
+### 11.1 本地生成发布包
 
-```bash
-cp /opt/quant/.env /opt/quant/.env.backup.$(date +%Y%m%d_%H%M%S)
-mysqldump -uquant_user -p quant > /opt/quant/quant_backup_$(date +%Y%m%d_%H%M%S).sql
-```
-
-### 11.2 同步代码
-
-将本地项目文件同步到服务器，保留服务器 `.env`：
+以下命令在本地电脑执行，不是在服务器执行。先进入 `piao` 项目的父目录：
 
 ```bash
-rsync -avz --delete \
-  --exclude '.env' \
-  --exclude '__pycache__' \
-  --exclude '.git' \
-  /本地项目目录/ root@你的服务器:/opt/quant/
+cd /本地项目父目录
+
+RELEASE_NAME="quant-release-$(date +%Y%m%d-%H%M%S).tar.gz"
+
+tar \
+  --exclude='piao/.env' \
+  --exclude='piao/.env.example' \
+  --exclude='piao/.git' \
+  --exclude='piao/.runtime' \
+  --exclude='piao/.worktrees' \
+  --exclude='*/__pycache__' \
+  --exclude='*.pyc' \
+  --exclude='piao/quantServer/quantServer/target' \
+  -czf "$RELEASE_NAME" piao
+
+echo "发布包：$RELEASE_NAME"
+tar -tzf "$RELEASE_NAME" | head -n 20
 ```
 
-至少确认以下新增/更新文件已上传：
+发布包不会包含 `.env`、`.env.example`、Git 历史、Python 缓存、Java
+构建产物和运行日志。服务器会继续使用原有 `.env`，避免本地配置或令牌进入
+发布包。
+如果本地项目目录不叫 `piao`，先改名或同步调整上面所有 `piao` 路径。
 
-```text
-ai_agent.py
-app.py
-data_service.py
-stock_detail_service.py
-trade_review_service.py
-quantClient/index.html
-quantClient/main.js
-quantClient/styles.css
-quantServer/quantServer/src/
-quantServer/quantServer/pom.xml
-```
+### 11.2 通过 SCP 上传
 
-### 11.3 更新 Python 服务
+仍在本地电脑执行。将上一节输出的实际包名替换到命令中：
 
 ```bash
-cd /opt/quant
+scp quant-release-YYYYMMDD-HHMMSS.tar.gz \
+  root@你的服务器:/tmp/quant-release.tar.gz
+```
+
+示例：
+
+```bash
+scp quant-release-20260730-193000.tar.gz \
+  root@203.0.113.10:/tmp/quant-release.tar.gz
+```
+
+如果 SSH 不是 22 端口，使用大写 `-P`：
+
+```bash
+scp -P 你的SSH端口 quant-release-YYYYMMDD-HHMMSS.tar.gz \
+  root@你的服务器:/tmp/quant-release.tar.gz
+```
+
+### 11.3 服务器校验发布包
+
+登录服务器：
+
+```bash
+ssh root@你的服务器
+```
+
+以下命令开始均在服务器执行。先检查压缩包和必需文件，任何一项缺失都会停止：
+
+```bash
+set -euo pipefail
+
+RELEASE_ARCHIVE=/tmp/quant-release.tar.gz
+
+test -s "$RELEASE_ARCHIVE"
+tar -tzf "$RELEASE_ARCHIVE" >/dev/null
+
+for required_file in \
+  piao/app.py \
+  piao/realtime_cache.py \
+  piao/realtime_info_service.py \
+  piao/intraday_monitor_service.py \
+  piao/quantClient/index.html \
+  piao/quantServer/quantServer/pom.xml
+do
+  tar -tzf "$RELEASE_ARCHIVE" | grep -Fx "$required_file" >/dev/null
+done
+
+echo "发布包校验通过"
+```
+
+### 11.4 备份数据库、配置和旧版本
+
+`.env` 不得被新代码覆盖。创建本次发布标识，并备份数据库和配置：
+
+```bash
+set -euo pipefail
+
+DEPLOY_DIR=/opt/quant
+RELEASE_ARCHIVE=/tmp/quant-release.tar.gz
+RELEASE_ID="$(date +%Y%m%d-%H%M%S)"
+BACKUP_ROOT=/opt/quant-backups
+ROLLBACK_DIR="/opt/quant.rollback-$RELEASE_ID"
+ENV_BACKUP="/tmp/quant-env-$RELEASE_ID"
+DB_BACKUP="$BACKUP_ROOT/quant-$RELEASE_ID.sql"
+DEPLOY_STATE=/tmp/quant-deploy-state
+
+test -f "$DEPLOY_DIR/.env"
+test -s "$RELEASE_ARCHIVE"
+mkdir -p "$BACKUP_ROOT"
+cp "$DEPLOY_DIR/.env" "$ENV_BACKUP"
+chmod 600 "$ENV_BACKUP"
+
+mysqldump -uquant_user -p quant > "$DB_BACKUP"
+
+cat > "$DEPLOY_STATE" <<EOF
+DEPLOY_DIR='$DEPLOY_DIR'
+RELEASE_ARCHIVE='$RELEASE_ARCHIVE'
+RELEASE_ID='$RELEASE_ID'
+ROLLBACK_DIR='$ROLLBACK_DIR'
+ENV_BACKUP='$ENV_BACKUP'
+DB_BACKUP='$DB_BACKUP'
+STAGING_DIR='/tmp/quant-staging-$RELEASE_ID'
+EOF
+chmod 600 "$DEPLOY_STATE"
+
+echo "配置备份：$ENV_BACKUP"
+echo "数据库备份：$DB_BACKUP"
+echo "旧版本回滚目录：$ROLLBACK_DIR"
+echo "部署状态：$DEPLOY_STATE"
+```
+
+`mysqldump` 会提示输入 `quant_user` 的数据库密码。确认备份文件非空：
+
+```bash
+source /tmp/quant-deploy-state
+test -s "$DB_BACKUP"
+ls -lh "$DB_BACKUP" "$ENV_BACKUP"
+```
+
+后续步骤都会读取 `/tmp/quant-deploy-state`，即使 SSH 断线后重新登录，也不需要
+重新猜测本次发布的时间戳和回滚目录。
+
+### 11.5 解压、检查并构建新版本
+
+先在临时目录构建，构建成功前不停止线上服务：
+
+```bash
+set -euo pipefail
+
+source /tmp/quant-deploy-state
+test ! -e "$STAGING_DIR"
+mkdir -p "$STAGING_DIR"
+tar -xzf "$RELEASE_ARCHIVE" -C "$STAGING_DIR"
+
+test -f "$STAGING_DIR/piao/app.py"
+test -f "$STAGING_DIR/piao/realtime_cache.py"
+test -f "$STAGING_DIR/piao/quantClient/index.html"
+test -f "$STAGING_DIR/piao/quantServer/quantServer/pom.xml"
+
+cp "$ENV_BACKUP" "$STAGING_DIR/piao/.env"
+chmod 600 "$STAGING_DIR/piao/.env"
+
+cd "$STAGING_DIR/piao"
 python3 -m pip install -r requirements.txt
 python3 -m py_compile \
-  app.py ai_agent.py database.py data_service.py quant_service.py strategy.py \
-  stock_detail_service.py trade_review_service.py
+  app.py database.py data_service.py market_cache.py realtime_cache.py \
+  realtime_market_source.py realtime_info_service.py \
+  intraday_monitor_service.py overnight_monitor_service.py \
+  morning_follow_service.py
 
-sudo systemctl daemon-reload
-sudo systemctl restart quant-python
-sudo systemctl status quant-python --no-pager
-```
+python3 -c "import settings; settings.load_env_files(); from realtime_cache import init_realtime_cache; init_realtime_cache(); print('realtime cache schema ready')"
 
-如果 Python 服务启动失败：
-
-```bash
-sudo journalctl -u quant-python -n 100 --no-pager
-```
-
-### 11.4 更新 Spring 网关
-
-交易复盘新增了 `TradeReviewRequest` 和 `/api/quant/trade-review/analyze` 转发端点，因此必须重新打包 Spring：
-
-```bash
-cd /opt/quant/quantServer/quantServer
-mvn clean package -DskipTests
-
-sudo systemctl restart quant-spring
-sudo systemctl status quant-spring --no-pager
-```
-
-生产环境建议先执行完整测试再打包：
-
-```bash
+cd "$STAGING_DIR/piao/quantServer/quantServer"
 mvn test
 mvn clean package -DskipTests
 ```
 
-### 11.5 更新 Vue 静态文件与 Nginx
+缓存表初始化是幂等操作，可以安全重复执行，不会清空已有缓存。
 
-前端为静态文件，无需 npm 构建。确认 `quantClient/index.html` 中 `main.js` 和 `styles.css` 的版本参数已随本次发布更新，然后：
+### 11.6 切换版本并重启服务
 
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-浏览器使用 `Ctrl+F5` 强制刷新，或清理站点缓存后打开“交易复盘”。
-
-### 11.6 发布后验证
+只有第 11.5 节全部成功后才执行：
 
 ```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8081/api/quant/health
-curl 'http://127.0.0.1:8081/api/quant/stocks/600000.SH/technical?tradeDate=20260620'
+set -euo pipefail
+
+source /tmp/quant-deploy-state
+
+systemctl stop quant-spring quant-python
+
+test ! -e "$ROLLBACK_DIR"
+mv "$DEPLOY_DIR" "$ROLLBACK_DIR"
+mv "$STAGING_DIR/piao" "$DEPLOY_DIR"
+
+cp "$ENV_BACKUP" "$DEPLOY_DIR/.env"
+chmod 600 "$DEPLOY_DIR/.env"
+
+systemctl daemon-reload
+systemctl start quant-python
+systemctl start quant-spring
+
+nginx -t
+systemctl reload nginx
+
+systemctl status quant-python --no-pager
+systemctl status quant-spring --no-pager
 ```
 
-然后执行本文件第 9 节的交易复盘 `curl` 示例。确认返回 JSON 中至少包含：
+如果服务启动失败，先不要删除 `ROLLBACK_DIR`，直接执行第 11.9 节。
 
-```text
-trade
-metrics
-entry_snapshot
-exit_snapshot
-trade_kline
-ai_summary
+查看最近日志：
+
+```bash
+journalctl -u quant-python -n 100 --no-pager
+journalctl -u quant-spring -n 100 --no-pager
 ```
+
+### 11.7 发布后健康检查
+
+```bash
+curl --fail http://127.0.0.1:8000/health
+curl --fail http://127.0.0.1:8000/health/db
+curl --fail http://127.0.0.1:8081/api/quant/health
+curl --fail http://127.0.0.1:8081/api/quant/health/db
+curl --fail http://你的域名或服务器IP/api/quant/health
+```
+
+确认 MySQL 缓存表已经创建：
+
+```bash
+mysql -uquant_user -p quant -e "
+SHOW TABLES LIKE 'realtime_minute_cache';
+SHOW TABLES LIKE 'realtime_result_cache';
+SELECT COUNT(*) AS minute_cache_rows FROM realtime_minute_cache;
+SELECT COUNT(*) AS result_cache_rows FROM realtime_result_cache;"
+```
+
+### 11.8 首次强制刷新与快速缓存验证
+
+新部署的结果缓存可能为空。先执行一次强制刷新，超时设置为 10 分钟：
+
+```bash
+curl --fail --max-time 600 \
+  'http://127.0.0.1:8081/api/quant/intraday-monitor?force_refresh=true'
+
+curl --fail --max-time 600 \
+  'http://127.0.0.1:8081/api/quant/realtime-info?limit=10&force_refresh=true'
+```
+
+如果实时共振返回“还没有选股报告”，先运行一次扫描，再重试：
+
+```bash
+curl --fail --max-time 600 \
+  -X POST http://127.0.0.1:8081/api/quant/scan/run \
+  -H 'Content-Type: application/json' \
+  -d '{"includeAi":false,"limit":20}'
+```
+
+强制刷新成功后检查数据库：
+
+```bash
+mysql -uquant_user -p quant -e "
+SELECT cache_scope, cache_key, trade_date, data_status, updated_at
+FROM realtime_result_cache
+ORDER BY updated_at DESC;
+
+SELECT cache_trade_date, freq, COUNT(*) AS row_count
+FROM realtime_minute_cache
+GROUP BY cache_trade_date, freq
+ORDER BY cache_trade_date DESC, freq;"
+```
+
+再执行快速查看：
+
+```bash
+time curl --fail \
+  'http://127.0.0.1:8081/api/quant/intraday-monitor'
+
+time curl --fail \
+  'http://127.0.0.1:8081/api/quant/realtime-info?limit=10'
+```
+
+返回 JSON 中 `cache_source` 为 `database` 或 `memory` 表示命中快速路径；
+`cache_updated_at` 是缓存写入时间。页面上会显示“数据库快速结果”、
+“内存快速结果”或“刚刚强制刷新”。
+
+前端为静态文件，无需 npm 构建。浏览器使用 `Ctrl+F5` 强制刷新，确认页面
+同时出现“快速查看”和“强制刷新”按钮。
+
+### 11.9 发布失败回滚
+
+将下面的 `ROLLBACK_DIR` 替换为第 11.4 节输出的实际目录：
+
+```bash
+set -euo pipefail
+
+DEPLOY_DIR=/opt/quant
+ROLLBACK_DIR=/opt/quant.rollback-YYYYMMDD-HHMMSS
+FAILED_DIR="/opt/quant.failed-$(date +%Y%m%d-%H%M%S)"
+
+test -d "$ROLLBACK_DIR"
+test -f "$ROLLBACK_DIR/app.py"
+
+systemctl stop quant-spring quant-python
+
+if test -d "$DEPLOY_DIR"; then
+  mv "$DEPLOY_DIR" "$FAILED_DIR"
+fi
+mv "$ROLLBACK_DIR" "$DEPLOY_DIR"
+
+systemctl start quant-python
+systemctl start quant-spring
+
+systemctl status quant-python --no-pager
+systemctl status quant-spring --no-pager
+curl --fail http://127.0.0.1:8081/api/quant/health
+```
+
+程序回滚通常不需要恢复数据库，因为新缓存表与旧版代码互不冲突。如果必须
+恢复数据库，确认会覆盖新数据后再执行：
+
+```bash
+mysql -uquant_user -p quant < /opt/quant-backups/quant-YYYYMMDD-HHMMSS.sql
+```
+
+回滚验证完成前，不要删除 `FAILED_DIR`、数据库备份或 `/tmp` 下的 `.env`
+备份。
 
 ## 12. 建议的安全加固
 
@@ -715,16 +976,14 @@ chmod 600 /opt/quant/.env
 - 云服务器安全组只开放必要端口
 - AI 分析接口耗时较长，前端可按需启用
 
-## 查看启动问题
-sudo journalctl -u quant-python -f
-# 行情缓存配置
+## 13. 行情缓存配置
 
-Python 服务默认把扫描所需行情增量缓存到 MySQL：
+Python 服务默认把扫描所需的日线行情增量缓存到 MySQL：
 
-```bash
-export MARKET_CACHE_ENABLED=true
-export MARKET_CACHE_BOOTSTRAP_DAYS=120
-export MARKET_CACHE_REQUIRED_DAYS=100
+```text
+MARKET_CACHE_ENABLED=true
+MARKET_CACHE_BOOTSTRAP_DAYS=120
+MARKET_CACHE_REQUIRED_DAYS=100
 ```
 
 首次扫描前可手动初始化，后续只同步缺失日期；交易日 15:30 前会刷新当天数据：
@@ -732,4 +991,11 @@ export MARKET_CACHE_REQUIRED_DAYS=100
 ```bash
 curl -X POST http://127.0.0.1:8000/api/cache/sync
 curl http://127.0.0.1:8000/api/cache/status
+```
+
+持续查看服务日志：
+
+```bash
+journalctl -u quant-python -f
+journalctl -u quant-spring -f
 ```
