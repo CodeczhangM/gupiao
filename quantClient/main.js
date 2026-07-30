@@ -520,6 +520,10 @@ createApp({
       overnightMonitor: {},
       overnightAutoRefresh: false,
       overnightTimer: null,
+      realtimeInfoLoading: false,
+      realtimeInfo: {},
+      realtimeInfoAutoRefresh: false,
+      realtimeInfoTimer: null,
       sectorPotentialRefreshing: false,
       sectorPotentialTimer: null,
       reviewForm: {
@@ -555,7 +559,8 @@ createApp({
         sectors: '板块机会',
         sector_potential: '板块潜力',
         intraday_monitor: '实时共振监控',
-        overnight_monitor: '隔夜溢价',
+        overnight_monitor: '次日早盘跟进',
+        realtime_info: '实时信息',
         reports: '历史报告',
         backtest: '策略回测',
         evaluation: 'AI 推荐评估',
@@ -575,6 +580,19 @@ createApp({
     },
     overnightMonitorRows() {
       return Array.isArray(this.overnightMonitor.stocks) ? this.overnightMonitor.stocks : [];
+    },
+    realtimeIntradayRows() {
+      return this.realtimeInfo && this.realtimeInfo.intraday && Array.isArray(this.realtimeInfo.intraday.stocks)
+        ? this.realtimeInfo.intraday.stocks
+        : [];
+    },
+    realtimeOvernightRows() {
+      return this.realtimeInfo && this.realtimeInfo.overnight && Array.isArray(this.realtimeInfo.overnight.stocks)
+        ? this.realtimeInfo.overnight.stocks
+        : [];
+    },
+    realtimeInfoStatus() {
+      return realtimeDataStatus(this.realtimeInfo);
     },
     topShortSector() {
       const rows = [...this.sectorPotentialRows].sort((a, b) => Number(b.short_score || 0) - Number(a.short_score || 0));
@@ -624,12 +642,14 @@ createApp({
   beforeUnmount() {
     this.stopIntradayMonitor();
     this.stopOvernightMonitor();
+    this.stopRealtimeInfoMonitor();
     this.stopSectorPotentialPolling();
   },
   watch: {
     activeTab(tab) {
       if (tab === 'sector_potential') this.startSectorPotentialPolling();
       else this.stopSectorPotentialPolling();
+      if (tab !== 'realtime_info') this.stopRealtimeInfoMonitor();
     },
   },
   methods: {
@@ -662,6 +682,25 @@ createApp({
       else if (row.kdj_bullish_60m) labels.push('KDJ多头');
       return labels.length ? labels.join(' · ') : '--';
     },
+    isAfterClock(clock) {
+      const [hour, minute] = String(clock).split(':').map(Number);
+      const now = new Date();
+      return now.getHours() * 60 + now.getMinutes() >= hour * 60 + minute;
+    },
+    tailReturnText(row) {
+      if (row.tail_after_1430_available === true) return `${formatNumber(row.tail_return_after_1430)}%`;
+      return this.isAfterClock('14:30') ? '无数据' : '未到';
+    },
+    tailVolumeText(row) {
+      return tailVolumeDisplay(row, this.isAfterClock('14:30')).text;
+    },
+    tailVolumeBadgeClass(row) {
+      return tailVolumeDisplay(row, this.isAfterClock('14:30')).state;
+    },
+    auctionReturnText(row) {
+      if (row.tail_auction_available === true) return `${formatNumber(row.tail_auction_return)}%`;
+      return this.isAfterClock('09:30') ? '无数据' : '未到';
+    },
     monitorBadgeClass(value) {
       if (value === '主力抢筹' || value === '高开偏强') return 'strong';
       if (value === '低开风险' || value === '放量分歧') return 'risk';
@@ -677,8 +716,20 @@ createApp({
     overnightBadgeClass(value) {
       if (value === '尾盘可买' || value === '隔夜高开优先') return 'strong';
       if (value === '不买' || value === '低开风险') return 'risk';
-      if (value === '早盘冲高套利' || value === '轻仓观察' || value === '尾盘抢筹观察') return 'watch';
+      if (value === '早盘冲高套利' || value === '轻仓观察' || value === '尾盘抢筹观察' || value === '盘中观察' || value === '尾盘观察') return 'watch';
       return 'muted';
+    },
+    morningFollowBadgeClass(value) {
+      return morningFollowBadgeState(value);
+    },
+    morningFollowRemark(row) {
+      return morningFollowRemarkText(row);
+    },
+    morningFollowRowClass(row) {
+      return {
+        'monitor-strong': row.follow_status === '可以跟进',
+        'monitor-risk': row.follow_status === '放弃' || row.follow_status === '数据未就绪',
+      };
     },
     sectorMacdBadgeClass(row) {
       if (row.sector_macd_water_golden_cross || row.sector_macd_status === '板块MACD水上走强') return 'strong';
@@ -756,6 +807,7 @@ createApp({
         this.reports = reports || [];
         if (this.activeTab === 'intraday_monitor') await this.loadIntradayMonitor(false, false);
         if (this.activeTab === 'overnight_monitor') await this.loadOvernightMonitor(false);
+        if (this.activeTab === 'realtime_info') await this.loadRealtimeInfo(false);
       } catch (error) {
         this.error = error.message;
       } finally {
@@ -812,8 +864,8 @@ createApp({
     async loadOvernightMonitor(showError = true) {
       this.overnightLoading = true;
       try {
-        this.overnightMonitor = (await this.request('/overnight-monitor?limit=10')) || {};
-        if (!this.overnightMonitor.auto_refresh_enabled && this.overnightAutoRefresh) {
+        this.overnightMonitor = (await this.request('/morning-follow-monitor?limit=10')) || {};
+        if (!this.overnightMonitor.auto_refresh && this.overnightAutoRefresh) {
           this.stopOvernightMonitor();
           this.overnightAutoRefresh = false;
         }
@@ -839,6 +891,37 @@ createApp({
     toggleOvernightMonitor() {
       if (this.overnightAutoRefresh) this.startOvernightMonitor();
       else this.stopOvernightMonitor();
+    },
+    async loadRealtimeInfo(showError = true, forceRefresh = false) {
+      if (this.realtimeInfoLoading) return;
+      this.realtimeInfoLoading = true;
+      try {
+        const forceQuery = forceRefresh ? '&force_refresh=true' : '';
+        this.realtimeInfo = (
+          await this.request(`/realtime-info?limit=10${forceQuery}`)
+        ) || {};
+      } catch (error) {
+        if (showError) this.error = error.message;
+      } finally {
+        this.realtimeInfoLoading = false;
+      }
+    },
+    startRealtimeInfoMonitor() {
+      this.stopRealtimeInfoMonitor();
+      this.loadRealtimeInfo(false);
+      this.realtimeInfoTimer = setInterval(() => {
+        this.loadRealtimeInfo(false);
+      }, 30000);
+    },
+    stopRealtimeInfoMonitor() {
+      if (this.realtimeInfoTimer) {
+        clearInterval(this.realtimeInfoTimer);
+        this.realtimeInfoTimer = null;
+      }
+    },
+    toggleRealtimeInfoMonitor() {
+      if (this.realtimeInfoAutoRefresh) this.startRealtimeInfoMonitor();
+      else this.stopRealtimeInfoMonitor();
     },
     async refreshSectorPotential() {
       this.sectorPotentialRefreshing = true;
