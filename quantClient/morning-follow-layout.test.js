@@ -31,7 +31,7 @@ assert.doesNotMatch(
 );
 assert.match(
   html,
-  /styles\.css\?v=20260730-snapshot-fallback-v1/,
+  /styles\.css\?v=20260730-free-review-v1/,
   '应更新样式缓存版本'
 );
 

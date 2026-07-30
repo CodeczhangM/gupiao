@@ -1215,6 +1215,284 @@ tr:hover td {
   font-style: normal;
 }
 
+.free-review-page {
+  display: grid;
+  gap: 16px;
+}
+
+.free-review-summary {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.free-review-summary .small-value {
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.free-review-build-panel {
+  padding: 14px 16px;
+}
+
+.free-review-build-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.free-review-build-state > div {
+  display: grid;
+  gap: 4px;
+}
+
+.free-review-build-state span,
+.free-review-build-state small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.free-review-build-state.is-success strong { color: var(--green); }
+.free-review-build-state.is-failed strong { color: var(--red); }
+.free-review-build-state.is-running strong,
+.free-review-build-state.is-pending strong { color: var(--blue); }
+
+.free-review-filter-actions,
+.free-review-presets > div,
+.preset-buttons,
+.free-review-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.free-review-filter-actions button,
+.free-review-pagination button,
+.free-review-presets button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #f7f9fb;
+  color: var(--blue);
+}
+
+.free-review-filter-actions button.primary {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.free-review-basic-filters {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.free-review-basic-filters label,
+.free-review-industry-select,
+.free-review-presets {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.free-review-basic-filters label > span,
+.free-review-industry-select > span,
+.free-review-presets > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.free-review-basic-filters input,
+.free-review-basic-filters select,
+.free-review-presets input {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: #fff;
+}
+
+.free-review-multi-row {
+  padding: 0 14px 14px;
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) minmax(300px, 1fr) minmax(320px, 1.4fr);
+  gap: 14px;
+}
+
+.free-review-industry-select select {
+  min-height: 112px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px;
+}
+
+.free-review-multi-row fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: flex;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.free-review-multi-row legend {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.free-review-multi-row fieldset label {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.preset-buttons {
+  max-height: 66px;
+  overflow: auto;
+}
+
+.free-review-range-groups {
+  padding: 0 14px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.free-review-range-groups details,
+.free-review-columns {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfc;
+}
+
+.free-review-range-groups summary,
+.free-review-columns summary {
+  padding: 10px 12px;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.free-review-range-grid {
+  padding: 0 12px 12px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(210px, 1fr));
+  gap: 9px 12px;
+}
+
+.free-review-range-grid > label {
+  display: grid;
+  gap: 5px;
+}
+
+.free-review-range-grid > label > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.free-review-range-grid > label > div {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.free-review-range-grid input {
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 7px;
+}
+
+.free-review-range-grid i {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.free-review-columns {
+  margin: 0 14px 14px;
+}
+
+.free-review-columns > div {
+  padding: 0 12px 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+}
+
+.free-review-columns > div strong {
+  flex: 0 0 100%;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.free-review-columns label {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.free-review-table table {
+  min-width: max(1500px, 100%);
+  table-layout: auto;
+}
+
+.free-review-table th,
+.free-review-table td {
+  min-width: 112px;
+}
+
+.free-review-table th:first-child,
+.free-review-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 128px;
+  background: #fff;
+}
+
+.free-review-table th:first-child {
+  z-index: 4;
+  background: #f8faf9;
+}
+
+.free-review-table .sortable {
+  color: var(--blue);
+  cursor: pointer;
+}
+
+.free-review-table td:nth-child(4) small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.free-review-reason {
+  min-width: 260px !important;
+  white-space: normal;
+}
+
+.free-review-reason .monitor-badge {
+  margin: 2px 4px 2px 0;
+}
+
+.free-review-pagination {
+  justify-content: center;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
 @media (max-width: 980px) {
   #app {
     grid-template-columns: 1fr;
@@ -1247,6 +1525,16 @@ tr:hover td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .free-review-summary,
+  .free-review-basic-filters,
+  .free-review-range-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .free-review-multi-row {
+    grid-template-columns: 1fr;
+  }
+
   .moneyflow-list {
     grid-template-columns: 1fr;
   }
@@ -1273,6 +1561,17 @@ tr:hover td {
   .grid.two,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .free-review-summary,
+  .free-review-basic-filters,
+  .free-review-range-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .free-review-build-state {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .sector-detail-stock {

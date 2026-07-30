@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260730-snapshot-fallback-v1">
+  <link rel="stylesheet" href="./styles.css?v=20260730-free-review-v1">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -18,10 +18,8 @@
       </div>
 
       <nav class="nav">
+        <button :class="{ active: activeTab === 'free_review' }" @click="activeTab = 'free_review'">自由复盘选股</button>
         <button :class="{ active: activeTab === 'overview' }" @click="activeTab = 'overview'">总览</button>
-        <button :class="{ active: activeTab === 'dip' }" @click="activeTab = 'dip'">超跌反转</button>
-        <button :class="{ active: activeTab === 'strong' }" @click="activeTab = 'strong'">趋势突破</button>
-        <button :class="{ active: activeTab === 'first_limit' }" @click="activeTab = 'first_limit'">主升浪启动</button>
         <button :class="{ active: activeTab === 'sectors' }" @click="activeTab = 'sectors'">板块</button>
         <button :class="{ active: activeTab === 'sector_potential' }" @click="activeTab = 'sector_potential'">板块潜力</button>
         <button :class="{ active: activeTab === 'intraday_monitor' }" @click="activeTab = 'intraday_monitor'; loadIntradayMonitor(false)">实时共振</button>
@@ -47,10 +45,19 @@
     <main class="shell">
       <header class="toolbar">
         <div>
-          <p class="eyebrow">交易日 {{ latest.trade_date || '--' }}</p>
+          <p class="eyebrow">交易日 {{ activeTab === 'free_review' ? (freeReviewMeta.trade_date || '--') : (latest.trade_date || '--') }}</p>
           <h2>{{ pageTitle }}</h2>
         </div>
-        <div class="actions">
+        <div v-if="activeTab === 'free_review'" class="actions">
+          <button class="secondary" @click="loadFreeReview(true)" :disabled="freeReviewLoading">
+            {{ freeReviewLoading ? '查询中' : '刷新结果' }}
+          </button>
+          <button class="secondary" @click="exportFreeReview" :disabled="!freeReviewResult.total">导出 CSV</button>
+          <button class="primary" @click="startFreeReviewBuild(true)" :disabled="freeReviewLoading || ['pending', 'running'].includes(freeReviewBuild.status)">
+            {{ ['pending', 'running'].includes(freeReviewBuild.status) ? '构建中' : (freeReviewMeta.stock_count ? '重新生成' : '生成复盘数据') }}
+          </button>
+        </div>
+        <div v-else class="actions">
           <label class="switch">
             <input type="checkbox" v-model="includeAi">
             <span></span>
@@ -79,19 +86,207 @@
         <span v-for="warning in latest.cache_warnings" :key="warning">{{ warning }}</span>
       </section>
 
-      <section v-if="activeTab !== 'cache'" class="metrics">
-        <article>
-          <span>超跌反转</span>
-          <strong>{{ listCount(rowsFor('reversal', 'dip')) }}</strong>
-        </article>
-        <article>
-          <span>趋势突破</span>
-          <strong>{{ listCount(rowsFor('breakout', 'strong')) }}</strong>
-        </article>
-        <article>
-          <span>主升浪启动</span>
-          <strong>{{ listCount(rowsFor('first_limit', 'first_limit')) }}</strong>
-        </article>
+      <section v-show="activeTab === 'free_review'" class="free-review-page">
+        <div class="metrics free-review-summary">
+          <article><span>全市场股票</span><strong>{{ freeReviewMeta.stock_count ?? '--' }}</strong></article>
+          <article><span>当前命中</span><strong>{{ freeReviewResult.total ?? 0 }}</strong></article>
+          <article><span>覆盖板块</span><strong>{{ freeReviewMeta.sector_count ?? '--' }}</strong></article>
+          <article><span>财务覆盖率</span><strong>{{ freeReviewMeta.financial_coverage == null ? '--' : formatNumber(freeReviewMeta.financial_coverage * 100) + '%' }}</strong></article>
+          <article><span>评分版本</span><strong class="small-value">{{ freeReviewMeta.score_version || 'free-review-v1' }}</strong></article>
+          <article><span>生成时间</span><strong class="small-value">{{ freeReviewMeta.generated_at || '--' }}</strong></article>
+        </div>
+
+        <div class="panel free-review-build-panel">
+          <div class="free-review-build-state" :class="`is-${freeReviewBuildView.state}`">
+            <div>
+              <strong>{{ freeReviewBuildView.text }}</strong>
+              <span>{{ freeReviewBuildView.detail }}</span>
+            </div>
+            <small>只使用最新完整交易日；财务指标严格按公告日回看，避免未来数据。</small>
+          </div>
+        </div>
+
+        <div class="panel free-review-filter-panel">
+          <div class="panel-head">
+            <div>
+              <h3>自由筛选</h3>
+              <span>空条件不会参与查询；所有筛选均在数据库完成</span>
+            </div>
+            <div class="free-review-filter-actions">
+              <button class="secondary" @click="resetFreeReviewFilters">重置</button>
+              <button class="primary" @click="applyFreeReviewFilters" :disabled="freeReviewLoading">应用筛选</button>
+            </div>
+          </div>
+
+          <div class="free-review-basic-filters">
+            <label>
+              <span>股票/代码/板块</span>
+              <input v-model.trim="freeReviewFilters.keyword" placeholder="例如：半导体、600519">
+            </label>
+            <label>
+              <span>盈利状态</span>
+              <select v-model="freeReviewFilters.profit_state">
+                <option value="">全部</option><option value="profit">盈利</option><option value="loss">亏损</option>
+              </select>
+            </label>
+            <label>
+              <span>量能状态</span>
+              <select v-model="freeReviewFilters.volume_state">
+                <option value="">全部</option><option value="active">活跃</option><option value="normal">正常</option><option value="quiet">低迷</option>
+              </select>
+            </label>
+            <label>
+              <span>成长状态</span>
+              <select v-model="freeReviewFilters.growth_state">
+                <option value="">全部</option><option value="growth">成长</option><option value="stable">稳定</option><option value="decline">下滑</option>
+              </select>
+            </label>
+            <label>
+              <span>地区（逗号分隔）</span>
+              <input
+                :value="freeReviewFilters.areas.join(',')"
+                @change="freeReviewFilters.areas = $event.target.value.split(',').map(v => v.trim()).filter(Boolean)"
+                placeholder="广东,上海"
+              >
+            </label>
+            <label>
+              <span>每页</span>
+              <select v-model.number="freeReviewPageSize" @change="applyFreeReviewFilters">
+                <option :value="50">50</option><option :value="100">100</option><option :value="200">200</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="free-review-multi-row">
+            <label class="free-review-industry-select">
+              <span>板块多选</span>
+              <select v-model="freeReviewFilters.industries" multiple>
+                <option v-for="industry in freeReviewIndustryOptions" :key="industry" :value="industry">{{ industry }}</option>
+              </select>
+            </label>
+            <fieldset>
+              <legend>市场</legend>
+              <label><input type="checkbox" value="主板" v-model="freeReviewFilters.markets">主板</label>
+              <label><input type="checkbox" value="创业板" v-model="freeReviewFilters.markets">创业板</label>
+              <label><input type="checkbox" value="科创板" v-model="freeReviewFilters.markets">科创板</label>
+              <label><input type="checkbox" value="北交所" v-model="freeReviewFilters.markets">北交所</label>
+            </fieldset>
+            <div class="free-review-presets">
+              <span>筛选方案（保存在本机）</span>
+              <div><input v-model.trim="freeReviewPresetName" placeholder="方案名称"><button class="secondary" @click="saveCurrentFreeReviewPreset">保存</button></div>
+              <div class="preset-buttons">
+                <button v-for="preset in freeReviewPresets" :key="preset.name" class="row-button" @click="applyFreeReviewPreset(preset)">{{ preset.name }}</button>
+                <small v-if="!freeReviewPresets.length">暂无已保存方案</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="free-review-range-groups">
+            <details v-for="group in freeReviewMetricGroups" :key="group.key" :open="group.key === 'score' || group.key === 'market'">
+              <summary>{{ group.label }}</summary>
+              <div class="free-review-range-grid">
+                <label v-for="metric in group.metrics.filter(item => item.filterable)" :key="metric.key">
+                  <span>{{ metric.label }}</span>
+                  <div>
+                    <input type="number" step="any" v-model="freeReviewFilters.ranges[metric.key].min" placeholder="最小">
+                    <i>—</i>
+                    <input type="number" step="any" v-model="freeReviewFilters.ranges[metric.key].max" placeholder="最大">
+                  </div>
+                </label>
+              </div>
+            </details>
+          </div>
+
+          <details class="free-review-columns">
+            <summary>选择表格显示列（已选 {{ freeReviewVisibleMetrics.length }}）</summary>
+            <div v-for="group in freeReviewMetricGroups" :key="'columns-' + group.key">
+              <strong>{{ group.label }}</strong>
+              <label v-for="metric in group.metrics" :key="'column-' + metric.key">
+                <input type="checkbox" :checked="isFreeReviewColumnVisible(metric.key)" @change="toggleFreeReviewColumn(metric.key)">
+                {{ metric.label }}
+              </label>
+            </div>
+          </details>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>筛选结果</h3>
+              <span>{{ freeReviewResult.total || 0 }} 只 · 第 {{ freeReviewPage }}/{{ freeReviewResult.pages || 0 }} 页</span>
+            </div>
+            <span>点击指标表头排序</span>
+          </div>
+          <div class="table-wrap free-review-table">
+            <table>
+              <thead><tr>
+                <th>股票</th><th>板块</th><th>地区/市场</th>
+                <th>状态</th>
+                <th
+                  v-for="metric in freeReviewVisibleMetrics"
+                  :key="'head-' + metric.key"
+                  class="sortable"
+                  @click="sortFreeReview(metric.key)"
+                >
+                  {{ metric.label }}
+                  <b v-if="freeReviewSort.by === metric.key">{{ freeReviewSort.direction === 'desc' ? '↓' : '↑' }}</b>
+                </th>
+                <th>评分理由 / 风险</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="row in freeReviewResult.items" :key="row.ts_code">
+                  <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
+                  <td>{{ row.industry || '--' }}</td>
+                  <td>{{ row.area || '--' }}<br><small>{{ row.market || '--' }}</small></td>
+                  <td>
+                    <span class="monitor-badge" :class="row.profit_state === 'loss' ? 'risk' : 'strong'">{{ row.profit_state === 'loss' ? '亏损' : '盈利' }}</span>
+                    <small>{{ row.volume_state || '--' }} / {{ row.growth_state || '--' }}</small>
+                  </td>
+                  <td
+                    v-for="metric in freeReviewVisibleMetrics"
+                    :key="row.ts_code + '-' + metric.key"
+                    :class="metric.format === 'percent' ? signedClass(row[metric.key]) : ''"
+                  >{{ freeReviewMetricValue(row, metric) }}</td>
+                  <td class="free-review-reason">
+                    <span v-for="reason in row.score_reasons" :key="reason" class="monitor-badge strong">{{ reason }}</span>
+                    <span v-for="risk in row.risk_flags" :key="risk" class="monitor-badge risk">{{ risk }}</span>
+                    <small v-if="!row.score_reasons.length && !row.risk_flags.length">暂无显著标签</small>
+                  </td>
+                </tr>
+                <tr v-if="!freeReviewResult.items.length">
+                  <td :colspan="5 + freeReviewVisibleMetrics.length" class="empty">
+                    尚无快照或当前条件没有命中股票，请先生成最新快照或放宽筛选条件
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="free-review-pagination">
+            <button class="secondary" @click="changeFreeReviewPage(freeReviewPage - 1)" :disabled="freeReviewPage <= 1 || freeReviewLoading">上一页</button>
+            <span>第 {{ freeReviewPage }} 页，共 {{ freeReviewResult.pages || 0 }} 页</span>
+            <button class="secondary" @click="changeFreeReviewPage(freeReviewPage + 1)" :disabled="freeReviewPage >= freeReviewResult.pages || freeReviewLoading">下一页</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>当天全部板块总览</h3><span>{{ freeReviewSectors.length }} 个板块</span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>板块</th><th>股票数</th><th>平均涨幅</th><th>上涨率</th><th>量比中位数</th><th>平均换手</th><th>平均PE TTM</th><th>平均总分</th></tr></thead>
+              <tbody>
+                <tr v-for="row in freeReviewSectors" :key="row.industry">
+                  <td><strong>{{ row.industry }}</strong></td><td>{{ row.stock_count }}</td>
+                  <td :class="signedClass(row.avg_pct_chg)">{{ formatNumber(row.avg_pct_chg) }}%</td>
+                  <td>{{ formatNumber(row.up_ratio * 100) }}%</td><td>{{ formatNumber(row.median_volume_ratio) }}</td>
+                  <td>{{ formatNumber(row.avg_turnover_rate) }}%</td><td>{{ formatNumber(row.avg_pe_ttm) }}</td><td><strong>{{ formatNumber(row.avg_total_score) }}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="activeTab === 'overview'" class="metrics">
         <article>
           <span>强势板块</span>
           <strong>{{ listCount(latest.sectors) }}</strong>
@@ -106,7 +301,7 @@
         </article>
       </section>
 
-      <section v-if="activeTab !== 'cache'" class="stage-guide">
+      <section v-if="activeTab === 'overview'" class="stage-guide">
         <article v-for="item in stageDefinitions" :key="item.code">
           <strong>{{ item.code }}</strong>
           <div>
@@ -117,7 +312,7 @@
         </article>
       </section>
 
-      <section v-if="activeTab !== 'cache'" class="panel moneyflow-panel">
+      <section v-if="activeTab === 'overview'" class="panel moneyflow-panel">
         <div class="panel-head">
           <h3>当天板块资金流</h3>
           <span>
@@ -183,30 +378,6 @@
           </div>
           <pre class="analysis">{{ latest.ai_analysis || '暂无 AI 分析结果' }}</pre>
         </div>
-      </section>
-
-      <section v-show="activeTab === 'strong'" class="panel">
-        <div class="panel-head">
-          <h3>趋势突破列表</h3>
-          <span>{{ listCount(rowsFor('breakout', 'strong')) }} 条</span>
-        </div>
-        <stock-table :rows="rowsFor('breakout', 'strong')" mode="breakout"></stock-table>
-      </section>
-
-      <section v-show="activeTab === 'dip'" class="panel">
-        <div class="panel-head">
-          <h3>超跌反转列表</h3>
-          <span>{{ listCount(rowsFor('reversal', 'dip')) }} 条</span>
-        </div>
-        <stock-table :rows="rowsFor('reversal', 'dip')" mode="reversal"></stock-table>
-      </section>
-
-      <section v-show="activeTab === 'first_limit'" class="panel">
-        <div class="panel-head">
-          <h3>主升浪启动列表</h3>
-          <span>{{ listCount(rowsFor('first_limit', 'first_limit')) }} 条</span>
-        </div>
-        <stock-table :rows="rowsFor('first_limit', 'first_limit')" mode="first_limit"></stock-table>
       </section>
 
       <section v-show="activeTab === 'sectors'" class="grid two">
@@ -938,6 +1109,7 @@
   <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
   <script src="./realtime-info-utils.js?v=20260730-db-cache-v1"></script>
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
-  <script src="./main.js?v=20260730-db-cache-v1"></script>
+  <script src="./free-review-utils.js?v=20260730-free-review-v1"></script>
+  <script src="./main.js?v=20260730-free-review-v1"></script>
 </body>
 </html>
