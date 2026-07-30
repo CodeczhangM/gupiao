@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   realtimeDataStatus,
+  screeningDataTimeText,
   tailVolumeDisplay,
 } = require('./realtime-info-utils.js');
 
@@ -58,6 +59,50 @@ assert.deepEqual(
     state: 'danger',
     detail: '当前没有可展示的实时或备用数据',
   },
+);
+
+assert.equal(
+  screeningDataTimeText({
+    data_as_of: '2026-07-30 14:42:00',
+    data_trade_date: '20260730',
+    data_current: true,
+  }),
+  '筛选数据截至 2026-07-30 14:42:00',
+);
+assert.equal(
+  screeningDataTimeText({
+    data_as_of: '2026-07-29 14:59:00',
+    data_current: false,
+  }),
+  '备用缓存 · 筛选数据截至 2026-07-29 14:59:00',
+);
+assert.equal(
+  screeningDataTimeText({
+    data_as_of: null,
+    data_trade_date: '20260729',
+    data_current: false,
+  }),
+  '备用缓存 · 筛选数据日 20260729',
+);
+assert.equal(
+  screeningDataTimeText({
+    data_as_of: null,
+    trade_date: '20260730',
+    data_current: true,
+  }),
+  '筛选数据日 20260730',
+);
+assert.equal(
+  screeningDataTimeText({}),
+  '筛选数据时间 --',
+);
+assert.equal(
+  screeningDataTimeText({
+    data_status: 'unavailable',
+    trade_date: '20260730',
+    data_current: false,
+  }),
+  '筛选数据时间 --',
 );
 
 console.log('realtime tail-volume display regression ok');

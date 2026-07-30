@@ -52,6 +52,26 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             0.5,
         )
 
+    def test_screening_date_uses_base_snapshot_without_actual_minutes(self):
+        import realtime_info_service
+
+        self.assertEqual(
+            realtime_info_service._screening_data_trade_date(
+                None,
+                "20260730",
+                "20260729",
+            ),
+            "20260729",
+        )
+        self.assertEqual(
+            realtime_info_service._screening_data_trade_date(
+                "2026-07-30 14:49:00",
+                "20260730",
+                "20260729",
+            ),
+            "20260730",
+        )
+
     def test_missing_realtime_volume_ratio_uses_prior_five_day_average(self):
         market = pd.DataFrame([{
             "ts_code": "600201.SH",
@@ -758,6 +778,11 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         result = build_realtime_info(now=datetime(2026, 7, 29, 14, 50))
 
         rows = result["intraday"]["stocks"]
+        self.assertEqual(result["data_as_of"], "2026-07-27 14:33:00")
+        self.assertEqual(
+            result["intraday"]["data_as_of"],
+            "2026-07-27 14:33:00",
+        )
         self.assertEqual([row["ts_code"] for row in rows], ["600201.SH"])
         self.assertEqual(rows[0]["industry"], "机器人")
         self.assertTrue(rows[0]["macd_golden_cross_60m"])

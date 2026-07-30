@@ -48,14 +48,14 @@ def latest_report_fixture():
 
 
 class IntradayMonitorServiceTests(unittest.TestCase):
-    @patch("intraday_monitor_service.get_stock_minute_bars")
+    @patch("intraday_monitor_service._cached_minute_bars")
     @patch("intraday_monitor_service.get_trade_dates", return_value=["20260728"])
     @patch("intraday_monitor_service.get_latest_report")
     def test_monitor_flattens_latest_sector_intraday_stocks_and_updates_tail_state(
         self,
         get_latest_report,
         _get_trade_dates,
-        get_stock_minute_bars,
+        cached_minute_bars,
     ):
         get_latest_report.return_value = latest_report_fixture()
 
@@ -66,7 +66,7 @@ class IntradayMonitorServiceTests(unittest.TestCase):
                 return build_tail_1min_bars(
                     ts_code,
                     [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.05, 10.08, 10.1, 10.15, 10.2, 10.25, 10.35],
-                    [3000, 3000, 3000, 3000, 3000, 3000, 2000, 2200, 2400, 2600, 2800, 3000, 7000],
+                    [1000, 1000, 1000, 1000, 1000, 1000, 2500, 2800, 3200, 3600, 4200, 5000, 8000],
                 )
             return build_tail_1min_bars(
                 ts_code,
@@ -74,7 +74,7 @@ class IntradayMonitorServiceTests(unittest.TestCase):
                 [3000, 3000, 3000, 3000, 3000, 3000, 3000, 3200, 3400, 3600, 3800, 4000, 6000],
             )
 
-        get_stock_minute_bars.side_effect = fake_bars
+        cached_minute_bars.side_effect = fake_bars
 
         result = build_intraday_monitor(now=datetime(2026, 7, 28, 14, 50))
 
@@ -82,6 +82,7 @@ class IntradayMonitorServiceTests(unittest.TestCase):
         self.assertEqual(result["trade_date"], "20260728")
         self.assertEqual(result["latest_trade_date"], "20260728")
         self.assertTrue(result["data_current"])
+        self.assertEqual(result["data_as_of"], "2026-07-27 15:00:00")
         self.assertTrue(result["auto_refresh_enabled"])
         self.assertEqual(len(result["stocks"]), 2)
         by_code = {row["ts_code"]: row for row in result["stocks"]}
@@ -90,6 +91,34 @@ class IntradayMonitorServiceTests(unittest.TestCase):
         self.assertEqual(by_code["301073.SZ"]["main_force_status"], "主力抢筹")
         self.assertEqual(by_code["301108.SZ"]["next_day_bias"], "低开风险")
         self.assertEqual(by_code["301108.SZ"]["main_force_status"], "放量分歧")
+        self.assertTrue(by_code["301073.SZ"]["tail_after_1430_available"])
+        self.assertTrue(by_code["301073.SZ"]["tail_auction_available"])
+        called_windows = [
+            (*call.args, call.kwargs.get("freq"))
+            for call in cached_minute_bars.call_args_list
+        ]
+        self.assertIn(("301073.SZ", "2026-07-28 09:30:00", "2026-07-28 14:49:00", "60min"), called_windows)
+        self.assertIn(("301073.SZ", "2026-07-28 14:25:00", "2026-07-28 14:49:00", "1min"), called_windows)
+
+    @patch("intraday_monitor_service._cached_minute_bars")
+    @patch("intraday_monitor_service.get_trade_dates", return_value=["20260728"])
+    @patch("intraday_monitor_service.get_latest_report")
+    def test_monitor_hides_1430_tail_fields_before_time(
+        self,
+        get_latest_report,
+        _get_trade_dates,
+        cached_minute_bars,
+    ):
+        get_latest_report.return_value = latest_report_fixture()
+        cached_minute_bars.return_value = pd.DataFrame()
+
+        result = build_intraday_monitor(now=datetime(2026, 7, 28, 14, 10))
+
+        row = result["stocks"][0]
+        self.assertFalse(row["tail_after_1430_available"])
+        self.assertTrue(row["tail_auction_available"])
+        self.assertIsNone(row["tail_return_after_1430"])
+        self.assertIsNone(row["tail_strength_score"])
 
     @patch("intraday_monitor_service.get_trade_dates", return_value=["20260728"])
     @patch("intraday_monitor_service.get_latest_report", return_value=latest_report_fixture())

@@ -563,6 +563,38 @@ def _has_any_trade_date_signal_bars(bars_by_code: dict[str, dict[str, pd.DataFra
     return any(_has_trade_date_minutes(bars, trade_date) for bars in (bars_by_code or {}).values())
 
 
+def _latest_bar_time(*frames: pd.DataFrame | None) -> str | None:
+    latest: pd.Timestamp | None = None
+    for frame in frames:
+        if (
+            frame is None
+            or frame.empty
+            or "trade_time" not in frame.columns
+        ):
+            continue
+        parsed = pd.to_datetime(frame["trade_time"], errors="coerce").dropna()
+        if parsed.empty:
+            continue
+        candidate = parsed.max()
+        if latest is None or candidate > latest:
+            latest = candidate
+    return (
+        latest.strftime("%Y-%m-%d %H:%M:%S")
+        if latest is not None
+        else None
+    )
+
+
+def _screening_data_trade_date(
+    data_as_of: str | None,
+    requested_trade_date: str,
+    base_trade_date: str | None,
+) -> str:
+    if data_as_of:
+        return str(requested_trade_date)
+    return str(base_trade_date or requested_trade_date)
+
+
 def _load_tail_minute_bars_for_pick(
     ts_code: str,
     trade_date: str,
@@ -753,8 +785,17 @@ def _build_realtime_intraday_section(
         status, reason = _main_force_status(signal)
         if not current_day_minutes:
             status, reason = "观察", "当日分时未返回"
+        code_bars = intraday_bars.get(ts_code, {})
         rows.append({
             **signal,
+            "data_as_of": _latest_bar_time(
+                *(
+                    value
+                    for value in code_bars.values()
+                    if isinstance(value, pd.DataFrame)
+                ),
+                tail_1m,
+            ),
             "main_force_status": status,
             "main_force_reason": reason,
         })
@@ -769,10 +810,24 @@ def _build_realtime_intraday_section(
         ),
         reverse=True,
     )[: max(1, min(int(limit), 100))]
+    data_as_of = max(
+        (
+            str(row.get("data_as_of"))
+            for row in rows
+            if row.get("data_as_of")
+        ),
+        default=None,
+    )
 
     result = {
         "report_id": None,
         "trade_date": trade_date,
+        "data_trade_date": _screening_data_trade_date(
+            data_as_of,
+            trade_date,
+            base_trade_date,
+        ),
+        "data_as_of": data_as_of,
         "base_trade_date": base_trade_date or trade_date,
         "latest_trade_date": trade_date,
         "data_current": snapshot_data_current,
@@ -921,6 +976,11 @@ def _build_realtime_info_uncached(
         "base_trade_date": base_trade_date,
         "latest_trade_date": latest_trade_date,
         "intraday_trade_date": intraday_trade_date,
+        "data_trade_date": intraday.get(
+            "data_trade_date",
+            base_trade_date,
+        ),
+        "data_as_of": intraday.get("data_as_of"),
         "data_current": snapshot_data_current,
         "data_source": intraday_data_source,
         "snapshot_data_source": intraday_data_source,

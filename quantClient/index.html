@@ -246,6 +246,7 @@
             <span>
               {{ intradayMonitor.market_phase || '未加载' }}
               · {{ intradayMonitor.updated_at || '--' }}
+              · {{ intradayDataTimeText }}
               · {{ intradayMonitorRows.length }} 只
             </span>
           </div>
@@ -410,6 +411,7 @@
                 {{ realtimeInfo.market_phase || realtimeInfo.intraday?.market_phase || '未加载' }}
                 · {{ realtimeInfo.updated_at || '--' }}
                 · {{ realtimeInfo.data_current === false ? '非当日' : '当日' }}
+                · {{ realtimeInfoDataTimeText }}
               </span>
               <div class="realtime-data-state" :class="`is-${realtimeInfoStatus.state}`">
                 <strong>{{ realtimeInfoStatus.text }}</strong>
@@ -920,8 +922,8 @@
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="./cache-utils.js?v=20260712-cache-date-v2"></script>
   <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
-  <script src="./realtime-info-utils.js?v=20260730-realtime-cache-v1"></script>
+  <script src="./realtime-info-utils.js?v=20260730-screening-time-v1"></script>
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
-  <script src="./main.js?v=20260730-snapshot-fallback-v1"></script>
+  <script src="./main.js?v=20260730-screening-time-v1"></script>
 </body>
 </html>

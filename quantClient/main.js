@@ -578,6 +578,9 @@ createApp({
     intradayMonitorRows() {
       return Array.isArray(this.intradayMonitor.stocks) ? this.intradayMonitor.stocks : [];
     },
+    intradayDataTimeText() {
+      return screeningDataTimeText(this.intradayMonitor);
+    },
     overnightMonitorRows() {
       return Array.isArray(this.overnightMonitor.stocks) ? this.overnightMonitor.stocks : [];
     },
@@ -593,6 +596,9 @@ createApp({
       return this.realtimeInfo && this.realtimeInfo.overnight && Array.isArray(this.realtimeInfo.overnight.stocks)
         ? this.realtimeInfo.overnight.stocks
         : [];
+    },
+    realtimeInfoDataTimeText() {
+      return screeningDataTimeText(this.realtimeInfo);
     },
     realtimeInfoStatus() {
       return realtimeDataStatus(this.realtimeInfo);

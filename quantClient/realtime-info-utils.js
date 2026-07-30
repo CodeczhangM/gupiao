@@ -3,6 +3,7 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.tailVolumeDisplay = api.tailVolumeDisplay;
   root.realtimeDataStatus = api.realtimeDataStatus;
+  root.screeningDataTimeText = api.screeningDataTimeText;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function buildRealtimeInfoUtils() {
   function tailVolumeDisplay(row, isAfter1430) {
     if (!row || row.tail_after_1430_available !== true) {
@@ -57,5 +58,30 @@
     };
   }
 
-  return { realtimeDataStatus, tailVolumeDisplay };
+  function screeningDataTimeText(payload) {
+    const source = payload || {};
+    if (source.data_status === 'unavailable') {
+      return '筛选数据时间 --';
+    }
+    const prefix = (
+      source.data_current === false
+      || source.data_status === 'stale'
+    ) ? '备用缓存 · ' : '';
+    if (source.data_as_of) {
+      return `${prefix}筛选数据截至 ${source.data_as_of}`;
+    }
+    const tradeDate = (
+      source.data_trade_date
+      || source.base_trade_date
+      || source.trade_date
+    );
+    if (!tradeDate) return '筛选数据时间 --';
+    return `${prefix}筛选数据日 ${tradeDate}`;
+  }
+
+  return {
+    realtimeDataStatus,
+    screeningDataTimeText,
+    tailVolumeDisplay,
+  };
 }));

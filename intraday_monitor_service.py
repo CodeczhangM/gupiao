@@ -5,8 +5,14 @@ from typing import Any
 
 import pandas as pd
 
-from data_service import get_stock_minute_bars, get_trade_dates
+from data_service import get_trade_dates
 from database import get_latest_report
+from overnight_monitor_service import (
+    _cached_minute_bars,
+    _mask_unavailable_tail_fields,
+    _opening_auction_signal,
+    _realtime_end_datetime,
+)
 from strategy import _macd_kdj_60m_signal
 
 
@@ -42,6 +48,28 @@ def _datetime_window(trade_date: str, start_clock: str, end_clock: str) -> tuple
     return day.strftime(f"%Y-%m-%d {start_clock}"), day.strftime(f"%Y-%m-%d {end_clock}")
 
 
+def _latest_bar_time(*frames: pd.DataFrame | None) -> str | None:
+    latest: pd.Timestamp | None = None
+    for frame in frames:
+        if (
+            frame is None
+            or frame.empty
+            or "trade_time" not in frame.columns
+        ):
+            continue
+        parsed = pd.to_datetime(frame["trade_time"], errors="coerce").dropna()
+        if parsed.empty:
+            continue
+        candidate = parsed.max()
+        if latest is None or candidate > latest:
+            latest = candidate
+    return (
+        latest.strftime("%Y-%m-%d %H:%M:%S")
+        if latest is not None
+        else None
+    )
+
+
 def _main_force_status(signal: dict[str, Any]) -> tuple[str, str]:
     tail_return = signal.get("tail_return_after_1430")
     auction_return = signal.get("tail_auction_return")
@@ -62,30 +90,38 @@ def _main_force_status(signal: dict[str, Any]) -> tuple[str, str]:
     return "观察", "尾盘确认不足"
 
 
-def _monitor_row(stock: dict[str, Any], trade_date: str, fetch_realtime: bool) -> dict[str, Any]:
+def _monitor_row(stock: dict[str, Any], trade_date: str, fetch_realtime: bool, now: datetime | None = None) -> dict[str, Any]:
     ts_code = str(stock.get("ts_code") or "")
     if not fetch_realtime:
-        status, status_reason = _main_force_status(stock)
+        signal = _mask_unavailable_tail_fields(
+            {**stock, **_opening_auction_signal(stock, _realtime_end_datetime(trade_date, now=now))},
+            _realtime_end_datetime(trade_date, now=now),
+        )
+        status, status_reason = _main_force_status(signal)
         return {
-            **stock,
+            **signal,
+            "data_as_of": None,
             "main_force_status": status,
             "main_force_reason": status_reason,
         }
 
-    start_60m, end_60m = _datetime_window(trade_date, "09:30:00", "15:00:00")
-    tail_start, tail_end = _datetime_window(trade_date, "14:25:00", "15:00:00")
-    bars_60m = get_stock_minute_bars(ts_code, start_60m, end_60m, freq="60min")
-    tail_1m = get_stock_minute_bars(ts_code, tail_start, tail_end, freq="1min")
+    end_datetime = _realtime_end_datetime(trade_date, now=now)
+    start_60m, _default_end_60m = _datetime_window(trade_date, "09:30:00", "15:00:00")
+    tail_start, _default_tail_end = _datetime_window(trade_date, "14:25:00", "15:00:00")
+    bars_60m = _cached_minute_bars(ts_code, start_60m, end_datetime, freq="60min")
+    tail_1m = _cached_minute_bars(ts_code, tail_start, end_datetime, freq="1min")
     signal = _macd_kdj_60m_signal(
         pd.Series(stock),
         {"60m": bars_60m, "tail_1m": tail_1m},
     )
     if not signal:
         signal = {**stock, "next_day_bias": "数据不足", "tail_strength_score": None}
+    signal = {**stock, **signal, **_opening_auction_signal(stock, end_datetime)}
+    signal = _mask_unavailable_tail_fields(signal, end_datetime)
     status, status_reason = _main_force_status(signal)
     return {
-        **stock,
         **signal,
+        "data_as_of": _latest_bar_time(bars_60m, tail_1m),
         "main_force_status": status,
         "main_force_reason": status_reason,
     }
@@ -110,12 +146,17 @@ def build_intraday_monitor(fetch_realtime: bool = True, now: datetime | None = N
     rows = []
     for stock in stocks:
         try:
-            rows.append(_monitor_row(stock, trade_date, fetch_realtime=fetch_realtime and should_refresh))
+            rows.append(_monitor_row(stock, trade_date, fetch_realtime=fetch_realtime and should_refresh, now=now))
         except Exception as exc:
+            end_datetime = _realtime_end_datetime(trade_date, now=now)
+            fallback = _mask_unavailable_tail_fields(
+                {**stock, **_opening_auction_signal(stock, end_datetime)},
+                end_datetime,
+            )
             rows.append({
-                **stock,
+                **fallback,
+                "data_as_of": None,
                 "next_day_bias": "数据不足",
-                "tail_strength_score": None,
                 "main_force_status": "观察",
                 "main_force_reason": f"分时更新失败: {str(exc)[:120]}",
             })
@@ -130,9 +171,19 @@ def build_intraday_monitor(fetch_realtime: bool = True, now: datetime | None = N
         ),
         reverse=True,
     )
+    data_as_of = max(
+        (
+            str(row.get("data_as_of"))
+            for row in rows
+            if row.get("data_as_of")
+        ),
+        default=None,
+    )
     return {
         "report_id": report.get("id"),
         "trade_date": trade_date,
+        "data_trade_date": trade_date,
+        "data_as_of": data_as_of,
         "latest_trade_date": latest_trade_date,
         "data_current": data_current,
         "market_phase": phase,
