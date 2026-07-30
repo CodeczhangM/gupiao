@@ -18,6 +18,11 @@
 ├── ai_agent.py
 ├── database.py
 ├── data_service.py
+├── financial_cache.py
+├── free_review_models.py
+├── free_review_repository.py
+├── free_review_scoring.py
+├── free_review_service.py
 ├── intraday_monitor_service.py
 ├── market_cache.py
 ├── quant_service.py
@@ -31,6 +36,7 @@
 ├── .env
 ├── quantClient
 │   ├── index.html
+│   ├── free-review-utils.js
 │   ├── main.js
 │   └── styles.css
 └── quantServer
@@ -127,6 +133,17 @@ realtime_result_cache   实时共振、实时信息最终筛选结果
 缓存写入后自动只保留最近 5 个交易日。应用数据库用户需要对 `quant`
 库具有 `CREATE`、`SELECT`、`INSERT`、`UPDATE`、`DELETE` 权限；上面的
 `GRANT ALL PRIVILEGES ON quant.*` 已覆盖这些权限。
+
+自由复盘选股会另外自动创建：
+
+```text
+financial_indicator_cache  最近 8 个季度财务指标
+financial_cache_sync       财务季度同步状态
+review_stock_snapshot      每个完整交易日的全市场筛选宽表
+review_snapshot_build      快照构建阶段、进度和失败原因
+```
+
+财务同步使用 `fina_indicator_vip`，Tushare 账号需要至少 5000 积分权限。
 
 ## 5. 配置环境变量
 
@@ -710,10 +727,18 @@ tar -tzf "$RELEASE_ARCHIVE" >/dev/null
 
 for required_file in \
   piao/app.py \
+  piao/financial_cache.py \
+  piao/free_review_models.py \
+  piao/free_review_repository.py \
+  piao/free_review_scoring.py \
+  piao/free_review_service.py \
   piao/realtime_cache.py \
   piao/realtime_info_service.py \
   piao/intraday_monitor_service.py \
   piao/quantClient/index.html \
+  piao/quantClient/free-review-utils.js \
+  piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/FreeReviewQueryRequest.java \
+  piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/FreeReviewRange.java \
   piao/quantServer/quantServer/pom.xml
 do
   tar -tzf "$RELEASE_ARCHIVE" | grep -Fx "$required_file" >/dev/null
@@ -787,8 +812,11 @@ mkdir -p "$STAGING_DIR"
 tar -xzf "$RELEASE_ARCHIVE" -C "$STAGING_DIR"
 
 test -f "$STAGING_DIR/piao/app.py"
+test -f "$STAGING_DIR/piao/free_review_service.py"
+test -f "$STAGING_DIR/piao/financial_cache.py"
 test -f "$STAGING_DIR/piao/realtime_cache.py"
 test -f "$STAGING_DIR/piao/quantClient/index.html"
+test -f "$STAGING_DIR/piao/quantClient/free-review-utils.js"
 test -f "$STAGING_DIR/piao/quantServer/quantServer/pom.xml"
 
 cp "$ENV_BACKUP" "$STAGING_DIR/piao/.env"
@@ -798,11 +826,23 @@ cd "$STAGING_DIR/piao"
 python3 -m pip install -r requirements.txt
 python3 -m py_compile \
   app.py database.py data_service.py market_cache.py realtime_cache.py \
+  financial_cache.py free_review_models.py free_review_repository.py \
+  free_review_scoring.py free_review_service.py \
   realtime_market_source.py realtime_info_service.py \
   intraday_monitor_service.py overnight_monitor_service.py \
   morning_follow_service.py
 
 python3 -c "import settings; settings.load_env_files(); from realtime_cache import init_realtime_cache; init_realtime_cache(); print('realtime cache schema ready')"
+
+python3 -c "
+import settings
+settings.load_env_files()
+from financial_cache import init_financial_cache
+from free_review_repository import init_free_review_schema
+init_financial_cache()
+init_free_review_schema()
+print('free review schema ready')
+"
 
 cd "$STAGING_DIR/piao/quantServer/quantServer"
 mvn test
@@ -840,7 +880,7 @@ systemctl status quant-python --no-pager
 systemctl status quant-spring --no-pager
 ```
 
-如果服务启动失败，先不要删除 `ROLLBACK_DIR`，直接执行第 11.9 节。
+如果服务启动失败，先不要删除 `ROLLBACK_DIR`，直接执行第 11.10 节。
 
 查看最近日志：
 
@@ -867,6 +907,18 @@ SHOW TABLES LIKE 'realtime_minute_cache';
 SHOW TABLES LIKE 'realtime_result_cache';
 SELECT COUNT(*) AS minute_cache_rows FROM realtime_minute_cache;
 SELECT COUNT(*) AS result_cache_rows FROM realtime_result_cache;"
+```
+
+确认自由复盘相关表已经创建：
+
+```bash
+mysql -uquant_user -p quant -e "
+SHOW TABLES LIKE 'financial_indicator_cache';
+SHOW TABLES LIKE 'review_stock_snapshot';
+SHOW TABLES LIKE 'review_snapshot_build';
+SELECT COUNT(*) AS financial_rows FROM financial_indicator_cache;
+SELECT COUNT(*) AS review_rows FROM review_stock_snapshot;
+SELECT COUNT(*) AS build_rows FROM review_snapshot_build;"
 ```
 
 ### 11.8 首次强制刷新与快速缓存验证
@@ -921,7 +973,65 @@ time curl --fail \
 前端为静态文件，无需 npm 构建。浏览器使用 `Ctrl+F5` 强制刷新，确认页面
 同时出现“快速查看”和“强制刷新”按钮。
 
-### 11.9 发布失败回滚
+### 11.9 生成并验证自由复盘快照
+
+先确认行情缓存至少有 100 个完整交易日：
+
+```bash
+curl --fail 'http://127.0.0.1:8081/api/quant/cache/status'
+```
+
+启动构建。接口会立即返回 `pending` 或 `running`，实际同步和评分在 Python
+后台线程中继续执行：
+
+```bash
+curl --fail -X POST \
+  'http://127.0.0.1:8081/api/quant/free-review/build?force=true'
+
+curl --fail \
+  'http://127.0.0.1:8081/api/quant/free-review/build-status'
+```
+
+每隔几秒重复查询构建状态，直到 `status` 为 `success`。首次同步 8 个季度
+财务数据所需时间较长。如果状态为 `failed` 且错误中包含 `5000` 或“权限”，
+说明当前 Tushare Token 没有 `fina_indicator_vip` 的 5000 积分权限；程序
+不会退回到数千次逐股票请求，需要更换具备权限的 Token 后重新构建。
+
+构建成功后验证元数据、分页查询和 CSV：
+
+```bash
+curl --fail \
+  'http://127.0.0.1:8081/api/quant/free-review/meta'
+
+curl --fail -X POST \
+  'http://127.0.0.1:8081/api/quant/free-review/query' \
+  -H 'Content-Type: application/json' \
+  -d '{"page":1,"page_size":50,"sort_by":"total_score","sort_direction":"desc","ranges":{"pe_ttm":{"min":0,"max":40}}}'
+
+curl --fail -X POST \
+  'http://127.0.0.1:8081/api/quant/free-review/export' \
+  -H 'Content-Type: application/json' \
+  -d '{"page":1,"page_size":50}' \
+  -o /tmp/free-review.csv
+```
+
+检查实际数据量和最新构建状态：
+
+```bash
+mysql -uquant_user -p quant -e "
+SELECT COUNT(*) AS financial_rows FROM financial_indicator_cache;
+SELECT trade_date, score_version, COUNT(*) AS stock_count
+FROM review_stock_snapshot
+GROUP BY trade_date, score_version
+ORDER BY trade_date DESC;
+SELECT trade_date, score_version, status, stage, total_count,
+       failed_count, financial_coverage, updated_at, error_message
+FROM review_snapshot_build
+ORDER BY updated_at DESC
+LIMIT 5;"
+```
+
+### 11.10 发布失败回滚
 
 将下面的 `ROLLBACK_DIR` 替换为第 11.4 节输出的实际目录：
 
