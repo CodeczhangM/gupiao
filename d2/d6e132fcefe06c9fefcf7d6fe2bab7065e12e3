@@ -1,0 +1,72 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "d2d6e132fcefe06c9fefcf7d6fe2bab7065e12e3",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 60,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 130,
+    "git_diff_deleted_lines": 3,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 129,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "quantClient/index.html": {
+        "BYMC": [
+          "7",
+          "321-326",
+          "924-925"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "584-586"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/morning-follow-utils.js": {
+        "BYMC": [
+          "1-56"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/morning-follow-utils.test.js": {
+        "BYMC": [
+          "1-57"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [
+          "1099-1102"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785395775,
+  "requirement_id": ""
+}
