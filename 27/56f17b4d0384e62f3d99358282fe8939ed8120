@@ -1,0 +1,83 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "2756f17b4d0384e62f3d99358282fe8939ed8120",
+  "prompts": {},
+  "commit_stats": {
+    "git_diff_added_lines": 522,
+    "git_diff_deleted_lines": 35,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 511,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "quantClient/index.html": {
+        "BYMC": [
+          "7",
+          "28-29",
+          "293-298",
+          "315",
+          "318",
+          "326",
+          "333",
+          "339-343",
+          "345-350",
+          "354",
+          "357",
+          "362-363",
+          "366-386",
+          "390",
+          "397-509",
+          "514-534",
+          "916-918"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "523-526",
+          "562-563",
+          "584-595",
+          "645",
+          "652",
+          "685-703",
+          "719",
+          "722-732",
+          "810",
+          "867-868",
+          "895-924"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.js": {
+        "BYMC": [
+          "1-61"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.test.js": {
+        "BYMC": [
+          "1-63"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [
+          "604-651",
+          "1107-1174"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785392239,
+  "requirement_id": ""
+}
