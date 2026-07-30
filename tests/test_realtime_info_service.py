@@ -568,6 +568,11 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "trade_date": "20260730",
                 "close": 39.12,
                 "high": 39.8,
+                "industry": "食品",
+                "pct_chg": 4.2,
+                "turnover_rate": 5.1,
+                "volume_ratio": 2.4,
+                "amount": 620_000_000,
             }]),
             None,
         )
