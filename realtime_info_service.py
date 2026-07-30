@@ -31,6 +31,7 @@ from strategy import _attach_intraday_signal_stocks, _macd_kdj_60m_signal, rank_
 _REALTIME_SECTOR_LIMIT = 8
 _REALTIME_CANDIDATES_PER_SECTOR = 6
 _REALTIME_PICKS_PER_SECTOR = 5
+_REALTIME_TAIL_CANDIDATE_LIMIT = 15
 _REALTIME_OVERNIGHT_MAX_FETCH = 15
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
@@ -563,75 +564,99 @@ def _build_realtime_intraday_section(
         per_sector=_REALTIME_PICKS_PER_SECTOR,
     )
 
-    rows = []
     end_datetime = _realtime_end_datetime(trade_date, now=now)
     signal_market_by_code = (
         signal_market.set_index(signal_market["ts_code"].astype(str)).to_dict("index")
         if signal_market is not None and not signal_market.empty and "ts_code" in signal_market.columns
         else {}
     )
+    preliminary_rows = []
     for sector in (sector_potential.to_dict("records") if sector_potential is not None and not sector_potential.empty else []):
         industry = sector.get("industry_name") or sector.get("industry") or ""
         for stock in sector.get("intraday_signal_stocks") or []:
             ts_code = str(stock.get("ts_code") or "")
             market_snapshot = signal_market_by_code.get(ts_code, {})
             signal = {**market_snapshot, **stock, "industry": industry}
-            tail_loaded = _load_tail_minute_bars_for_pick(
-                ts_code,
-                trade_date,
-                end_datetime,
-                minute_loader=minute_loader,
-            )
-            tail_1m = tail_loaded.bars
-            current_day_minutes = _has_trade_date_minutes(intraday_bars.get(ts_code, {}), trade_date)
-            if not tail_1m.empty and ts_code in intraday_bars:
-                current_day_minutes = current_day_minutes or _has_trade_date_minutes({"tail_1m": tail_1m}, trade_date)
-                tail_snapshot = _minute_price_snapshot(
-                    ts_code,
-                    {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},
-                    trade_date,
-                    market_snapshot.get("close"),
-                )
-                signal = {**signal, **tail_snapshot}
-                refreshed = _macd_kdj_60m_signal(
-                    pd.Series(signal),
-                    {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},
-                )
-                if refreshed:
-                    signal = {**signal, **refreshed}
-            signal["minute_data_current"] = current_day_minutes
-            signal["minute_data_source"] = (
-                tail_loaded.source
-                if not tail_1m.empty
-                else intraday_bars.get(ts_code, {}).get("60m_source", "unavailable")
-            )
-            signal["minute_data_warnings"] = list(dict.fromkeys(
-                list(intraday_bars.get(ts_code, {}).get("warnings", []))
-                + list(tail_loaded.warnings)
-            ))
-            if not current_day_minutes:
-                signal["next_day_bias"] = "数据不足"
-                signal["minute_data_attempted_end"] = end_datetime
-                signal["minute_data_fallback_end"] = _fallback_1459_end_datetime(trade_date, end_datetime)
-                signal["next_day_bias_reason"] = _minute_missing_reason(trade_date, end_datetime)
-            signal = _mask_unavailable_tail_fields(signal, end_datetime)
-            if not current_day_minutes:
-                signal["tail_after_1430_available"] = False
-                signal["tail_return_after_1430"] = None
-                signal["tail_strength_score"] = None
-                signal["tail_volume_ratio"] = None
-                signal["tail_close_position"] = None
-                if not snapshot_data_current:
-                    for key in ("current_price", "day_high", "close", "high"):
-                        signal[key] = None
-            status, reason = _main_force_status(signal)
-            if not current_day_minutes:
-                status, reason = "观察", "当日分时未返回"
-            rows.append({
-                **signal,
-                "main_force_status": status,
-                "main_force_reason": reason,
+            status, _reason = _main_force_status(signal)
+            preliminary_rows.append({
+                "ts_code": ts_code,
+                "market_snapshot": market_snapshot,
+                "signal": signal,
+                "preliminary_status": status,
             })
+
+    preliminary_rows = sorted(
+        preliminary_rows,
+        key=lambda item: (
+            item.get("preliminary_status") == "主力抢筹",
+            item["signal"].get("next_day_bias") == "高开偏强",
+            float(item["signal"].get("intraday_signal_score") or 0),
+            float(item["signal"].get("volume_ratio") or 0),
+        ),
+        reverse=True,
+    )[:_REALTIME_TAIL_CANDIDATE_LIMIT]
+
+    rows = []
+    for preliminary in preliminary_rows:
+        ts_code = preliminary["ts_code"]
+        market_snapshot = preliminary["market_snapshot"]
+        signal = preliminary["signal"]
+        tail_loaded = _load_tail_minute_bars_for_pick(
+            ts_code,
+            trade_date,
+            end_datetime,
+            minute_loader=minute_loader,
+        )
+        tail_1m = tail_loaded.bars
+        current_day_minutes = _has_trade_date_minutes(intraday_bars.get(ts_code, {}), trade_date)
+        if not tail_1m.empty and ts_code in intraday_bars:
+            current_day_minutes = current_day_minutes or _has_trade_date_minutes({"tail_1m": tail_1m}, trade_date)
+            tail_snapshot = _minute_price_snapshot(
+                ts_code,
+                {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},
+                trade_date,
+                market_snapshot.get("close"),
+            )
+            signal = {**signal, **tail_snapshot}
+            refreshed = _macd_kdj_60m_signal(
+                pd.Series(signal),
+                {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},
+            )
+            if refreshed:
+                signal = {**signal, **refreshed}
+        signal["minute_data_current"] = current_day_minutes
+        signal["minute_data_source"] = (
+            tail_loaded.source
+            if not tail_1m.empty
+            else intraday_bars.get(ts_code, {}).get("60m_source", "unavailable")
+        )
+        signal["minute_data_warnings"] = list(dict.fromkeys(
+            list(intraday_bars.get(ts_code, {}).get("warnings", []))
+            + list(tail_loaded.warnings)
+        ))
+        if not current_day_minutes:
+            signal["next_day_bias"] = "数据不足"
+            signal["minute_data_attempted_end"] = end_datetime
+            signal["minute_data_fallback_end"] = _fallback_1459_end_datetime(trade_date, end_datetime)
+            signal["next_day_bias_reason"] = _minute_missing_reason(trade_date, end_datetime)
+        signal = _mask_unavailable_tail_fields(signal, end_datetime)
+        if not current_day_minutes:
+            signal["tail_after_1430_available"] = False
+            signal["tail_return_after_1430"] = None
+            signal["tail_strength_score"] = None
+            signal["tail_volume_ratio"] = None
+            signal["tail_close_position"] = None
+            if not snapshot_data_current:
+                for key in ("current_price", "day_high", "close", "high"):
+                    signal[key] = None
+        status, reason = _main_force_status(signal)
+        if not current_day_minutes:
+            status, reason = "观察", "当日分时未返回"
+        rows.append({
+            **signal,
+            "main_force_status": status,
+            "main_force_reason": reason,
+        })
 
     rows = sorted(
         rows,

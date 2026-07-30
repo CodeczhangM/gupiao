@@ -191,6 +191,76 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertLessEqual(max_active, 4)
         self.assertEqual(list(result), codes[:6])
 
+    def test_tail_minutes_are_limited_before_fetch(self):
+        import realtime_info_service
+
+        codes = [f"600{index:03d}.SH" for index in range(20)]
+        market = pd.DataFrame([
+            {
+                "ts_code": code,
+                "name": f"候选{index}",
+                "industry": f"板块{index // 5}",
+                "close": 10,
+                "high": 10.2,
+                "pct_chg": 4,
+                "turnover_rate": 5,
+                "volume_ratio": 3,
+                "amount": 900_000 - index,
+            }
+            for index, code in enumerate(codes)
+        ])
+        sectors = pd.DataFrame([
+            {
+                "industry_name": f"板块{sector_index}",
+                "intraday_signal_stocks": [
+                    {
+                        "ts_code": codes[sector_index * 5 + offset],
+                        "intraday_signal_score": 100 - sector_index * 5 - offset,
+                        "next_day_bias": "高开偏强",
+                    }
+                    for offset in range(5)
+                ],
+            }
+            for sector_index in range(4)
+        ])
+        signal_bars = {
+            code: {
+                "60m": pd.DataFrame(),
+                "60m_source": "tushare",
+                "warnings": [],
+            }
+            for code in codes
+        }
+
+        with (
+            patch(
+                "realtime_info_service.rank_sector_potential",
+                return_value=sectors.drop(columns=["intraday_signal_stocks"]),
+            ),
+            patch(
+                "realtime_info_service._load_realtime_intraday_signal_bars",
+                return_value=signal_bars,
+            ),
+            patch(
+                "realtime_info_service._attach_intraday_signal_stocks",
+                return_value=sectors,
+            ),
+            patch(
+                "realtime_info_service._load_tail_minute_bars_for_pick",
+                return_value=MinuteLoadResult(pd.DataFrame(), "unavailable", []),
+            ) as tail_loader,
+        ):
+            result = realtime_info_service._build_realtime_intraday_section(
+                market,
+                pd.DataFrame(),
+                "20260729",
+                datetime(2026, 7, 29, 14, 50),
+                limit=10,
+            )
+
+        self.assertEqual(tail_loader.call_count, 15)
+        self.assertEqual(len(result["stocks"]), 10)
+
     @patch("realtime_info_service.load_eastmoney_market_snapshot")
     @patch("realtime_info_service.load_recent_daily")
     @patch("realtime_info_service.load_market_snapshot")
