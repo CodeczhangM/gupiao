@@ -31,7 +31,7 @@
   - `init_realtime_cache() -> None`
   - `load_minute_cache(ts_code: str, start: str, end: str, freq: str) -> pd.DataFrame`
   - `save_minute_cache(frame: pd.DataFrame, freq: str, source_name: str, cache_trade_date: str) -> None`
-  - `minute_cache_is_fresh(frame: pd.DataFrame, requested_end: str, now: datetime) -> bool`
+  - `minute_cache_is_fresh(frame: pd.DataFrame, requested_start: str, requested_end: str, now: datetime, freq: str) -> bool`
   - `load_result_cache(cache_scope: str, cache_key: str) -> dict[str, Any] | None`
   - `save_result_cache(cache_scope: str, cache_key: str, payload: dict[str, Any]) -> None`
   - `prune_realtime_cache(keep_trade_dates: list[str]) -> None`
@@ -113,10 +113,12 @@ def test_minute_cache_upserts_normalized_rows(self):
 def test_current_minute_cache_requires_requested_end_within_90_seconds(self):
     frame = pd.DataFrame([{"trade_time": "2026-07-30 14:39:00"}])
     self.assertTrue(realtime_cache.minute_cache_is_fresh(
-        frame, "2026-07-30 14:40:00", datetime(2026, 7, 30, 14, 40)
+                frame, "2026-07-30 09:30:00", "2026-07-30 14:40:00",
+                datetime(2026, 7, 30, 14, 40), "1min"
     ))
     self.assertFalse(realtime_cache.minute_cache_is_fresh(
-        frame, "2026-07-30 14:42:00", datetime(2026, 7, 30, 14, 42)
+                frame, "2026-07-30 09:30:00", "2026-07-30 14:42:00",
+                datetime(2026, 7, 30, 14, 42), "1min"
     ))
 
 def test_prune_keeps_exactly_supplied_five_trade_dates(self):
