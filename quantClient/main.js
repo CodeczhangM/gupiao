@@ -490,7 +490,7 @@ createApp({
   data() {
     return {
       apiBase: initialApiBase(),
-      activeTab: 'overview',
+      activeTab: 'free_review',
       includeAi: false,
       limit: 20,
       latest: {},
@@ -528,6 +528,42 @@ createApp({
       realtimeInfoTimer: null,
       sectorPotentialRefreshing: false,
       sectorPotentialTimer: null,
+      freeReviewMeta: {},
+      freeReviewBuild: {},
+      freeReviewSectors: [],
+      freeReviewResult: {
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 50,
+        pages: 0,
+      },
+      freeReviewLoading: false,
+      freeReviewBuildTimer: null,
+      freeReviewPage: 1,
+      freeReviewPageSize: 50,
+      freeReviewSort: { by: 'total_score', direction: 'desc' },
+      freeReviewFilters: {
+        keyword: '',
+        industries: [],
+        areas: [],
+        markets: [],
+        profit_state: '',
+        volume_state: '',
+        growth_state: '',
+        ranges: Object.fromEntries(
+          FREE_REVIEW_METRIC_GROUPS
+            .flatMap((group) => group.metrics)
+            .filter((metric) => metric.filterable)
+            .map((metric) => [metric.key, { min: '', max: '' }]),
+        ),
+        visible_columns: FREE_REVIEW_METRIC_GROUPS
+          .flatMap((group) => group.metrics)
+          .filter((metric) => metric.defaultVisible)
+          .map((metric) => metric.key),
+      },
+      freeReviewPresets: loadFreeReviewPresets(localStorage),
+      freeReviewPresetName: '',
       reviewForm: {
         tsCode: '',
         buyDate: '',
@@ -555,6 +591,7 @@ createApp({
     pageTitle() {
       const titles = {
         overview: '选股总览',
+        free_review: '自由复盘选股',
         strong: '趋势突破',
         dip: '超跌反转',
         first_limit: '主升浪启动',
@@ -573,6 +610,23 @@ createApp({
     },
     backtestRows() {
       return this.backtest && this.backtest.results ? this.backtest.results : [];
+    },
+    freeReviewBuildView() {
+      return freeReviewBuildState(this.freeReviewBuild);
+    },
+    freeReviewMetricGroups() {
+      return FREE_REVIEW_METRIC_GROUPS;
+    },
+    freeReviewVisibleMetrics() {
+      const visible = new Set(this.freeReviewFilters.visible_columns || []);
+      return FREE_REVIEW_METRIC_GROUPS
+        .flatMap((group) => group.metrics)
+        .filter((metric) => visible.has(metric.key));
+    },
+    freeReviewIndustryOptions() {
+      return this.freeReviewSectors
+        .map((row) => row.industry)
+        .filter(Boolean);
     },
     sectorPotentialRows() {
       return Array.isArray(this.latest.sector_potential) ? this.latest.sector_potential : [];
@@ -661,18 +715,40 @@ createApp({
     this.stopOvernightMonitor();
     this.stopRealtimeInfoMonitor();
     this.stopSectorPotentialPolling();
+    this.stopFreeReviewBuildPolling();
   },
   watch: {
     activeTab(tab) {
       if (tab === 'sector_potential') this.startSectorPotentialPolling();
       else this.stopSectorPotentialPolling();
       if (tab !== 'realtime_info') this.stopRealtimeInfoMonitor();
+      if (tab === 'free_review') this.loadFreeReview(false);
     },
   },
   methods: {
     formatNumber,
     signedClass,
     displayMoney,
+    freeReviewMetricValue(row, metric) {
+      const value = row ? row[metric.key] : null;
+      if (value === null || value === undefined || value === '') return '--';
+      if (metric.format === 'percent') return `${formatNumber(value)}%`;
+      if (metric.format === 'money') return displayMoney(value);
+      if (metric.format === 'marketValue') {
+        return `${formatNumber(Number(value) / 10000, 2)}亿`;
+      }
+      if (metric.format === 'ratio') return `${formatNumber(value)}倍`;
+      return formatNumber(value);
+    },
+    isFreeReviewColumnVisible(key) {
+      return (this.freeReviewFilters.visible_columns || []).includes(key);
+    },
+    toggleFreeReviewColumn(key) {
+      const columns = this.freeReviewFilters.visible_columns || [];
+      this.freeReviewFilters.visible_columns = columns.includes(key)
+        ? columns.filter((item) => item !== key)
+        : [...columns, key];
+    },
     topRows(rows, limit) {
       return (rows || []).slice(0, limit);
     },
@@ -816,6 +892,10 @@ createApp({
       try {
         await this.checkHealth();
         await this.loadCacheStatus(false);
+        if (this.activeTab === 'free_review') {
+          await this.loadFreeReview(false);
+          return;
+        }
         const [latest, reports] = await Promise.all([
           this.request('/reports/latest'),
           this.request(`/reports?limit=${this.limit}`),
@@ -829,6 +909,220 @@ createApp({
         this.error = error.message;
       } finally {
         this.loading = false;
+      }
+    },
+    freeReviewQueryPayload() {
+      return normalizeFreeReviewQuery(
+        {
+          ...this.freeReviewFilters,
+          trade_date: this.freeReviewMeta.trade_date || undefined,
+        },
+        this.freeReviewPage,
+        this.freeReviewPageSize,
+        this.freeReviewSort,
+      );
+    },
+    async loadFreeReview(showError = true, resetPage = false) {
+      if (this.freeReviewLoading) return;
+      if (resetPage) this.freeReviewPage = 1;
+      this.freeReviewLoading = true;
+      try {
+        const meta = await this.request('/free-review/meta');
+        this.freeReviewMeta = meta || {};
+        const payload = this.freeReviewQueryPayload();
+        const [result, sectors] = await Promise.all([
+          this.request('/free-review/query', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          }),
+          this.request(`/free-review/sectors?trade_date=${meta.trade_date}`),
+        ]);
+        this.freeReviewResult = result || this.freeReviewResult;
+        this.freeReviewSectors = sectors && Array.isArray(sectors.items)
+          ? sectors.items : [];
+        this.freeReviewPage = Number(this.freeReviewResult.page || 1);
+        this.freeReviewBuild = {
+          status: 'success',
+          stage: 'complete',
+          total_count: meta.stock_count,
+          financial_coverage: meta.financial_coverage,
+        };
+      } catch (error) {
+        try {
+          this.freeReviewBuild = (
+            await this.request('/free-review/build-status')
+          ) || {};
+        } catch {
+          this.freeReviewBuild = {};
+        }
+        if (showError) this.error = error.message;
+      } finally {
+        this.freeReviewLoading = false;
+      }
+    },
+    async startFreeReviewBuild(force = false) {
+      this.freeReviewLoading = true;
+      this.error = '';
+      try {
+        this.freeReviewBuild = await this.request(
+          `/free-review/build?force=${force}`,
+          { method: 'POST' },
+        );
+        if (['pending', 'running'].includes(this.freeReviewBuild.status)) {
+          this.startFreeReviewBuildPolling();
+        } else if (this.freeReviewBuild.status === 'success') {
+          this.freeReviewLoading = false;
+          await this.loadFreeReview(false);
+        }
+      } catch (error) {
+        this.error = error.message;
+      } finally {
+        this.freeReviewLoading = false;
+      }
+    },
+    async pollFreeReviewBuild() {
+      try {
+        this.freeReviewBuild = (
+          await this.request('/free-review/build-status')
+        ) || {};
+        if (this.freeReviewBuild.status === 'success') {
+          this.stopFreeReviewBuildPolling();
+          await this.loadFreeReview(false);
+        } else if (this.freeReviewBuild.status === 'failed') {
+          this.stopFreeReviewBuildPolling();
+          this.error = this.freeReviewBuild.error_message || '自由复盘快照构建失败';
+        }
+      } catch (error) {
+        this.stopFreeReviewBuildPolling();
+        this.error = error.message;
+      }
+    },
+    startFreeReviewBuildPolling() {
+      this.stopFreeReviewBuildPolling();
+      this.freeReviewBuildTimer = setInterval(
+        () => this.pollFreeReviewBuild(),
+        2000,
+      );
+    },
+    stopFreeReviewBuildPolling() {
+      if (this.freeReviewBuildTimer) {
+        clearInterval(this.freeReviewBuildTimer);
+        this.freeReviewBuildTimer = null;
+      }
+    },
+    applyFreeReviewFilters() {
+      this.loadFreeReview(true, true);
+    },
+    resetFreeReviewFilters() {
+      this.freeReviewFilters = {
+        keyword: '',
+        industries: [],
+        areas: [],
+        markets: [],
+        profit_state: '',
+        volume_state: '',
+        growth_state: '',
+        ranges: Object.fromEntries(
+          FREE_REVIEW_METRIC_GROUPS
+            .flatMap((group) => group.metrics)
+            .filter((metric) => metric.filterable)
+            .map((metric) => [metric.key, { min: '', max: '' }]),
+        ),
+        visible_columns: FREE_REVIEW_METRIC_GROUPS
+          .flatMap((group) => group.metrics)
+          .filter((metric) => metric.defaultVisible)
+          .map((metric) => metric.key),
+      };
+      this.freeReviewSort = { by: 'total_score', direction: 'desc' };
+      this.loadFreeReview(true, true);
+    },
+    saveCurrentFreeReviewPreset() {
+      try {
+        saveFreeReviewPreset(
+          this.freeReviewPresetName,
+          this.freeReviewFilters,
+          localStorage,
+        );
+        this.freeReviewPresets = loadFreeReviewPresets(localStorage);
+        this.freeReviewPresetName = '';
+      } catch (error) {
+        this.error = error.message;
+      }
+    },
+    applyFreeReviewPreset(preset) {
+      if (!preset || !preset.filters) return;
+      const saved = JSON.parse(JSON.stringify(preset.filters));
+      const ranges = Object.fromEntries(
+        FREE_REVIEW_METRIC_GROUPS
+          .flatMap((group) => group.metrics)
+          .filter((metric) => metric.filterable)
+          .map((metric) => [
+            metric.key,
+            {
+              min: saved.ranges && saved.ranges[metric.key]
+                ? (saved.ranges[metric.key].min ?? '') : '',
+              max: saved.ranges && saved.ranges[metric.key]
+                ? (saved.ranges[metric.key].max ?? '') : '',
+            },
+          ]),
+      );
+      this.freeReviewFilters = {
+        keyword: '',
+        industries: [],
+        areas: [],
+        markets: [],
+        profit_state: '',
+        volume_state: '',
+        growth_state: '',
+        visible_columns: [],
+        ...saved,
+        ranges,
+      };
+      this.loadFreeReview(true, true);
+    },
+    sortFreeReview(key) {
+      if (this.freeReviewSort.by === key) {
+        this.freeReviewSort.direction = this.freeReviewSort.direction === 'desc'
+          ? 'asc' : 'desc';
+      } else {
+        this.freeReviewSort = { by: key, direction: 'desc' };
+      }
+      this.loadFreeReview(true, true);
+    },
+    changeFreeReviewPage(page) {
+      const pages = Number(this.freeReviewResult.pages || 0);
+      if (page < 1 || (pages && page > pages)) return;
+      this.freeReviewPage = page;
+      this.loadFreeReview(true);
+    },
+    async exportFreeReview() {
+      try {
+        const response = await fetch(this.buildUrl('/free-review/export'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.freeReviewQueryPayload()),
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(
+          /filename\*?=(?:UTF-8''|")?([^";]+)/i,
+        );
+        const filename = filenameMatch
+          ? decodeURIComponent(filenameMatch[1].replace(/"$/, ''))
+          : `free-review-${this.freeReviewMeta.trade_date || 'latest'}.csv`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+      } catch (error) {
+        this.error = error.message;
       }
     },
     async ensureCurrentMarketData() {
