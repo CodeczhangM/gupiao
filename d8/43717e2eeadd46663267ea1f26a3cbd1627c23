@@ -1,0 +1,39 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "d843717e2eeadd46663267ea1f26a3cbd1627c23",
+  "prompts": {},
+  "commit_stats": {
+    "git_diff_added_lines": 148,
+    "git_diff_deleted_lines": 53,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 103,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "realtime_info_service.py": {
+        "BYMC": [
+          "34",
+          "573",
+          "580-585",
+          "587-603",
+          "652-659"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "194-263"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785391914,
+  "requirement_id": ""
+}
