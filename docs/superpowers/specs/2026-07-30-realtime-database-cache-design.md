@@ -24,9 +24,10 @@
 - `freq`：`1min` 或 `60min`
 - `open`、`high`、`low`、`close`、`vol`、`amount`
 - `source_name`
+- `cache_trade_date`：本批分钟数据服务的目标交易日
 - `fetched_at`
 
-主键为 `(ts_code, trade_time, freq)`；按 `(trade_time, freq)` 建清理和区间查询索引。
+主键为 `(ts_code, trade_time, freq)`；按 `(cache_trade_date, freq)` 建清理索引。60 分钟指标需要多日历史，因此历史 K 线随目标交易日批次保留，不能按 K 线自身日期仅截取 5 天。
 
 ### `realtime_result_cache`
 
@@ -41,7 +42,7 @@
 - `created_at`
 - `updated_at`
 
-主键为 `(cache_scope, cache_key)`。只有包含有效候选结果的成功刷新才能替换已有记录；失败或空的异常刷新不得覆盖最后一次成功结果。
+主键为 `(cache_scope, cache_key, trade_date)`，读取时按 `updated_at` 取最新记录。只有包含有效候选结果的成功刷新才能替换同一交易日记录；失败或空的异常刷新不得覆盖最后一次成功结果。
 
 ## 查询流程
 
@@ -74,7 +75,7 @@
 
 - 分钟行情和最终筛选结果保留最近 5 个交易日。
 - 每次成功写入缓存后执行一次有界清理。
-- 清理仅删除早于第 5 个保留交易日的数据，不依赖自然日推算。
+- 清理按 `cache_trade_date` 删除不属于最近 5 个目标交易日的分钟批次，同时删除不属于这 5 个交易日的结果快照，不依赖自然日推算。
 - 清理失败只记录警告，不影响本次成功结果返回。
 
 ## 并发
