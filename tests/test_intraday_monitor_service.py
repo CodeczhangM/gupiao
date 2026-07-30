@@ -48,6 +48,62 @@ def latest_report_fixture():
 
 
 class IntradayMonitorServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.database_minutes = patch(
+            "intraday_monitor_service.load_minute_cache",
+            return_value=pd.DataFrame(),
+        )
+        self.database_minute_saves = patch(
+            "intraday_monitor_service.save_minute_cache",
+        )
+        self.database_minutes.start()
+        self.database_minute_saves.start()
+        self.addCleanup(self.database_minutes.stop)
+        self.addCleanup(self.database_minute_saves.stop)
+
+    def test_persistent_minutes_use_fresh_database_before_provider(self):
+        import intraday_monitor_service
+
+        cached = pd.DataFrame(
+            [
+                {
+                    "ts_code": "301073.SZ",
+                    "trade_time": "2026-07-28 09:30:00",
+                    "close": 10,
+                },
+                {
+                    "ts_code": "301073.SZ",
+                    "trade_time": "2026-07-28 14:39:00",
+                    "close": 10.1,
+                },
+            ]
+        )
+        with (
+            patch(
+                "intraday_monitor_service.load_minute_cache",
+                return_value=cached,
+                create=True,
+            ),
+            patch(
+                "intraday_monitor_service.minute_cache_is_fresh",
+                return_value=True,
+                create=True,
+            ),
+            patch(
+                "intraday_monitor_service._cached_minute_bars"
+            ) as provider,
+        ):
+            result = intraday_monitor_service._persistent_minute_bars(
+                "301073.SZ",
+                "2026-07-28 09:30:00",
+                "2026-07-28 14:40:00",
+                "1min",
+                datetime(2026, 7, 28, 14, 40),
+            )
+
+        self.assertEqual(result.iloc[-1]["close"], 10.1)
+        provider.assert_not_called()
+
     @patch("intraday_monitor_service._cached_minute_bars")
     @patch("intraday_monitor_service.get_trade_dates", return_value=["20260728"])
     @patch("intraday_monitor_service.get_latest_report")

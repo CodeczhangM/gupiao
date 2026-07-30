@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
+import threading
 from typing import Any
 
 import pandas as pd
@@ -9,7 +10,14 @@ import pandas as pd
 from database import get_connection
 
 
+_schema_lock = threading.Lock()
+_schema_ready = False
+
+
 def init_realtime_cache() -> None:
+    global _schema_ready
+    if _schema_ready:
+        return
     statements = [
         """CREATE TABLE IF NOT EXISTS realtime_minute_cache (
             ts_code VARCHAR(16) NOT NULL,
@@ -48,10 +56,14 @@ def init_realtime_cache() -> None:
             INDEX idx_realtime_result_trade_date (trade_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     ]
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            for statement in statements:
-                cursor.execute(statement)
+    with _schema_lock:
+        if _schema_ready:
+            return
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                for statement in statements:
+                    cursor.execute(statement)
+        _schema_ready = True
 
 
 def _datetime_text(value: Any) -> str | None:

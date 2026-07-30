@@ -16,6 +16,11 @@ from realtime_market_source import (
     load_eastmoney_market_snapshot,
     load_minutes_with_fallback,
 )
+from realtime_cache import (
+    load_minute_cache,
+    minute_cache_is_fresh,
+    save_minute_cache,
+)
 from overnight_monitor_service import (
     build_overnight_monitor,
     _cached_minute_bars,
@@ -464,6 +469,57 @@ def _minute_result_with_1459_fallback(
     return loaded
 
 
+def _persistent_minute_result(
+    ts_code: str,
+    start_datetime: str,
+    end_datetime: str,
+    freq: str,
+    trade_date: str,
+    now: datetime,
+) -> MinuteLoadResult:
+    cache_warnings: list[str] = []
+    try:
+        cached = load_minute_cache(
+            ts_code,
+            start_datetime,
+            end_datetime,
+            freq,
+        )
+        if minute_cache_is_fresh(
+            cached,
+            start_datetime,
+            end_datetime,
+            now,
+            freq,
+        ):
+            return MinuteLoadResult(cached.copy(), "database", [])
+    except Exception as exc:
+        cache_warnings.append(f"分钟数据库读取失败: {exc}")
+
+    loaded = _minute_result_with_1459_fallback(
+        ts_code,
+        start_datetime,
+        end_datetime,
+        freq,
+        trade_date,
+    )
+    if loaded.bars is not None and not loaded.bars.empty:
+        try:
+            save_minute_cache(
+                loaded.bars,
+                freq,
+                loaded.source,
+                trade_date,
+            )
+        except Exception as exc:
+            cache_warnings.append(f"分钟数据库写入失败: {exc}")
+    return MinuteLoadResult(
+        loaded.bars.copy(),
+        loaded.source,
+        list(loaded.warnings) + cache_warnings,
+    )
+
+
 def _minute_missing_reason(trade_date: str, end_datetime: str) -> str:
     fallback_end = _fallback_1459_end_datetime(trade_date, end_datetime)
     if fallback_end:
@@ -902,7 +958,16 @@ def _build_realtime_info_uncached(
     price_map = _market_price_map(market) if base_trade_date == intraday_trade_date else {}
 
     realtime_minute_loader = _request_minute_loader(
-        _minute_result_with_1459_fallback,
+        lambda code, start, end, freq, trade_date: (
+            _persistent_minute_result(
+                code,
+                start,
+                end,
+                freq,
+                trade_date,
+                current,
+            )
+        ),
         stats=performance,
     )
     shared_context: dict[str, Any] = {}

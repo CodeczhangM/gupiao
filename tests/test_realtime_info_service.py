@@ -39,12 +39,23 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "realtime_market_source._fetch_sina_minutes",
             return_value=(pd.DataFrame(), "测试中禁用新浪分钟"),
         )
+        self.database_minutes = patch(
+            "realtime_info_service.load_minute_cache",
+            return_value=pd.DataFrame(),
+        )
+        self.database_minute_saves = patch(
+            "realtime_info_service.save_minute_cache",
+        )
         self.snapshot_fallback.start()
         self.eastmoney_minutes.start()
         self.sina_minutes.start()
+        self.database_minutes.start()
+        self.database_minute_saves.start()
         self.addCleanup(self.snapshot_fallback.stop)
         self.addCleanup(self.eastmoney_minutes.stop)
         self.addCleanup(self.sina_minutes.stop)
+        self.addCleanup(self.database_minutes.stop)
+        self.addCleanup(self.database_minute_saves.stop)
 
     def test_trading_session_progress_stops_during_lunch_break(self):
         self.assertEqual(
@@ -168,6 +179,51 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         pd.testing.assert_frame_equal(first.bars, second.bars)
         self.assertIsNot(first.bars, second.bars)
+
+    def test_persistent_minute_result_uses_fresh_database_bars(self):
+        import realtime_info_service
+
+        cached = pd.DataFrame(
+            [
+                {
+                    "ts_code": "600201.SH",
+                    "trade_time": "2026-07-30 09:30:00",
+                    "close": 10,
+                },
+                {
+                    "ts_code": "600201.SH",
+                    "trade_time": "2026-07-30 14:39:00",
+                    "close": 10.1,
+                },
+            ]
+        )
+        with (
+            patch(
+                "realtime_info_service.load_minute_cache",
+                return_value=cached,
+                create=True,
+            ),
+            patch(
+                "realtime_info_service.minute_cache_is_fresh",
+                return_value=True,
+                create=True,
+            ),
+            patch(
+                "realtime_info_service._minute_result_with_1459_fallback"
+            ) as external,
+        ):
+            result = realtime_info_service._persistent_minute_result(
+                "600201.SH",
+                "2026-07-30 09:30:00",
+                "2026-07-30 14:40:00",
+                "1min",
+                "20260730",
+                datetime(2026, 7, 30, 14, 40),
+            )
+
+        self.assertEqual(result.source, "database")
+        self.assertEqual(result.bars.iloc[-1]["close"], 10.1)
+        external.assert_not_called()
 
     def test_signal_minutes_use_at_most_four_workers(self):
         active = 0

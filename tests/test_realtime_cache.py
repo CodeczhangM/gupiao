@@ -41,6 +41,21 @@ class RealtimeCacheTests(unittest.TestCase):
             sql,
         )
 
+    def test_init_executes_schema_only_once_per_process(self):
+        cursor, connection = fake_connection()
+
+        with (
+            patch.object(realtime_cache, "_schema_ready", False),
+            patch(
+                "realtime_cache.get_connection",
+                return_value=connection,
+            ),
+        ):
+            realtime_cache.init_realtime_cache()
+            realtime_cache.init_realtime_cache()
+
+        self.assertEqual(cursor.execute.call_count, 2)
+
     def test_result_cache_decodes_json_and_timestamp(self):
         cursor, connection = fake_connection()
         cursor.fetchone.return_value = {

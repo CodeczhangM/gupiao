@@ -13,6 +13,11 @@ from overnight_monitor_service import (
     _opening_auction_signal,
     _realtime_end_datetime,
 )
+from realtime_cache import (
+    load_minute_cache,
+    minute_cache_is_fresh,
+    save_minute_cache,
+)
 from strategy import _macd_kdj_60m_signal
 
 
@@ -70,6 +75,49 @@ def _latest_bar_time(*frames: pd.DataFrame | None) -> str | None:
     )
 
 
+def _persistent_minute_bars(
+    ts_code: str,
+    start_datetime: str,
+    end_datetime: str,
+    freq: str,
+    now: datetime,
+) -> pd.DataFrame:
+    try:
+        cached = load_minute_cache(
+            ts_code,
+            start_datetime,
+            end_datetime,
+            freq,
+        )
+        if minute_cache_is_fresh(
+            cached,
+            start_datetime,
+            end_datetime,
+            now,
+            freq,
+        ):
+            return cached.copy()
+    except Exception:
+        pass
+    bars = _cached_minute_bars(
+        ts_code,
+        start_datetime,
+        end_datetime,
+        freq=freq,
+    )
+    if bars is not None and not bars.empty:
+        try:
+            save_minute_cache(
+                bars,
+                freq,
+                "tushare",
+                str(end_datetime)[:10].replace("-", ""),
+            )
+        except Exception:
+            pass
+    return bars
+
+
 def _main_force_status(signal: dict[str, Any]) -> tuple[str, str]:
     tail_return = signal.get("tail_return_after_1430")
     auction_return = signal.get("tail_auction_return")
@@ -108,8 +156,21 @@ def _monitor_row(stock: dict[str, Any], trade_date: str, fetch_realtime: bool, n
     end_datetime = _realtime_end_datetime(trade_date, now=now)
     start_60m, _default_end_60m = _datetime_window(trade_date, "09:30:00", "15:00:00")
     tail_start, _default_tail_end = _datetime_window(trade_date, "14:25:00", "15:00:00")
-    bars_60m = _cached_minute_bars(ts_code, start_60m, end_datetime, freq="60min")
-    tail_1m = _cached_minute_bars(ts_code, tail_start, end_datetime, freq="1min")
+    current = now or datetime.now()
+    bars_60m = _persistent_minute_bars(
+        ts_code,
+        start_60m,
+        end_datetime,
+        "60min",
+        current,
+    )
+    tail_1m = _persistent_minute_bars(
+        ts_code,
+        tail_start,
+        end_datetime,
+        "1min",
+        current,
+    )
     signal = _macd_kdj_60m_signal(
         pd.Series(stock),
         {"60m": bars_60m, "tail_1m": tail_1m},
