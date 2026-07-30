@@ -1,0 +1,134 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "2b5bd9e2efbd1261341dc24e01b1c7c9551923ce",
+  "prompts": {},
+  "commit_stats": {
+    "git_diff_added_lines": 447,
+    "git_diff_deleted_lines": 34,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 432,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "overnight_monitor_service.py": {
+        "BYMC": [
+          "3",
+          "164-166",
+          "183",
+          "191",
+          "566",
+          "607-612",
+          "622-625",
+          "628",
+          "638-639",
+          "643-653",
+          "660-663",
+          "666",
+          "676-686"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java": {
+        "BYMC": [
+          "119-130"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java": {
+        "BYMC": [
+          "134-156"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java": {
+        "BYMC": [
+          "101-126"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "25",
+          "58",
+          "80-84",
+          "90",
+          "92",
+          "100-111",
+          "271-303",
+          "316-319",
+          "324-328",
+          "432-433",
+          "436-437",
+          "446",
+          "454-464",
+          "608",
+          "620-623",
+          "634-638",
+          "786",
+          "807-817",
+          "837-839",
+          "850-851",
+          "853",
+          "864",
+          "866",
+          "868",
+          "884",
+          "901-903",
+          "910-918",
+          "930",
+          "984-993",
+          "1016-1017",
+          "1030"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_market_source.py": {
+        "BYMC": [
+          "170",
+          "172",
+          "246-248",
+          "250-251"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_service.py": {
+        "BYMC": [
+          "4-5",
+          "157-252"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "314-327",
+          "434-436",
+          "452-488"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_market_source.py": {
+        "BYMC": [
+          "152-176",
+          "183",
+          "185-186"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785393728,
+  "requirement_id": ""
+}
