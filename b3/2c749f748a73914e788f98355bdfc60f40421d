@@ -1,0 +1,87 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "b32c749f748a73914e788f98355bdfc60f40421d",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4709,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 272,
+    "git_diff_deleted_lines": 7,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 271,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "intraday_monitor_service.py": {
+        "BYMC": [
+          "16-20",
+          "78-120",
+          "159-173"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_cache.py": {
+        "BYMC": [
+          "5",
+          "13-16",
+          "18-20",
+          "59-66"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "19-23",
+          "472-522",
+          "961-970"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_intraday_monitor_service.py": {
+        "BYMC": [
+          "51-106"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_cache.py": {
+        "BYMC": [
+          "44-58"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "42-48",
+          "52-53",
+          "57-58",
+          "183-226"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785410158,
+  "requirement_id": ""
+}
