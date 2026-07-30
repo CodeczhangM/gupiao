@@ -103,6 +103,17 @@ class MarketCachePolicyTests(unittest.TestCase):
         self.assertEqual(frame["ts_code"].tolist(), ["000001.SZ", "000001.SZ"])
 
     @patch("market_cache._read_frame", return_value=pd.DataFrame())
+    def test_market_snapshot_exposes_full_review_fields(self, read_frame):
+        market_cache.load_market_snapshot("20260730")
+
+        sql = read_frame.call_args.args[0]
+        for column in (
+            "turnover_rate_f", "ps", "ps_ttm", "dv_ratio", "dv_ttm",
+            "area", "market", "list_status", "list_date",
+        ):
+            self.assertIn(column, sql)
+
+    @patch("market_cache._read_frame", return_value=pd.DataFrame())
     @patch("market_cache.get_complete_dates", return_value=["20260710", "20260709"])
     def test_recent_daily_reads_only_strategy_columns(self, _dates, read_frame):
         market_cache.load_recent_daily("20260710", 2)

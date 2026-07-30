@@ -247,7 +247,9 @@ def _read_frame(sql, params=()):
 
 def load_market_snapshot(trade_date):
     return _read_frame("""SELECT d.*, b.turnover_rate,b.turnover_rate_f,b.volume_ratio,
-        b.pe,b.pe_ttm,b.pb,b.total_mv,b.circ_mv,s.name,s.industry
+        b.pe,b.pe_ttm,b.pb,b.ps,b.ps_ttm,b.dv_ratio,b.dv_ttm,
+        b.total_mv,b.circ_mv,s.name,s.industry,s.area,s.market,
+        s.list_status,s.list_date
         FROM market_daily d JOIN market_daily_basic b USING (trade_date,ts_code)
         LEFT JOIN stock_basic_cache s USING (ts_code) WHERE d.trade_date=%s""", (trade_date,))
 
