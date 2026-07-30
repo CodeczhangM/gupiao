@@ -1,0 +1,181 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "f61a904ef68b1f676690352b86e6bec4c4f6f21e",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4654,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 462,
+    "git_diff_deleted_lines": 24,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 456,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "app.py": {
+        "BYMC": [
+          "152",
+          "154"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "intraday_monitor_service.py": {
+        "BYMC": [
+          "10",
+          "13",
+          "20",
+          "22",
+          "24",
+          "196-221",
+          "273",
+          "285-294",
+          "296-310"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [
+          "252-255",
+          "263-267",
+          "427-430",
+          "438-442",
+          "939",
+          "941"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "516",
+          "525",
+          "586-588",
+          "611-612",
+          "846-850",
+          "852",
+          "854-857",
+          "860-862",
+          "872",
+          "877",
+          "879",
+          "926",
+          "936"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.js": {
+        "BYMC": [
+          "5",
+          "39-67",
+          "115"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.test.js": {
+        "BYMC": [
+          "3",
+          "9-30"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [
+          "642-650"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java": {
+        "BYMC": [
+          "111-113"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java": {
+        "BYMC": [
+          "119-126"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java": {
+        "BYMC": [
+          "81",
+          "84-85",
+          "88"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "13",
+          "21",
+          "23",
+          "25",
+          "1081-1129",
+          "1143",
+          "1145-1147",
+          "1189-1192",
+          "1194-1199",
+          "1205-1206",
+          "1223-1224"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_intraday_monitor_api.py": {
+        "BYMC": [
+          "10-18",
+          "24"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_intraday_monitor_service.py": {
+        "BYMC": [
+          "59-81",
+          "84-87",
+          "90-93",
+          "138-187"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "49-71",
+          "77-80",
+          "86-89",
+          "436-516"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785410689,
+  "requirement_id": ""
+}
