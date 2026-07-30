@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import threading
 from datetime import datetime
 from typing import Any
@@ -12,10 +14,15 @@ from financial_cache import (
     sync_financial_indicators,
 )
 from free_review_repository import (
+    load_review_export_rows,
+    load_review_meta,
+    load_review_sectors,
     load_build_status,
+    query_review_snapshot,
     replace_review_snapshot,
     save_build_status,
 )
+from free_review_models import FreeReviewQuery
 from free_review_scoring import SCORE_VERSION, build_review_snapshot
 from market_cache import (
     get_complete_dates,
@@ -175,3 +182,71 @@ def start_free_review_build(force: bool = False) -> dict[str, Any]:
         )
         worker.start()
         return queued
+
+
+def query_free_review(request: FreeReviewQuery) -> dict[str, Any]:
+    return query_review_snapshot(request)
+
+
+def free_review_sectors(
+    trade_date: str | None = None,
+) -> dict[str, Any]:
+    metadata = load_review_meta(trade_date)
+    current = str(metadata["trade_date"])
+    rows = load_review_sectors(current)
+    return {
+        "trade_date": current,
+        "score_version": SCORE_VERSION,
+        "items": rows,
+    }
+
+
+def free_review_meta(
+    trade_date: str | None = None,
+) -> dict[str, Any]:
+    return load_review_meta(trade_date)
+
+
+def export_free_review_csv(
+    request: FreeReviewQuery,
+) -> tuple[str, bytes]:
+    trade_date, rows = load_review_export_rows(request, limit=10000)
+    preferred = [
+        "trade_date", "ts_code", "name", "industry", "area", "market",
+        "close", "pct_chg", "amount", "turnover_rate",
+        "turnover_rate_f", "volume_ratio", "pe_ttm", "pb", "ps_ttm",
+        "dv_ttm", "total_mv", "circ_mv",
+        "ret_5", "ret_10", "ret_20", "ret_60",
+        "ma20_slope", "ma60_slope", "macd_hist",
+        "rsi6", "rsi12", "rsi24", "atr_pct",
+        "roe", "roe_dt", "roa", "roic",
+        "grossprofit_margin", "netprofit_margin",
+        "current_ratio", "debt_to_assets", "ocf_to_or",
+        "tr_yoy", "netprofit_yoy", "dt_netprofit_yoy", "ocf_yoy",
+        "trend_score", "volume_price_score", "momentum_score",
+        "valuation_score", "financial_quality_score",
+        "financial_growth_score", "risk_penalty", "total_score",
+        "data_completeness", "score_reasons", "risk_flags",
+        "missing_fields",
+    ]
+    extra = sorted({
+        key for row in rows for key in row
+        if key not in preferred and key not in {"score_version", "generated_at"}
+    })
+    columns = preferred + extra
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=columns,
+        extrasaction="ignore",
+    )
+    writer.writeheader()
+    for row in rows:
+        output = dict(row)
+        for column in ("score_reasons", "risk_flags", "missing_fields"):
+            value = output.get(column)
+            if isinstance(value, list):
+                output[column] = "；".join(str(item) for item in value)
+        writer.writerow(output)
+    content = b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
+    return f"free-review-{trade_date}.csv", content

@@ -124,6 +124,118 @@ class FreeReviewRepositoryTests(unittest.TestCase):
         self.assertEqual(result["stage"], "financial")
         self.assertEqual(result["started_at"], "2026-07-30 18:00:00")
 
+    def test_query_compiler_uses_whitelisted_fields_and_parameters(self):
+        from free_review_models import FreeReviewQuery
+        from free_review_repository import compile_review_where
+
+        request = FreeReviewQuery(
+            trade_date="20260730",
+            keyword="制造",
+            industries=["电子", "机械"],
+            markets=["主板"],
+            profit_state="profit",
+            ranges={
+                "total_score": {"min": 65, "max": 90},
+                "pe_ttm": {"min": 0, "max": 35},
+            },
+            sort_by="volume_ratio",
+            sort_direction="asc",
+            page=2,
+            page_size=100,
+        )
+        sql, params = compile_review_where(request, "20260730")
+
+        self.assertIn("trade_date=%s", sql)
+        self.assertIn("(ts_code LIKE %s OR name LIKE %s", sql)
+        self.assertIn("`industry` IN (%s,%s)", sql)
+        self.assertIn("`total_score` >= %s", sql)
+        self.assertIn("`pe_ttm` <= %s", sql)
+        self.assertNotIn("制造", sql)
+        self.assertIn("%制造%", params)
+
+    def test_query_model_rejects_unknown_filter_sort_and_page_size(self):
+        from pydantic import ValidationError
+
+        from free_review_models import FreeReviewQuery
+
+        with self.assertRaises(ValidationError):
+            FreeReviewQuery(ranges={"drop_table": {"min": 1}})
+        with self.assertRaises(ValidationError):
+            FreeReviewQuery(sort_by="drop_table")
+        with self.assertRaises(ValidationError):
+            FreeReviewQuery(page_size=5000)
+
+    def test_paginated_query_decodes_json_and_returns_total(self):
+        import free_review_repository
+        from free_review_models import FreeReviewQuery
+
+        cursor, connection = fake_connection()
+        cursor.fetchone.return_value = {"total": 1}
+        cursor.fetchall.return_value = [{
+            "trade_date": "20260730",
+            "ts_code": "600001.SH",
+            "score_reasons": '["趋势向上"]',
+            "risk_flags": "[]",
+            "missing_fields": '["roic"]',
+            "generated_at": datetime(2026, 7, 30, 18, 0),
+        }]
+        with (
+            patch(
+                "free_review_repository.init_free_review_schema"
+            ),
+            patch(
+                "free_review_repository.get_connection",
+                return_value=connection,
+            ),
+        ):
+            result = free_review_repository.query_review_snapshot(
+                FreeReviewQuery(trade_date="20260730")
+            )
+
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["items"][0]["score_reasons"], ["趋势向上"])
+        self.assertEqual(
+            result["items"][0]["generated_at"],
+            "2026-07-30 18:00:00",
+        )
+        select_sql, select_params = cursor.execute.call_args.args
+        self.assertIn("ORDER BY `total_score` DESC", select_sql)
+        self.assertEqual(select_params[-2:], (50, 0))
+
+    def test_sector_aggregation_contains_required_metrics(self):
+        import free_review_repository
+
+        cursor, connection = fake_connection()
+        cursor.fetchall.return_value = [{
+            "industry": "电子",
+            "stock_count": 12,
+            "avg_pct_chg": 1.2,
+            "up_ratio": 0.75,
+            "median_volume_ratio": 1.4,
+            "avg_turnover_rate": 3.2,
+            "avg_pe_ttm": 28.0,
+            "avg_total_score": 71.5,
+        }]
+        with (
+            patch(
+                "free_review_repository.init_free_review_schema"
+            ),
+            patch(
+                "free_review_repository.get_connection",
+                return_value=connection,
+            ),
+        ):
+            result = free_review_repository.load_review_sectors(
+                "20260730"
+            )
+
+        expected = {
+            "industry", "stock_count", "avg_pct_chg", "up_ratio",
+            "median_volume_ratio", "avg_turnover_rate",
+            "avg_pe_ttm", "avg_total_score",
+        }
+        self.assertTrue(expected.issubset(result[0]))
+
 
 if __name__ == "__main__":
     unittest.main()
