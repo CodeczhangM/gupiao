@@ -1,0 +1,42 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "afe7818d8382f005b5b3260c60e7c8849ff5c540",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 6558,
+      "total_deletions": 16,
+      "accepted_lines": 6558,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 78,
+    "git_diff_deleted_lines": 0,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 78,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "docs/superpowers/specs/2026-07-30-morning-follow-market-snapshot-fallback-design.md": {
+        "BYMC": [
+          "1-78"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785395253,
+  "requirement_id": ""
+}
