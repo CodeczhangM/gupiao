@@ -1,0 +1,130 @@
+intraday_monitor_service.py
+  47ee1ab46e0253fd 8,10-15,71,93,96-100,102,108-112,119-120,149,151-155,157-158
+tests/test_intraday_monitor_service.py
+  47ee1ab46e0253fd 51,58,69,77,94-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "1b934e77e4114ebb922d3e04ccfa122559abd1a3",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 133,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 263,
+    "git_diff_deleted_lines": 19,
+    "ai_additions": 62,
+    "ai_accepted": 62,
+    "BYMC": 198,
+    "mixed_additions": 0,
+    "BYAC": 62,
+    "BYRC": 0,
+    "per_file": {
+      "intraday_monitor_service.py": {
+        "BYMC": [
+          "51-70",
+          "72",
+          "103",
+          "124",
+          "174-181",
+          "185-186"
+        ],
+        "BYAC": [
+          "8",
+          "10-15",
+          "71",
+          "93",
+          "96-100",
+          "102",
+          "108-112",
+          "119-120",
+          "149",
+          "151-155",
+          "157-158"
+        ],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [
+          "249",
+          "414",
+          "925",
+          "927"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "581-583",
+          "600-601"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.js": {
+        "BYMC": [
+          "6",
+          "61-86"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.test.js": {
+        "BYMC": [
+          "4",
+          "64-105"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "566-597",
+          "788",
+          "791-798",
+          "813-820",
+          "825-830",
+          "979-983"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_intraday_monitor_service.py": {
+        "BYMC": [
+          "85"
+        ],
+        "BYAC": [
+          "51",
+          "58",
+          "69",
+          "77",
+          "94-121"
+        ],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "55-74",
+          "781-785"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785398033,
+  "requirement_id": ""
+}
