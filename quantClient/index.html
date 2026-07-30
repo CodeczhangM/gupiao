@@ -249,6 +249,10 @@
               · {{ intradayDataTimeText }}
               · {{ intradayMonitorRows.length }} 只
             </span>
+            <div class="realtime-data-state" :class="`is-${intradayCacheState.state}`">
+              <strong>{{ intradayCacheState.text }}</strong>
+              <small>{{ intradayCacheState.detail }}</small>
+            </div>
           </div>
           <div class="monitor-actions">
             <label class="switch">
@@ -256,8 +260,11 @@
               <span></span>
               <b>30秒更新</b>
             </label>
-            <button class="secondary" @click="loadIntradayMonitor" :disabled="intradayLoading">
-              {{ intradayLoading ? '更新中' : '立即更新' }}
+            <button class="secondary" @click="loadIntradayMonitor(true, false, false)" :disabled="intradayLoading">
+              {{ intradayRefreshMode === 'quick' ? '查询中' : '快速查看' }}
+            </button>
+            <button @click="loadIntradayMonitor(true, true, true)" :disabled="intradayLoading">
+              {{ intradayRefreshMode === 'force' ? '刷新中' : '强制刷新' }}
             </button>
           </div>
         </div>
@@ -417,6 +424,10 @@
                 <strong>{{ realtimeInfoStatus.text }}</strong>
                 <small>{{ realtimeInfoStatus.detail }}</small>
               </div>
+              <div class="realtime-data-state" :class="`is-${realtimeInfoCacheState.state}`">
+                <strong>{{ realtimeInfoCacheState.text }}</strong>
+                <small>{{ realtimeInfoCacheState.detail }}</small>
+              </div>
             </div>
             <div class="monitor-actions">
               <label class="switch">
@@ -424,8 +435,11 @@
                 <span></span>
                 <b>30秒更新</b>
               </label>
-              <button class="secondary" @click="loadRealtimeInfo(true, true)" :disabled="realtimeInfoLoading">
-                {{ realtimeInfoLoading ? '拉取中' : '拉取实时信息' }}
+              <button class="secondary" @click="loadRealtimeInfo(true, false)" :disabled="realtimeInfoLoading">
+                {{ realtimeInfoRefreshMode === 'quick' ? '查询中' : '快速查看' }}
+              </button>
+              <button @click="loadRealtimeInfo(true, true)" :disabled="realtimeInfoLoading">
+                {{ realtimeInfoRefreshMode === 'force' ? '刷新中' : '强制刷新' }}
               </button>
             </div>
           </div>
@@ -922,8 +936,8 @@
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="./cache-utils.js?v=20260712-cache-date-v2"></script>
   <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
-  <script src="./realtime-info-utils.js?v=20260730-screening-time-v1"></script>
+  <script src="./realtime-info-utils.js?v=20260730-db-cache-v1"></script>
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
-  <script src="./main.js?v=20260730-screening-time-v1"></script>
+  <script src="./main.js?v=20260730-db-cache-v1"></script>
 </body>
 </html>

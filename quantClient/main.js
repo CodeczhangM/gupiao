@@ -513,6 +513,7 @@ createApp({
       tradeReviewLoading: false,
       tradeReview: null,
       intradayLoading: false,
+      intradayRefreshMode: null,
       intradayMonitor: {},
       intradayAutoRefresh: false,
       intradayTimer: null,
@@ -521,6 +522,7 @@ createApp({
       overnightAutoRefresh: false,
       overnightTimer: null,
       realtimeInfoLoading: false,
+      realtimeInfoRefreshMode: null,
       realtimeInfo: {},
       realtimeInfoAutoRefresh: false,
       realtimeInfoTimer: null,
@@ -581,6 +583,9 @@ createApp({
     intradayDataTimeText() {
       return screeningDataTimeText(this.intradayMonitor);
     },
+    intradayCacheState() {
+      return realtimeCacheState(this.intradayMonitor);
+    },
     overnightMonitorRows() {
       return Array.isArray(this.overnightMonitor.stocks) ? this.overnightMonitor.stocks : [];
     },
@@ -602,6 +607,9 @@ createApp({
     },
     realtimeInfoStatus() {
       return realtimeDataStatus(this.realtimeInfo);
+    },
+    realtimeInfoCacheState() {
+      return realtimeCacheState(this.realtimeInfo);
     },
     topShortSector() {
       const rows = [...this.sectorPotentialRows].sort((a, b) => Number(b.short_score || 0) - Number(a.short_score || 0));
@@ -835,13 +843,23 @@ createApp({
       this.latest = updated || this.latest;
       await this.loadReports();
     },
-    async loadIntradayMonitor(showError = true, ensureCurrent = true) {
+    async loadIntradayMonitor(
+      showError = true,
+      ensureCurrent = false,
+      forceRefresh = false,
+    ) {
       this.intradayLoading = true;
+      this.intradayRefreshMode = forceRefresh ? 'force' : 'quick';
       try {
-        this.intradayMonitor = (await this.request('/intraday-monitor')) || {};
+        const forceQuery = forceRefresh ? '?force_refresh=true' : '';
+        this.intradayMonitor = (
+          await this.request(`/intraday-monitor${forceQuery}`)
+        ) || {};
         if (ensureCurrent && this.intradayMonitor.data_current === false) {
           await this.ensureCurrentMarketData();
-          this.intradayMonitor = (await this.request('/intraday-monitor')) || {};
+          this.intradayMonitor = (
+            await this.request('/intraday-monitor?force_refresh=true')
+          ) || {};
         }
         if (!this.intradayMonitor.auto_refresh_enabled && this.intradayAutoRefresh) {
           this.stopIntradayMonitor();
@@ -851,13 +869,14 @@ createApp({
         if (showError) this.error = error.message;
       } finally {
         this.intradayLoading = false;
+        this.intradayRefreshMode = null;
       }
     },
     startIntradayMonitor() {
       this.stopIntradayMonitor();
-      this.loadIntradayMonitor(false, true);
+      this.loadIntradayMonitor(false, false, false);
       this.intradayTimer = setInterval(() => {
-        this.loadIntradayMonitor(false, true);
+        this.loadIntradayMonitor(false, false, false);
       }, 30000);
     },
     stopIntradayMonitor() {
@@ -904,6 +923,7 @@ createApp({
     async loadRealtimeInfo(showError = true, forceRefresh = false) {
       if (this.realtimeInfoLoading) return;
       this.realtimeInfoLoading = true;
+      this.realtimeInfoRefreshMode = forceRefresh ? 'force' : 'quick';
       try {
         const forceQuery = forceRefresh ? '&force_refresh=true' : '';
         this.realtimeInfo = (
@@ -913,6 +933,7 @@ createApp({
         if (showError) this.error = error.message;
       } finally {
         this.realtimeInfoLoading = false;
+        this.realtimeInfoRefreshMode = null;
       }
     },
     startRealtimeInfoMonitor() {

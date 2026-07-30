@@ -1,9 +1,33 @@
 const assert = require('assert');
 const {
+  realtimeCacheState,
   realtimeDataStatus,
   screeningDataTimeText,
   tailVolumeDisplay,
 } = require('./realtime-info-utils.js');
+
+assert.deepEqual(
+  realtimeCacheState({
+    cache_source: 'database',
+    cache_updated_at: '2026-07-30 14:40:00',
+  }),
+  {
+    text: '数据库快速结果',
+    state: 'cached',
+    detail: '缓存更新于 2026-07-30 14:40:00',
+  },
+);
+assert.deepEqual(
+  realtimeCacheState({
+    cache_source: 'fresh',
+    cache_updated_at: '2026-07-30 14:41:12',
+  }),
+  {
+    text: '刚刚强制刷新',
+    state: 'fresh',
+    detail: '刷新于 2026-07-30 14:41:12',
+  },
+);
 
 assert.deepEqual(
   tailVolumeDisplay({ tail_after_1430_available: true, tail_volume_ratio: 1.5 }, true),

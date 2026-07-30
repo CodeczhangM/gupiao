@@ -10,7 +10,7 @@ import pandas as pd
 
 from data_service import get_trade_dates, sync_cached_market_data
 from intraday_monitor_service import _main_force_status, _market_phase
-from market_cache import load_market_snapshot, load_recent_daily
+from market_cache import get_complete_dates, load_market_snapshot, load_recent_daily
 from realtime_market_source import (
     MinuteLoadResult,
     load_eastmoney_market_snapshot,
@@ -18,8 +18,11 @@ from realtime_market_source import (
 )
 from realtime_cache import (
     load_minute_cache,
+    load_result_cache,
     minute_cache_is_fresh,
+    prune_realtime_cache,
     save_minute_cache,
+    save_result_cache,
 )
 from overnight_monitor_service import (
     build_overnight_monitor,
@@ -1075,6 +1078,55 @@ def _has_realtime_stocks(result: dict[str, Any]) -> bool:
     )
 
 
+def _database_realtime_result_key(limit: int) -> str:
+    return f"limit={max(1, min(int(limit), 100))}"
+
+
+def _load_database_realtime_result(limit: int) -> dict[str, Any] | None:
+    try:
+        cached = load_result_cache(
+            "realtime_info",
+            _database_realtime_result_key(limit),
+        )
+    except Exception:
+        return None
+    if not cached or not isinstance(cached.get("payload"), dict):
+        return None
+    result = _json_safe(cached["payload"])
+    if not _has_realtime_stocks(result):
+        return None
+    result["cache_source"] = "database"
+    result["cache_updated_at"] = cached.get("updated_at")
+    result["result_cache_hit"] = True
+    return result
+
+
+def _save_database_realtime_result(
+    limit: int,
+    result: dict[str, Any],
+) -> list[str]:
+    warnings: list[str] = []
+    try:
+        save_result_cache(
+            "realtime_info",
+            _database_realtime_result_key(limit),
+            _json_safe(result),
+        )
+        current_trade_date = str(
+            result.get("data_trade_date")
+            or result.get("trade_date")
+            or ""
+        )
+        keep_dates = list(dict.fromkeys(
+            ([current_trade_date] if current_trade_date else [])
+            + list(get_complete_dates(5))
+        ))[:5]
+        prune_realtime_cache(keep_dates)
+    except Exception as exc:
+        warnings.append(f"实时结果数据库缓存失败: {str(exc)[:120]}")
+    return warnings
+
+
 def build_realtime_info(
     now: datetime | None = None,
     limit: int = 10,
@@ -1088,7 +1140,11 @@ def build_realtime_info(
         if cached is not None:
             result = _json_safe(cached)
             result["result_cache_hit"] = True
+            result["cache_source"] = "memory"
             return result
+        database_cached = _load_database_realtime_result(limit)
+        if database_cached is not None:
+            return database_cached
 
     build_error = None
     try:
@@ -1130,12 +1186,24 @@ def build_realtime_info(
             ),
             "stale_age_seconds": 0,
             "result_cache_hit": False,
+            "cache_source": "fresh",
+            "cache_updated_at": current.isoformat(
+                sep=" ", timespec="seconds"
+            ),
         }
+        cache_warnings = _save_database_realtime_result(limit, result)
+        if cache_warnings:
+            result["fallback_warnings"] = list(dict.fromkeys(
+                list(result.get("fallback_warnings") or [])
+                + cache_warnings
+            ))[:20]
         with _REALTIME_RESULT_LOCK:
             _LAST_SUCCESSFUL_REALTIME_RESULTS[int(limit)] = _json_safe(result)
     else:
         with _REALTIME_RESULT_LOCK:
             previous = _LAST_SUCCESSFUL_REALTIME_RESULTS.get(int(limit))
+        if previous is None:
+            previous = _load_database_realtime_result(limit)
         if previous is not None:
             warnings = list(previous.get("fallback_warnings") or [])
             stale_performance = dict(previous.get("performance") or {})
@@ -1152,6 +1220,8 @@ def build_realtime_info(
                     previous.get("data_updated_at"), current
                 ),
                 "result_cache_hit": False,
+                "cache_source": previous.get("cache_source", "memory"),
+                "cache_updated_at": previous.get("cache_updated_at"),
                 "performance": stale_performance,
                 "fallback_warnings": list(
                     dict.fromkeys(warnings + [warning])

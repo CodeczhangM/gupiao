@@ -108,8 +108,9 @@ public class QuantController {
     }
 
     @GetMapping("/intraday-monitor")
-    public Map<String, Object> intradayMonitor() {
-        return quantPythonClient.intradayMonitor();
+    public Map<String, Object> intradayMonitor(
+            @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh) {
+        return quantPythonClient.intradayMonitor(forceRefresh);
     }
 
     @GetMapping("/overnight-monitor")

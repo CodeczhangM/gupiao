@@ -2,6 +2,7 @@
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.tailVolumeDisplay = api.tailVolumeDisplay;
+  root.realtimeCacheState = api.realtimeCacheState;
   root.realtimeDataStatus = api.realtimeDataStatus;
   root.screeningDataTimeText = api.screeningDataTimeText;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function buildRealtimeInfoUtils() {
@@ -33,6 +34,37 @@
     const remaining = safeSeconds % 60;
     if (minutes <= 0) return `${remaining}秒`;
     return `${minutes}分${remaining}秒`;
+  }
+
+  function realtimeCacheState(payload) {
+    const source = payload || {};
+    const updatedAt = source.cache_updated_at || source.data_updated_at || '--';
+    if (source.cache_source === 'database') {
+      return {
+        text: '数据库快速结果',
+        state: 'cached',
+        detail: `缓存更新于 ${updatedAt}`,
+      };
+    }
+    if (source.cache_source === 'memory') {
+      return {
+        text: '内存快速结果',
+        state: 'cached',
+        detail: `缓存更新于 ${updatedAt}`,
+      };
+    }
+    if (source.cache_source === 'fresh') {
+      return {
+        text: '刚刚强制刷新',
+        state: 'fresh',
+        detail: `刷新于 ${updatedAt}`,
+      };
+    }
+    return {
+      text: '尚未查询',
+      state: 'empty',
+      detail: '可快速查看数据库结果或强制刷新行情',
+    };
   }
 
   function realtimeDataStatus(payload) {
@@ -80,6 +112,7 @@
   }
 
   return {
+    realtimeCacheState,
     realtimeDataStatus,
     screeningDataTimeText,
     tailVolumeDisplay,

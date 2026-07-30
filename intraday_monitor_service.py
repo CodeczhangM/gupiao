@@ -7,16 +7,21 @@ import pandas as pd
 
 from data_service import get_trade_dates
 from database import get_latest_report
+from market_cache import get_complete_dates
 from overnight_monitor_service import (
     _cached_minute_bars,
+    _json_safe,
     _mask_unavailable_tail_fields,
     _opening_auction_signal,
     _realtime_end_datetime,
 )
 from realtime_cache import (
     load_minute_cache,
+    load_result_cache,
     minute_cache_is_fresh,
+    prune_realtime_cache,
     save_minute_cache,
+    save_result_cache,
 )
 from strategy import _macd_kdj_60m_signal
 
@@ -188,7 +193,32 @@ def _monitor_row(stock: dict[str, Any], trade_date: str, fetch_realtime: bool, n
     }
 
 
-def build_intraday_monitor(fetch_realtime: bool = True, now: datetime | None = None) -> dict[str, Any]:
+def _load_database_intraday_result() -> dict[str, Any] | None:
+    try:
+        cached = load_result_cache("intraday_monitor", "default")
+    except Exception:
+        return None
+    if not cached or not isinstance(cached.get("payload"), dict):
+        return None
+    result = _json_safe(cached["payload"])
+    if not result.get("stocks"):
+        return None
+    result["cache_source"] = "database"
+    result["cache_updated_at"] = cached.get("updated_at")
+    result["result_cache_hit"] = True
+    return result
+
+
+def build_intraday_monitor(
+    fetch_realtime: bool = True,
+    now: datetime | None = None,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    if not force_refresh:
+        database_cached = _load_database_intraday_result()
+        if database_cached is not None:
+            return database_cached
+
     report = get_latest_report()
     if not report:
         raise LookupError("还没有选股报告，请先运行扫描")
@@ -240,7 +270,7 @@ def build_intraday_monitor(fetch_realtime: bool = True, now: datetime | None = N
         ),
         default=None,
     )
-    return {
+    result = {
         "report_id": report.get("id"),
         "trade_date": trade_date,
         "data_trade_date": trade_date,
@@ -252,4 +282,29 @@ def build_intraday_monitor(fetch_realtime: bool = True, now: datetime | None = N
         "updated_at": (now or datetime.now()).isoformat(sep=" ", timespec="seconds"),
         "refresh_interval_seconds": 30,
         "stocks": rows,
+        "data_status": "live",
+        "data_status_label": "实时数据",
+        "data_updated_at": (now or datetime.now()).isoformat(
+            sep=" ", timespec="seconds"
+        ),
+        "cache_source": "fresh",
+        "cache_updated_at": (now or datetime.now()).isoformat(
+            sep=" ", timespec="seconds"
+        ),
+        "result_cache_hit": False,
     }
+    if rows:
+        try:
+            save_result_cache(
+                "intraday_monitor",
+                "default",
+                _json_safe(result),
+            )
+            keep_dates = list(dict.fromkeys(
+                ([trade_date] if trade_date else [])
+                + list(get_complete_dates(5))
+            ))[:5]
+            prune_realtime_cache(keep_dates)
+        except Exception:
+            pass
+    return _json_safe(result)

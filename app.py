@@ -149,9 +149,9 @@ def latest_dip():
 
 
 @app.get("/api/intraday-monitor")
-def intraday_monitor():
+def intraday_monitor(force_refresh: bool = False):
     try:
-        return build_intraday_monitor()
+        return build_intraday_monitor(force_refresh=force_refresh)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

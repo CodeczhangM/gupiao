@@ -116,8 +116,14 @@ public class QuantPythonClient {
         return getMap("/api/scan/latest/dip");
     }
 
-    public Map<String, Object> intradayMonitor() {
-        return getMap("/api/intraday-monitor");
+    public Map<String, Object> intradayMonitor(boolean forceRefresh) {
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/intraday-monitor")
+                        .queryParam("force_refresh", forceRefresh)
+                        .build())
+                .retrieve()
+                .body(mapType());
     }
 
     public Map<String, Object> overnightMonitor(int limit) {

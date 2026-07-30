@@ -56,10 +56,41 @@ class IntradayMonitorServiceTests(unittest.TestCase):
         self.database_minute_saves = patch(
             "intraday_monitor_service.save_minute_cache",
         )
+        self.database_results = patch(
+            "intraday_monitor_service.load_result_cache",
+            return_value=None,
+            create=True,
+        )
+        self.database_result_saves = patch(
+            "intraday_monitor_service.save_result_cache",
+            create=True,
+        )
+        self.database_prune = patch(
+            "intraday_monitor_service.prune_realtime_cache",
+            create=True,
+        )
+        self.complete_dates = patch(
+            "intraday_monitor_service.get_complete_dates",
+            return_value=[
+                "20260727",
+                "20260724",
+                "20260723",
+                "20260722",
+                "20260721",
+            ],
+        )
         self.database_minutes.start()
         self.database_minute_saves.start()
+        self.database_results.start()
+        self.database_result_saves.start()
+        self.database_prune.start()
+        self.complete_dates.start()
         self.addCleanup(self.database_minutes.stop)
         self.addCleanup(self.database_minute_saves.stop)
+        self.addCleanup(self.database_results.stop)
+        self.addCleanup(self.database_result_saves.stop)
+        self.addCleanup(self.database_prune.stop)
+        self.addCleanup(self.complete_dates.stop)
 
     def test_persistent_minutes_use_fresh_database_before_provider(self):
         import intraday_monitor_service
@@ -103,6 +134,57 @@ class IntradayMonitorServiceTests(unittest.TestCase):
 
         self.assertEqual(result.iloc[-1]["close"], 10.1)
         provider.assert_not_called()
+
+    def test_database_result_returns_without_loading_report(self):
+        with (
+            patch(
+                "intraday_monitor_service.load_result_cache",
+                return_value={
+                    "payload": {
+                        "trade_date": "20260728",
+                        "stocks": [{"ts_code": "301073.SZ"}],
+                    },
+                    "updated_at": "2026-07-28 14:40:00",
+                },
+                create=True,
+            ),
+            patch(
+                "intraday_monitor_service.get_latest_report"
+            ) as report,
+        ):
+            result = build_intraday_monitor(
+                now=datetime(2026, 7, 28, 14, 41),
+                force_refresh=False,
+            )
+
+        self.assertEqual(result["cache_source"], "database")
+        self.assertEqual(
+            result["cache_updated_at"],
+            "2026-07-28 14:40:00",
+        )
+        self.assertTrue(result["result_cache_hit"])
+        report.assert_not_called()
+
+    def test_force_refresh_bypasses_database_result_fast_path(self):
+        with patch(
+            "intraday_monitor_service.load_result_cache",
+            return_value={
+                "payload": {
+                    "trade_date": "20260728",
+                    "stocks": [{"ts_code": "cached"}],
+                },
+                "updated_at": "2026-07-28 14:40:00",
+            },
+            create=True,
+        ) as database_result:
+            result = build_intraday_monitor(
+                fetch_realtime=False,
+                now=datetime(2026, 7, 28, 15, 10),
+                force_refresh=True,
+            )
+
+        self.assertNotEqual(result["stocks"][0]["ts_code"], "cached")
+        database_result.assert_not_called()
 
     @patch("intraday_monitor_service._cached_minute_bars")
     @patch("intraday_monitor_service.get_trade_dates", return_value=["20260728"])

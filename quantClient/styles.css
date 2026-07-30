@@ -639,6 +639,15 @@ button {
   color: #0b8f68;
 }
 
+.realtime-data-state.is-cached strong,
+.realtime-data-state.is-cached small {
+  color: #526b8a;
+}
+
+.realtime-data-state.is-fresh strong {
+  color: #0b8f68;
+}
+
 .realtime-data-state.is-warning strong,
 .realtime-data-state.is-warning small {
   color: #b36a00;

@@ -46,16 +46,47 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.database_minute_saves = patch(
             "realtime_info_service.save_minute_cache",
         )
+        self.database_results = patch(
+            "realtime_info_service.load_result_cache",
+            return_value=None,
+            create=True,
+        )
+        self.database_result_saves = patch(
+            "realtime_info_service.save_result_cache",
+            create=True,
+        )
+        self.database_prune = patch(
+            "realtime_info_service.prune_realtime_cache",
+            create=True,
+        )
+        self.complete_dates = patch(
+            "realtime_info_service.get_complete_dates",
+            return_value=[
+                "20260729",
+                "20260728",
+                "20260727",
+                "20260724",
+                "20260723",
+            ],
+        )
         self.snapshot_fallback.start()
         self.eastmoney_minutes.start()
         self.sina_minutes.start()
         self.database_minutes.start()
         self.database_minute_saves.start()
+        self.database_results.start()
+        self.database_result_saves.start()
+        self.database_prune.start()
+        self.complete_dates.start()
         self.addCleanup(self.snapshot_fallback.stop)
         self.addCleanup(self.eastmoney_minutes.stop)
         self.addCleanup(self.sina_minutes.stop)
         self.addCleanup(self.database_minutes.stop)
         self.addCleanup(self.database_minute_saves.stop)
+        self.addCleanup(self.database_results.stop)
+        self.addCleanup(self.database_result_saves.stop)
+        self.addCleanup(self.database_prune.stop)
+        self.addCleanup(self.complete_dates.stop)
 
     def test_trading_session_progress_stops_during_lunch_break(self):
         self.assertEqual(
@@ -401,6 +432,88 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             },
         )
         self.assertFalse(first["performance"]["used_stale_fallback"])
+
+    def test_database_result_cache_precedes_full_realtime_build(self):
+        import realtime_info_service
+
+        cached_payload = {
+            "trade_date": "20260730",
+            "data_trade_date": "20260730",
+            "data_as_of": "2026-07-30 14:39:00",
+            "data_status": "live",
+            "intraday": {
+                "stocks": [{"ts_code": "600298.SH"}],
+            },
+            "overnight": {"stocks": []},
+        }
+        with (
+            patch(
+                "realtime_info_service.load_result_cache",
+                return_value={
+                    "payload": cached_payload,
+                    "updated_at": "2026-07-30 14:40:00",
+                },
+                create=True,
+            ),
+            patch(
+                "realtime_info_service._build_realtime_info_uncached"
+            ) as build,
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 41),
+                limit=10,
+                force_refresh=False,
+            )
+
+        self.assertEqual(result["cache_source"], "database")
+        self.assertEqual(
+            result["cache_updated_at"],
+            "2026-07-30 14:40:00",
+        )
+        self.assertTrue(result["result_cache_hit"])
+        self.assertEqual(
+            result["intraday"]["stocks"][0]["ts_code"],
+            "600298.SH",
+        )
+        build.assert_not_called()
+
+    def test_force_refresh_bypasses_database_result_fast_path(self):
+        with (
+            patch(
+                "realtime_info_service.load_result_cache",
+                return_value={
+                    "payload": {
+                        "intraday": {
+                            "stocks": [{"ts_code": "cached"}],
+                        },
+                        "overnight": {"stocks": []},
+                    },
+                    "updated_at": "2026-07-30 14:40:00",
+                },
+                create=True,
+            ) as database_result,
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+                return_value={
+                    "trade_date": "20260730",
+                    "intraday": {
+                        "stocks": [{"ts_code": "fresh"}],
+                    },
+                    "overnight": {"stocks": []},
+                },
+            ),
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 41),
+                limit=10,
+                force_refresh=True,
+            )
+
+        self.assertEqual(
+            result["intraday"]["stocks"][0]["ts_code"],
+            "fresh",
+        )
+        database_result.assert_not_called()
 
     def test_empty_live_refresh_returns_last_success_as_stale(self):
         live_section = {

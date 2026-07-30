@@ -78,13 +78,14 @@ class QuantControllerTest {
     @Test
     void intradayMonitorForwardsToPythonClient() throws Exception {
         QuantPythonClient quantPythonClient = mock(QuantPythonClient.class);
-        when(quantPythonClient.intradayMonitor()).thenReturn(Map.of("market_phase", "盘中监控"));
+        when(quantPythonClient.intradayMonitor(true)).thenReturn(Map.of("market_phase", "盘中监控"));
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new QuantController(quantPythonClient)).build();
 
-        mockMvc.perform(get("/api/quant/intraday-monitor"))
+        mockMvc.perform(get("/api/quant/intraday-monitor")
+                        .param("force_refresh", "true"))
                 .andExpect(status().isOk());
 
-        verify(quantPythonClient).intradayMonitor();
+        verify(quantPythonClient).intradayMonitor(true);
     }
 
     @Test
