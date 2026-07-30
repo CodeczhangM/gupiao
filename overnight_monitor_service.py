@@ -3,17 +3,22 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import math
 import time
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
-from data_service import get_cached_scan_inputs, get_market_data, get_stock_minute_bars
+from data_service import get_cached_scan_inputs, get_market_data, get_stock_minute_bars, get_trade_dates, sync_cached_market_data
+from market_cache import load_market_snapshot, load_recent_daily
+from realtime_market_source import MinuteLoadResult
 from strategy import _macd_kdj_60m_signal, rank_sector_potential
 
 
 _MINUTE_BAR_CACHE: dict[tuple[str, str, str, str], tuple[float, pd.DataFrame]] = {}
+_FAILED_MINUTE_BAR_CACHE: dict[tuple[str, str, str, str], tuple[float, Exception]] = {}
+_OVERNIGHT_RESULT_CACHE: dict[tuple[int, int, str], tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SECONDS = {"60min": 600, "1min": 25}
-_REQUEST_SPACING_SECONDS = 0.12
+_FAILED_CACHE_TTL_SECONDS = 90
+_RESULT_CACHE_TTL_SECONDS = 25
 
 
 def _json_safe(value: Any) -> Any:
@@ -45,12 +50,45 @@ def _cached_minute_bars(ts_code: str, start_datetime: str, end_datetime: str, fr
     cached = _MINUTE_BAR_CACHE.get(key)
     if cached and now - cached[0] <= ttl:
         return cached[1].copy()
+    failed = _FAILED_MINUTE_BAR_CACHE.get(key)
+    if failed and now - failed[0] <= _FAILED_CACHE_TTL_SECONDS:
+        raise failed[1]
 
-    time.sleep(_REQUEST_SPACING_SECONDS)
-    bars = get_stock_minute_bars(ts_code, start_datetime, end_datetime, freq=freq)
+    try:
+        bars = get_stock_minute_bars(ts_code, start_datetime, end_datetime, freq=freq)
+    except Exception as exc:
+        _FAILED_MINUTE_BAR_CACHE[key] = (now, exc)
+        raise
     frame = bars.copy() if isinstance(bars, pd.DataFrame) else pd.DataFrame(bars)
     _MINUTE_BAR_CACHE[key] = (now, frame.copy())
+    _FAILED_MINUTE_BAR_CACHE.pop(key, None)
     return frame
+
+
+def _result_cache_key(limit: int, max_fetch: int, trade_date: str, now: datetime | None = None) -> tuple[int, int, str]:
+    return (int(limit), int(max_fetch), _realtime_end_datetime(trade_date, now=now))
+
+
+def _get_cached_result(key: tuple[int, int, str]) -> dict[str, Any] | None:
+    cached = _OVERNIGHT_RESULT_CACHE.get(key)
+    if not cached:
+        return None
+    age = time.monotonic() - cached[0]
+    if age > _RESULT_CACHE_TTL_SECONDS:
+        _OVERNIGHT_RESULT_CACHE.pop(key, None)
+        return None
+    result = _json_safe(cached[1])
+    result["result_cache_hit"] = True
+    return result
+
+
+def _store_result_cache(key: tuple[int, int, str], result: dict[str, Any]) -> None:
+    _OVERNIGHT_RESULT_CACHE[key] = (time.monotonic(), _json_safe(result))
+
+
+def _preload_result_cache_key(limit: int, max_fetch: int, now: datetime | None = None) -> tuple[int, int, str]:
+    current = now or datetime.now()
+    return (int(limit), int(max_fetch), current.strftime("%Y-%m-%d %H:%M"))
 
 
 def _market_phase(now: datetime | None = None) -> tuple[str, bool]:
@@ -62,9 +100,58 @@ def _market_phase(now: datetime | None = None) -> tuple[str, bool]:
     return "尾盘盯盘", True
 
 
+def _load_overnight_inputs(now: datetime | None = None) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    phase, should_refresh = _market_phase(now)
+    if should_refresh:
+        try:
+            latest_trade_date = str(get_trade_dates(n=1)[0])
+            sync_metadata = sync_cached_market_data(force_current=True)
+            market = load_market_snapshot(latest_trade_date)
+            if market is not None and not market.empty:
+                history = load_recent_daily(latest_trade_date, 100)
+                return market, history, {
+                    **(sync_metadata or {}),
+                    "data_trade_date": latest_trade_date,
+                    "latest_trade_date": latest_trade_date,
+                    "data_current": True,
+                    "data_source": "current_snapshot",
+                }
+        except Exception as exc:
+            print(f"隔夜溢价今日行情加载失败，回退最近完整日: {exc}")
+
+    market, history, metadata = get_cached_scan_inputs(100)
+    trade_date = str(metadata.get("data_trade_date") or "")
+    latest_trade_date = trade_date
+    try:
+        latest_trade_date = str(get_trade_dates(n=1)[0])
+    except Exception:
+        pass
+    return market, history, {
+        **metadata,
+        "data_trade_date": trade_date,
+        "latest_trade_date": latest_trade_date,
+        "data_current": trade_date == latest_trade_date,
+        "data_source": "complete_cache",
+    }
+
+
 def _datetime_window(trade_date: str, start_clock: str, end_clock: str) -> tuple[str, str]:
     day = datetime.strptime(str(trade_date), "%Y%m%d")
     return day.strftime(f"%Y-%m-%d {start_clock}"), day.strftime(f"%Y-%m-%d {end_clock}")
+
+
+def _realtime_end_datetime(trade_date: str, now: datetime | None = None, lag_minutes: int = 1) -> str:
+    day = datetime.strptime(str(trade_date), "%Y%m%d")
+    current = now or datetime.now()
+    if current.strftime("%Y%m%d") != str(trade_date):
+        return day.strftime("%Y-%m-%d 15:00:00")
+    latest = current - timedelta(minutes=max(0, lag_minutes))
+    clock = latest.strftime("%H:%M:%S")
+    if clock < "09:30:00":
+        return day.strftime("%Y-%m-%d 09:30:00")
+    if clock > "15:00:00":
+        return day.strftime("%Y-%m-%d 15:00:00")
+    return latest.strftime("%Y-%m-%d %H:%M:00")
 
 
 def _history_window(trade_date: str, lookback_days=70) -> tuple[str, str]:
@@ -95,6 +182,17 @@ def _leader_codes_from_sector_potential(market: pd.DataFrame, history: pd.DataFr
             if ts_code:
                 leaders[ts_code] = item
     return leaders
+
+
+def _limit_leader_codes(leader_codes: dict[str, dict[str, Any]], max_leaders: int | None = None) -> dict[str, dict[str, Any]]:
+    if max_leaders is None or max_leaders <= 0 or len(leader_codes) <= max_leaders:
+        return leader_codes
+    ordered = sorted(
+        leader_codes.items(),
+        key=lambda item: float((item[1] or {}).get("leader_score") or 0),
+        reverse=True,
+    )
+    return dict(ordered[:max_leaders])
 
 
 def _candidate_universe(market: pd.DataFrame, max_fetch: int, leader_codes: dict[str, dict[str, Any]] | None = None) -> pd.DataFrame:
@@ -143,6 +241,35 @@ def _candidate_universe(market: pd.DataFrame, max_fetch: int, leader_codes: dict
         lambda values: "龙头" if "龙头" in set(values) else "常规"
     )
     return result.drop_duplicates(subset=["ts_code"], keep="last").sort_values("prefilter_score", ascending=False).reset_index(drop=True)
+
+
+def _sector_representative_universe(market: pd.DataFrame, candidates: pd.DataFrame, per_sector: int = 5) -> pd.DataFrame:
+    if market is None or market.empty or candidates is None or candidates.empty:
+        return pd.DataFrame()
+    if "industry" not in market.columns or "industry" not in candidates.columns or "ts_code" not in market.columns:
+        return pd.DataFrame()
+    industries = {str(item) for item in candidates["industry"].dropna().unique().tolist() if str(item)}
+    if not industries:
+        return pd.DataFrame()
+
+    data = market[market["industry"].astype(str).isin(industries)].copy()
+    if data.empty:
+        return data
+    for column in ["amount", "volume_ratio", "pct_chg"]:
+        data[column] = pd.to_numeric(data[column], errors="coerce") if column in data else 0
+    data["_sector_rep_score"] = (
+        (data["amount"] / 100_000).clip(0, 12)
+        + data["volume_ratio"].clip(0, 5) * 4
+        + data["pct_chg"].clip(-3, 10) * 1.5
+    )
+    top_reps = data.sort_values("_sector_rep_score", ascending=False).groupby("industry", group_keys=False).head(per_sector)
+    candidate_rows = data[data["ts_code"].astype(str).isin(candidates["ts_code"].astype(str))]
+    return (
+        pd.concat([top_reps, candidate_rows], ignore_index=True)
+        .drop_duplicates(subset=["ts_code"], keep="first")
+        .drop(columns=["_sector_rep_score"], errors="ignore")
+        .reset_index(drop=True)
+    )
 
 
 def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, pd.DataFrame]) -> dict[str, dict[str, Any]]:
@@ -245,7 +372,67 @@ def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, p
     return result
 
 
+def _mask_unavailable_tail_fields(signal: dict[str, Any], end_datetime: str) -> dict[str, Any]:
+    result = dict(signal)
+    clock = str(end_datetime)[-8:]
+    tail_available = clock > "14:30:00"
+    auction_available = clock >= "09:30:00"
+    result["tail_after_1430_available"] = tail_available
+    result["tail_auction_available"] = auction_available
+    if not tail_available:
+        for key in ("tail_strength_score", "tail_return_after_1430", "tail_volume_ratio", "tail_close_position"):
+            result[key] = None
+    if not auction_available:
+        result["tail_auction_return"] = None
+    return result
+
+
+def _numeric_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _opening_auction_signal(stock: dict[str, Any], end_datetime: str) -> dict[str, Any]:
+    clock = str(end_datetime)[-8:]
+    available = clock >= "09:30:00"
+    empty = {
+        "opening_auction_return": None,
+        "tail_auction_return": None,
+        "tail_auction_available": available,
+    }
+    if not available:
+        return empty
+
+    open_price = _numeric_or_none(stock.get("open"))
+    previous_close = (
+        _numeric_or_none(stock.get("pre_close"))
+        or _numeric_or_none(stock.get("previous_close"))
+    )
+    if previous_close is None:
+        close = _numeric_or_none(stock.get("close"))
+        pct_chg = _numeric_or_none(stock.get("pct_chg"))
+        if close is not None and pct_chg is not None and pct_chg > -99:
+            previous_close = close / (1 + pct_chg / 100)
+    if open_price is None or previous_close is None or previous_close == 0:
+        return empty
+
+    auction_return = round((open_price / previous_close - 1) * 100, 6)
+    return {
+        "opening_auction_return": auction_return,
+        "tail_auction_return": auction_return,
+        "tail_auction_available": True,
+    }
+
+
 def _overnight_labels(signal: dict[str, Any], pct_chg: float, volume_ratio: float | None = None) -> tuple[str, str, str, float]:
+    if not signal.get("tail_after_1430_available", True):
+        return "盘中观察", "观察", "未到14:30，暂不判断尾盘承接", 0
+    if not signal.get("tail_auction_available", True):
+        return "盘中观察", "观察", "未到9:30，暂不判断早盘集合竞价", 0
+
     tail_score = float(signal.get("tail_strength_score") or 50)
     tail_return = float(signal.get("tail_return_after_1430") or 0)
     auction_return = float(signal.get("tail_auction_return") or 0)
@@ -291,14 +478,41 @@ def _overnight_labels(signal: dict[str, Any], pct_chg: float, volume_ratio: floa
     return "尾盘抢筹观察", "观察", "信号不够集中，等待临近收盘确认", round(score, 2)
 
 
-def _build_row(stock: dict[str, Any], trade_date: str, sector_macd_map: dict[str, dict[str, Any]] | None = None) -> dict[str, Any] | None:
+def _build_row(
+    stock: dict[str, Any],
+    trade_date: str,
+    sector_macd_map: dict[str, dict[str, Any]] | None = None,
+    end_datetime: str | None = None,
+    minute_loader: Callable[..., MinuteLoadResult] | None = None,
+    loaded_60m: MinuteLoadResult | None = None,
+) -> dict[str, Any] | None:
     ts_code = str(stock.get("ts_code") or "")
     if not ts_code:
         return None
-    start_60m, end_60m = _history_window(trade_date)
-    tail_start, tail_end = _datetime_window(trade_date, "14:25:00", "15:00:00")
-    bars_60m = _cached_minute_bars(ts_code, start_60m, end_60m, freq="60min")
-    tail_1m = _cached_minute_bars(ts_code, tail_start, tail_end, freq="1min")
+    start_60m, default_end_60m = _history_window(trade_date)
+    end_60m = end_datetime or default_end_60m
+    tail_start, default_tail_end = _datetime_window(trade_date, "14:25:00", "15:00:00")
+    tail_end = end_datetime or default_tail_end
+    if minute_loader:
+        current_60m = loaded_60m or minute_loader(
+            ts_code, start_60m, end_60m, "60min", trade_date
+        )
+        loaded_1m = minute_loader(
+            ts_code, tail_start, tail_end, "1min", trade_date
+        )
+    else:
+        current_60m = loaded_60m or MinuteLoadResult(
+            _cached_minute_bars(ts_code, start_60m, end_60m, freq="60min"),
+            "tushare", [],
+        )
+        loaded_1m = MinuteLoadResult(
+            _cached_minute_bars(
+                ts_code, tail_start, tail_end, freq="1min"
+            ),
+            "tushare",
+            [],
+        )
+    bars_60m, tail_1m = current_60m.bars, loaded_1m.bars
     sector_signal = (sector_macd_map or {}).get(str(stock.get("industry") or ""), {})
     if sector_signal.get("sector_60m_excluded"):
         return None
@@ -306,6 +520,8 @@ def _build_row(stock: dict[str, Any], trade_date: str, sector_macd_map: dict[str
     if not signal:
         return None
     signal = {**signal, **sector_signal}
+    signal.update(_opening_auction_signal(stock, tail_end))
+    signal = _mask_unavailable_tail_fields(signal, tail_end)
     pct_chg = float(stock.get("pct_chg") or 0)
     volume_ratio = float(stock.get("volume_ratio") or 0)
     overnight_bias, buyable_tail_signal, overnight_reason, overnight_score = _overnight_labels(signal, pct_chg, volume_ratio=volume_ratio)
@@ -320,43 +536,113 @@ def _build_row(stock: dict[str, Any], trade_date: str, sector_macd_map: dict[str
         "overnight_candidate_score": overnight_score,
         "overheat_risk": "偏高" if pct_chg >= 7.5 else "正常",
         "next_morning_sell_plan": "高开3%以上先卖一半，冲高不封板逐步兑现；低开破分时均价止损",
+        "minute_data_source": (
+            loaded_1m.source if not tail_1m.empty else current_60m.source
+        ),
+        "minute_data_warnings": list(dict.fromkeys(
+            current_60m.warnings + loaded_1m.warnings
+        )),
     }
 
 
-def build_overnight_monitor(limit: int = 10, max_fetch: int = 30, now: datetime | None = None) -> dict[str, Any]:
-    phase, should_refresh = _market_phase(now)
-    try:
-        market, history, metadata = get_cached_scan_inputs(100)
-        trade_date = str(metadata.get("data_trade_date") or "")
-    except Exception:
-        market, trade_date = get_market_data()
-        history = pd.DataFrame()
-        trade_date = str(trade_date)
+def build_overnight_monitor(
+    limit: int = 10,
+    max_fetch: int = 30,
+    max_leaders: int | None = None,
+    now: datetime | None = None,
+    *,
+    market_override: pd.DataFrame | None = None,
+    history_override: pd.DataFrame | None = None,
+    trade_date_override: str | None = None,
+    minute_loader: Callable[..., MinuteLoadResult] | None = None,
+    source_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    use_override = market_override is not None and bool(trade_date_override)
+    preload_cache_key = _preload_result_cache_key(limit, max_fetch, now=now)
+    if not use_override:
+        preload_cached_result = _get_cached_result(preload_cache_key)
+        if preload_cached_result is not None:
+            return preload_cached_result
 
-    leader_codes = _leader_codes_from_sector_potential(market, history)
+    phase, should_refresh = _market_phase(now)
+    if use_override:
+        market = market_override.copy()
+        history = (
+            history_override.copy()
+            if isinstance(history_override, pd.DataFrame)
+            else pd.DataFrame()
+        )
+        trade_date = str(trade_date_override)
+        metadata = {
+            "data_trade_date": trade_date,
+            "latest_trade_date": trade_date,
+            "data_current": True,
+            "data_source": "runtime_override",
+            **(source_metadata or {}),
+        }
+    else:
+        try:
+            market, history, metadata = _load_overnight_inputs(now=now)
+            trade_date = str(metadata.get("data_trade_date") or "")
+        except Exception:
+            market, trade_date = get_market_data()
+            history = pd.DataFrame()
+            metadata = {"data_trade_date": str(trade_date), "latest_trade_date": str(trade_date), "data_current": True, "data_source": "direct_tushare"}
+            trade_date = str(trade_date)
+
+    cache_key = _result_cache_key(limit, max_fetch, trade_date, now=now)
+    if not use_override:
+        cached_result = _get_cached_result(cache_key)
+        if cached_result is not None:
+            return cached_result
+
+    leader_codes = _limit_leader_codes(_leader_codes_from_sector_potential(market, history), max_leaders=max_leaders)
     candidates = _candidate_universe(market, max_fetch=max_fetch, leader_codes=leader_codes)
-    start_60m, end_60m = _history_window(trade_date)
+    sector_representatives = _sector_representative_universe(market, candidates, per_sector=2)
+    start_60m, _default_end_60m = _history_window(trade_date)
+    end_60m = _realtime_end_datetime(trade_date, now=now)
     bars_by_code = {}
+    loaded_60m_by_code: dict[str, MinuteLoadResult] = {}
+    minute_sources = set()
     rows = []
     warnings = []
-    for stock in candidates.to_dict("records"):
+    for stock in sector_representatives.to_dict("records"):
         ts_code = str(stock.get("ts_code") or "")
         if not ts_code:
             continue
         try:
-            bars_by_code[ts_code] = _cached_minute_bars(ts_code, start_60m, end_60m, freq="60min")
+            if minute_loader:
+                loaded = minute_loader(
+                    ts_code, start_60m, end_60m, "60min", trade_date
+                )
+                bars_by_code[ts_code] = loaded.bars
+                loaded_60m_by_code[ts_code] = loaded
+                minute_sources.add(loaded.source)
+                warnings.extend(loaded.warnings)
+            else:
+                bars = _cached_minute_bars(
+                    ts_code, start_60m, end_60m, freq="60min"
+                )
+                bars_by_code[ts_code] = bars
+                loaded_60m_by_code[ts_code] = MinuteLoadResult(
+                    bars, "tushare", []
+                )
         except Exception as exc:
             warning = f"隔夜溢价候选60分钟更新失败 {stock.get('ts_code')}: {exc}"
             print(warning)
             warnings.append(warning)
 
-    sector_macd_map = _sector_60m_signal_from_bars(candidates, bars_by_code)
+    sector_macd_map = _sector_60m_signal_from_bars(sector_representatives, bars_by_code)
     for stock in candidates.to_dict("records"):
         ts_code = str(stock.get("ts_code") or "")
         if ts_code not in bars_by_code:
             continue
         try:
-            row = _build_row(stock, trade_date, sector_macd_map=sector_macd_map)
+            row = _build_row(
+                stock, trade_date, sector_macd_map=sector_macd_map,
+                end_datetime=end_60m, minute_loader=minute_loader,
+                loaded_60m=loaded_60m_by_code.get(ts_code),
+            )
         except Exception as exc:
             warning = f"隔夜溢价候选更新失败 {stock.get('ts_code')}: {exc}"
             print(warning)
@@ -364,6 +650,7 @@ def build_overnight_monitor(limit: int = 10, max_fetch: int = 30, now: datetime 
             row = None
         if row:
             rows.append(row)
+            minute_sources.add(str(row.get("minute_data_source") or ""))
 
     rows = sorted(
         rows,
@@ -375,8 +662,11 @@ def build_overnight_monitor(limit: int = 10, max_fetch: int = 30, now: datetime 
         ),
         reverse=True,
     )[: max(1, min(int(limit), 100))]
-    return _json_safe({
+    result = _json_safe({
         "trade_date": trade_date,
+        "latest_trade_date": metadata.get("latest_trade_date", trade_date),
+        "data_current": metadata.get("data_current", True),
+        "data_source": metadata.get("data_source"),
         "market_phase": phase,
         "auto_refresh_enabled": should_refresh,
         "updated_at": (now or datetime.now()).isoformat(sep=" ", timespec="seconds"),
@@ -384,5 +674,11 @@ def build_overnight_monitor(limit: int = 10, max_fetch: int = 30, now: datetime 
         "candidate_count": int(len(candidates)),
         "failed_count": int(len(warnings)),
         "warnings": warnings[:20],
+        "result_cache_hit": False,
         "stocks": rows,
+        "minute_data_sources": sorted(source for source in minute_sources if source),
     })
+    if not use_override:
+        _store_result_cache(preload_cache_key, result)
+        _store_result_cache(cache_key, result)
+    return result

@@ -5,11 +5,19 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from realtime_market_source import MinuteLoadResult
 from overnight_monitor_service import (
+    _FAILED_MINUTE_BAR_CACHE,
     _MINUTE_BAR_CACHE,
+    _OVERNIGHT_RESULT_CACHE,
     build_overnight_monitor,
     _json_safe,
     _overnight_labels,
+    _cached_minute_bars,
+    _opening_auction_signal,
+    _sector_representative_universe,
+    _mask_unavailable_tail_fields,
+    _realtime_end_datetime,
     _sector_60m_signal_from_bars,
 )
 from tests.test_advantage_stock_scoring import (
@@ -45,13 +53,157 @@ def market_fixture():
 class OvernightMonitorServiceTests(unittest.TestCase):
     def setUp(self):
         _MINUTE_BAR_CACHE.clear()
+        _FAILED_MINUTE_BAR_CACHE.clear()
+        _OVERNIGHT_RESULT_CACHE.clear()
 
+    @patch("overnight_monitor_service.time.sleep", return_value=None)
+    @patch("overnight_monitor_service.get_stock_minute_bars", side_effect=RuntimeError("您请求速度过快"))
+    def test_failed_minute_request_is_throttled_briefly(self, get_stock_minute_bars, _sleep):
+        with self.assertRaisesRegex(RuntimeError, "请求速度过快"):
+            _cached_minute_bars("600001.SH", "2026-07-29 09:30:00", "2026-07-29 14:35:00", "1min")
+        with self.assertRaisesRegex(RuntimeError, "请求速度过快"):
+            _cached_minute_bars("600001.SH", "2026-07-29 09:30:00", "2026-07-29 14:35:00", "1min")
+
+        self.assertEqual(get_stock_minute_bars.call_count, 1)
+
+    def test_realtime_end_datetime_uses_one_minute_lag_during_trading(self):
+        self.assertEqual(
+            _realtime_end_datetime("20260729", now=datetime(2026, 7, 29, 14, 36, 20)),
+            "2026-07-29 14:35:00",
+        )
+
+    def test_realtime_end_datetime_uses_close_after_market(self):
+        self.assertEqual(
+            _realtime_end_datetime("20260729", now=datetime(2026, 7, 29, 15, 5, 0)),
+            "2026-07-29 15:00:00",
+        )
+
+    @patch("overnight_monitor_service._load_overnight_inputs")
+    def test_runtime_overrides_bypass_default_input_loader(self, default_loader):
+        def fake_loader(ts_code, start_datetime, end_datetime, freq, trade_date):
+            bars = (
+                build_60min_bars(
+                    ts_code, water_macd_kdj_continuation_closes()
+                )
+                if freq == "60min"
+                else build_tail_1min_bars(
+                    ts_code,
+                    [10, 10, 10, 10, 10, 10.1, 10.2],
+                    [1000, 1000, 1000, 1000, 1000, 2400, 3200],
+                )
+            )
+            return MinuteLoadResult(bars, "eastmoney_fallback", [])
+
+        result = build_overnight_monitor(
+            limit=10,
+            max_fetch=10,
+            now=datetime(2026, 7, 30, 14, 50),
+            market_override=market_fixture(),
+            history_override=pd.DataFrame(),
+            trade_date_override="20260730",
+            minute_loader=fake_loader,
+            source_metadata={
+                "latest_trade_date": "20260730",
+                "data_current": True,
+                "data_source": "eastmoney_snapshot_fallback",
+            },
+        )
+
+        default_loader.assert_not_called()
+        self.assertEqual(
+            result["data_source"], "eastmoney_snapshot_fallback"
+        )
+        self.assertIn(
+            "eastmoney_fallback", result["minute_data_sources"]
+        )
+
+    def test_preloaded_candidate_60m_bars_are_not_loaded_twice(self):
+        calls = {}
+
+        def fake_loader(ts_code, start_datetime, end_datetime, freq, trade_date):
+            key = (ts_code, freq)
+            calls[key] = calls.get(key, 0) + 1
+            bars = (
+                build_60min_bars(
+                    ts_code, water_macd_kdj_continuation_closes()
+                )
+                if freq == "60min"
+                else build_tail_1min_bars(
+                    ts_code,
+                    [10, 10, 10, 10, 10, 10.1, 10.2],
+                    [1000, 1000, 1000, 1000, 1000, 2400, 3200],
+                )
+            )
+            return MinuteLoadResult(bars, "tushare", [])
+
+        build_overnight_monitor(
+            limit=10,
+            max_fetch=10,
+            now=datetime(2026, 7, 30, 14, 50),
+            market_override=market_fixture(),
+            history_override=pd.DataFrame(),
+            trade_date_override="20260730",
+            minute_loader=fake_loader,
+        )
+
+        sixty_minute_counts = [
+            count for (code, freq), count in calls.items() if freq == "60min"
+        ]
+        self.assertTrue(sixty_minute_counts)
+        self.assertTrue(all(count == 1 for count in sixty_minute_counts))
+
+    def test_sector_representatives_use_full_market_for_candidate_industries(self):
+        market = pd.DataFrame([
+            {"ts_code": "600101.SH", "industry": "机器人", "amount": 100_000, "volume_ratio": 1.5, "pct_chg": 3},
+            {"ts_code": "600201.SH", "industry": "机器人", "amount": 900_000, "volume_ratio": 2.6, "pct_chg": 4},
+            {"ts_code": "600202.SH", "industry": "机器人", "amount": 800_000, "volume_ratio": 2.4, "pct_chg": 2},
+            {"ts_code": "600301.SH", "industry": "银行", "amount": 1_000_000, "volume_ratio": 3.0, "pct_chg": 5},
+        ])
+        candidates = pd.DataFrame([{"ts_code": "600101.SH", "industry": "机器人"}])
+
+        result = _sector_representative_universe(market, candidates, per_sector=2)
+
+        self.assertEqual(set(result["industry"]), {"机器人"})
+        self.assertIn("600201.SH", set(result["ts_code"]))
+        self.assertIn("600202.SH", set(result["ts_code"]))
+        self.assertIn("600101.SH", set(result["ts_code"]))
+
+    def test_tail_fields_are_hidden_until_tail_phase_but_opening_auction_is_available_after_open(self):
+        signal = {
+            "tail_strength_score": 88,
+            "tail_return_after_1430": 0.5,
+            "tail_auction_return": 0.2,
+            "tail_volume_ratio": 1.8,
+            "tail_close_position": 0.9,
+        }
+
+        before_tail = _mask_unavailable_tail_fields(signal, "2026-07-29 14:29:00")
+        before_auction = _mask_unavailable_tail_fields(signal, "2026-07-29 14:40:00")
+
+        self.assertIsNone(before_tail["tail_return_after_1430"])
+        self.assertFalse(before_tail["tail_after_1430_available"])
+        self.assertEqual(before_tail["tail_auction_return"], 0.2)
+        self.assertEqual(before_auction["tail_auction_return"], 0.2)
+        self.assertTrue(before_auction["tail_after_1430_available"])
+        self.assertTrue(before_auction["tail_auction_available"])
+
+    def test_opening_auction_signal_uses_open_against_previous_close_after_930(self):
+        stock = {"open": 10.2, "pre_close": 10.0}
+
+        signal = _opening_auction_signal(stock, "2026-07-29 09:31:00")
+
+        self.assertTrue(signal["tail_auction_available"])
+        self.assertEqual(signal["opening_auction_return"], 2.0)
+        self.assertEqual(signal["tail_auction_return"], 2.0)
+
+    @patch("overnight_monitor_service.get_trade_dates", side_effect=RuntimeError("offline"))
     @patch("overnight_monitor_service.get_stock_minute_bars")
     @patch("overnight_monitor_service.get_cached_scan_inputs")
     def test_overnight_monitor_prefers_buyable_tail_accumulation_not_limit_up(
         self,
         get_cached_scan_inputs,
         get_stock_minute_bars,
+        _get_trade_dates,
     ):
         get_cached_scan_inputs.return_value = (market_fixture(), pd.DataFrame(), {"data_trade_date": "20260728"})
 
@@ -78,18 +230,20 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         self.assertEqual(codes[0], "600101.SH")
         self.assertNotIn("600102.SH", codes)
         self.assertNotIn("600104.SH", codes)
-        self.assertEqual(result["stocks"][0]["overnight_bias"], "早盘冲高套利")
-        self.assertEqual(result["stocks"][0]["buyable_tail_signal"], "轻仓观察")
-        self.assertGreater(result["stocks"][0]["overnight_candidate_score"], 60)
+        self.assertEqual(result["stocks"][0]["overnight_bias"], "尾盘透支风险")
+        self.assertEqual(result["stocks"][0]["buyable_tail_signal"], "观察")
+        self.assertTrue(result["stocks"][0]["tail_auction_available"])
         self.assertEqual(result["refresh_interval_seconds"], 30)
         self.assertTrue(result["auto_refresh_enabled"])
 
+    @patch("overnight_monitor_service.get_trade_dates", side_effect=RuntimeError("offline"))
     @patch("overnight_monitor_service.get_stock_minute_bars")
     @patch("overnight_monitor_service.get_cached_scan_inputs")
     def test_overnight_monitor_keeps_partial_results_when_tushare_rate_limits(
         self,
         get_cached_scan_inputs,
         get_stock_minute_bars,
+        _get_trade_dates,
     ):
         get_cached_scan_inputs.return_value = (market_fixture(), pd.DataFrame(), {"data_trade_date": "20260728"})
 
@@ -113,6 +267,7 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         self.assertIn("600103.SH", result["warnings"][0])
         self.assertIn("请求速度过快", result["warnings"][0])
 
+    @patch("overnight_monitor_service.get_trade_dates", side_effect=RuntimeError("offline"))
     @patch("overnight_monitor_service.rank_sector_potential")
     @patch("overnight_monitor_service.get_stock_minute_bars")
     @patch("overnight_monitor_service.get_cached_scan_inputs")
@@ -121,6 +276,7 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         get_cached_scan_inputs,
         get_stock_minute_bars,
         rank_sector_potential,
+        _get_trade_dates,
     ):
         market = pd.concat([
             market_fixture(),
@@ -161,6 +317,85 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         self.assertIn("600105.SH", by_code)
         self.assertEqual(by_code["600105.SH"]["overnight_pool_source"], "龙头")
         self.assertTrue(by_code["600105.SH"]["overnight_sector_leader"])
+
+    @patch("overnight_monitor_service.rank_sector_potential", return_value=pd.DataFrame())
+    @patch("overnight_monitor_service.get_stock_minute_bars")
+    @patch("overnight_monitor_service.load_recent_daily")
+    @patch("overnight_monitor_service.load_market_snapshot")
+    @patch("overnight_monitor_service.sync_cached_market_data")
+    @patch("overnight_monitor_service.get_trade_dates", return_value=["20260729"])
+    def test_overnight_monitor_uses_current_trade_date_snapshot_during_trading(
+        self,
+        _get_trade_dates,
+        sync_cached_market_data,
+        load_market_snapshot,
+        load_recent_daily,
+        get_stock_minute_bars,
+        _rank_sector_potential,
+    ):
+        today_market = market_fixture().copy()
+        today_market["trade_date"] = "20260729"
+        today_market.loc[today_market["ts_code"] == "600101.SH", "pct_chg"] = 4.2
+        sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True, "cache_warnings": []}
+        load_market_snapshot.return_value = today_market
+        load_recent_daily.return_value = pd.DataFrame()
+
+        def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
+            self.assertIn("2026-07-29", end_datetime)
+            if freq == "60min":
+                return build_60min_bars(ts_code, water_macd_kdj_continuation_closes())
+            return build_tail_1min_bars(
+                ts_code,
+                [10, 10, 10, 10, 10, 10.02, 10.05, 10.08, 10.12, 10.16, 10.2, 10.24, 10.32],
+                [3000, 3000, 3000, 3000, 3000, 4200, 4300, 4500, 4600, 4800, 5200, 5400, 8000],
+            )
+
+        get_stock_minute_bars.side_effect = fake_bars
+
+        result = build_overnight_monitor(limit=10, now=datetime(2026, 7, 29, 14, 36))
+
+        self.assertEqual(result["trade_date"], "20260729")
+        self.assertEqual(result["latest_trade_date"], "20260729")
+        self.assertTrue(result["data_current"])
+        sync_cached_market_data.assert_called_once_with(force_current=True)
+        load_market_snapshot.assert_called_once_with("20260729")
+
+    @patch("overnight_monitor_service.rank_sector_potential", return_value=pd.DataFrame())
+    @patch("overnight_monitor_service.get_stock_minute_bars")
+    @patch("overnight_monitor_service.load_recent_daily", return_value=pd.DataFrame())
+    @patch("overnight_monitor_service.load_market_snapshot")
+    @patch("overnight_monitor_service.sync_cached_market_data", return_value={"data_trade_date": "20260729"})
+    @patch("overnight_monitor_service.get_trade_dates", return_value=["20260729"])
+    def test_overnight_monitor_reuses_recent_result_snapshot(
+        self,
+        _get_trade_dates,
+        sync_cached_market_data,
+        load_market_snapshot,
+        _load_recent_daily,
+        get_stock_minute_bars,
+        _rank_sector_potential,
+    ):
+        today_market = market_fixture().copy()
+        today_market["trade_date"] = "20260729"
+        load_market_snapshot.return_value = today_market
+
+        def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
+            if freq == "60min":
+                return build_60min_bars(ts_code, water_macd_kdj_continuation_closes())
+            return build_tail_1min_bars(
+                ts_code,
+                [10, 10, 10, 10, 10, 10.02, 10.05, 10.08, 10.12, 10.16, 10.2, 10.24, 10.32],
+                [3000, 3000, 3000, 3000, 3000, 4200, 4300, 4500, 4600, 4800, 5200, 5400, 8000],
+            )
+
+        get_stock_minute_bars.side_effect = fake_bars
+
+        first = build_overnight_monitor(limit=10, now=datetime(2026, 7, 29, 14, 36))
+        second = build_overnight_monitor(limit=10, now=datetime(2026, 7, 29, 14, 36, 20))
+
+        self.assertEqual(second["stocks"], first["stocks"])
+        self.assertTrue(second["result_cache_hit"])
+        sync_cached_market_data.assert_called_once()
 
     def test_json_safe_converts_non_finite_numbers_to_null(self):
         payload = _json_safe({
