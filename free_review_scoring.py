@@ -354,6 +354,22 @@ def build_review_snapshot(
             **scores,
             "total_score": _clip_score(total, 100),
             "profit_state": "loss" if loss else "profit",
+            "volume_state": (
+                "active" if scores["volume_price_score"] >= 10
+                else "quiet" if scores["volume_price_score"] < 5
+                else "normal"
+            ),
+            "growth_state": (
+                "growth" if scores["financial_growth_score"] >= 5
+                else "decline" if any(
+                    float(row.get(field) or 0) < 0
+                    for field in (
+                        "tr_yoy", "netprofit_yoy",
+                        "dt_netprofit_yoy", "ocf_yoy",
+                    )
+                )
+                else "stable"
+            ),
             "data_completeness": round(completeness, 2),
             "score_reasons": reasons,
             "risk_flags": risks,

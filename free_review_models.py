@@ -43,16 +43,20 @@ class FreeReviewQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trade_date: str | None = None
+    score_version: Literal["free-review-v1"] | None = None
     keyword: str | None = None
     industries: list[str] = Field(default_factory=list)
     areas: list[str] = Field(default_factory=list)
     markets: list[str] = Field(default_factory=list)
     profit_state: Literal["profit", "loss"] | None = None
+    volume_state: Literal["active", "normal", "quiet"] | None = None
+    growth_state: Literal["growth", "stable", "decline"] | None = None
     ranges: dict[str, ReviewRange] = Field(default_factory=dict)
     sort_by: str = "total_score"
     sort_direction: Literal["asc", "desc"] = "desc"
     page: int = Field(default=1, ge=1)
     page_size: int = 50
+    visible_columns: list[str] = Field(default_factory=list)
 
     @field_validator("trade_date")
     @classmethod

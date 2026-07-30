@@ -134,6 +134,8 @@ class FreeReviewRepositoryTests(unittest.TestCase):
             industries=["电子", "机械"],
             markets=["主板"],
             profit_state="profit",
+            volume_state="active",
+            growth_state="growth",
             ranges={
                 "total_score": {"min": 65, "max": 90},
                 "pe_ttm": {"min": 0, "max": 35},
@@ -150,6 +152,8 @@ class FreeReviewRepositoryTests(unittest.TestCase):
         self.assertIn("`industry` IN (%s,%s)", sql)
         self.assertIn("`total_score` >= %s", sql)
         self.assertIn("`pe_ttm` <= %s", sql)
+        self.assertIn("volume_state=%s", sql)
+        self.assertIn("growth_state=%s", sql)
         self.assertNotIn("制造", sql)
         self.assertIn("%制造%", params)
 

@@ -19,7 +19,8 @@ from free_review_scoring import SCORE_VERSION
 
 TEXT_COLUMNS = [
     "name", "industry", "area", "market", "list_status", "list_date",
-    "profit_state", "financial_end_date", "financial_ann_date",
+    "profit_state", "volume_state", "growth_state",
+    "financial_end_date", "financial_ann_date",
 ]
 INTEGER_COLUMNS = [
     "listed_days", "financial_improvement_count",
@@ -325,6 +326,12 @@ def compile_review_where(
     if request.profit_state:
         conditions.append("profit_state=%s")
         params.append(request.profit_state)
+    if request.volume_state:
+        conditions.append("volume_state=%s")
+        params.append(request.volume_state)
+    if request.growth_state:
+        conditions.append("growth_state=%s")
+        params.append(request.growth_state)
     for field, bounds in request.ranges.items():
         if field not in ALLOWED_RANGE_FIELDS:
             raise ValueError(f"不支持的筛选字段: {field}")

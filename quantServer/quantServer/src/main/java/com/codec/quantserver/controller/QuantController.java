@@ -1,6 +1,7 @@
 package com.codec.quantserver.controller;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
+import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import com.codec.quantserver.service.QuantPythonClient;
@@ -11,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
 
@@ -128,5 +131,58 @@ public class QuantController {
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh) {
         return quantPythonClient.realtimeInfo(limit, forceRefresh);
+    }
+
+    @PostMapping("/free-review/build")
+    public Map<String, Object> freeReviewBuild(
+            @RequestParam(defaultValue = "false") boolean force) {
+        return quantPythonClient.startFreeReviewBuild(force);
+    }
+
+    @GetMapping("/free-review/build-status")
+    public Map<String, Object> freeReviewBuildStatus(
+            @RequestParam(name = "trade_date", required = false)
+            String tradeDate) {
+        return quantPythonClient.freeReviewBuildStatus(tradeDate);
+    }
+
+    @GetMapping("/free-review/meta")
+    public Map<String, Object> freeReviewMeta(
+            @RequestParam(name = "trade_date", required = false)
+            String tradeDate) {
+        return quantPythonClient.freeReviewMeta(tradeDate);
+    }
+
+    @GetMapping("/free-review/sectors")
+    public Map<String, Object> freeReviewSectors(
+            @RequestParam(name = "trade_date", required = false)
+            String tradeDate) {
+        return quantPythonClient.freeReviewSectors(tradeDate);
+    }
+
+    @PostMapping("/free-review/query")
+    public Map<String, Object> freeReviewQuery(
+            @RequestBody(required = false) FreeReviewQueryRequest request) {
+        return quantPythonClient.queryFreeReview(
+                request == null ? new FreeReviewQueryRequest() : request);
+    }
+
+    @PostMapping("/free-review/export")
+    public ResponseEntity<byte[]> freeReviewExport(
+            @RequestBody(required = false) FreeReviewQueryRequest request) {
+        ResponseEntity<byte[]> upstream = quantPythonClient.exportFreeReview(
+                request == null ? new FreeReviewQueryRequest() : request);
+        HttpHeaders headers = new HttpHeaders();
+        if (upstream.getHeaders().getContentType() != null) {
+            headers.setContentType(upstream.getHeaders().getContentType());
+        }
+        String disposition = upstream.getHeaders().getFirst(
+                HttpHeaders.CONTENT_DISPOSITION);
+        if (disposition != null) {
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, disposition);
+        }
+        return ResponseEntity.status(upstream.getStatusCode())
+                .headers(headers)
+                .body(upstream.getBody());
     }
 }

@@ -1,10 +1,14 @@
 package com.codec.quantserver.controller;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
+import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import com.codec.quantserver.service.QuantPythonClient;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -18,6 +22,8 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 class QuantControllerTest {
 
@@ -124,5 +130,103 @@ class QuantControllerTest {
                 .andExpect(status().isOk());
 
         verify(quantPythonClient).realtimeInfo(10, true);
+    }
+
+    @Test
+    void freeReviewBuildForwardsForce() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.startFreeReviewBuild(true))
+                .thenReturn(Map.of("status", "pending"));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(post("/api/quant/free-review/build")
+                        .param("force", "true"))
+                .andExpect(status().isOk());
+
+        verify(client).startFreeReviewBuild(true);
+    }
+
+    @Test
+    void freeReviewGetEndpointsForwardToClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.freeReviewBuildStatus("20260730"))
+                .thenReturn(Map.of("status", "running"));
+        when(client.freeReviewMeta("20260730"))
+                .thenReturn(Map.of("stock_count", 5000));
+        when(client.freeReviewSectors("20260730"))
+                .thenReturn(Map.of("items", java.util.List.of()));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/free-review/build-status")
+                        .param("trade_date", "20260730"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/quant/free-review/meta")
+                        .param("trade_date", "20260730"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/quant/free-review/sectors")
+                        .param("trade_date", "20260730"))
+                .andExpect(status().isOk());
+
+        verify(client).freeReviewBuildStatus("20260730");
+        verify(client).freeReviewMeta("20260730");
+        verify(client).freeReviewSectors("20260730");
+    }
+
+    @Test
+    void freeReviewQueryForwardsSnakeCaseRequestBody() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.queryFreeReview(any(FreeReviewQueryRequest.class)))
+                .thenReturn(Map.of("total", 1));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(post("/api/quant/free-review/query")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "trade_date":"20260730",
+                                  "sort_by":"total_score",
+                                  "sort_direction":"desc",
+                                  "page_size":100
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<FreeReviewQueryRequest> captor =
+                ArgumentCaptor.forClass(FreeReviewQueryRequest.class);
+        verify(client).queryFreeReview(captor.capture());
+        assertThat(captor.getValue().getTradeDate()).isEqualTo("20260730");
+        assertThat(captor.getValue().getSortBy()).isEqualTo("total_score");
+        assertThat(captor.getValue().getPageSize()).isEqualTo(100);
+    }
+
+    @Test
+    void freeReviewExportPreservesCsvHeadersAndBytes() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "text/csv;charset=UTF-8"));
+        headers.set(
+                HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"free-review-20260730.csv\"");
+        byte[] payload = new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF, 'a'};
+        when(client.exportFreeReview(any(FreeReviewQueryRequest.class)))
+                .thenReturn(ResponseEntity.ok().headers(headers).body(payload));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(post("/api/quant/free-review/export")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(payload))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"free-review-20260730.csv\""))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_TYPE,
+                        "text/csv;charset=UTF-8"));
     }
 }

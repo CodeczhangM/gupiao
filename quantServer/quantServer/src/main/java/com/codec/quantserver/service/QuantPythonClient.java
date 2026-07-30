@@ -1,8 +1,10 @@
 package com.codec.quantserver.service;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
+import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -156,6 +158,84 @@ public class QuantPythonClient {
                         .queryParam("limit", safeLimit)
                         .queryParam("force_refresh", forceRefresh)
                         .build())
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> startFreeReviewBuild(boolean force) {
+        return restClient.post()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/free-review/build")
+                        .queryParam("force", force)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> freeReviewBuildStatus(String tradeDate) {
+        return getFreeReviewMap("/api/free-review/build-status", tradeDate);
+    }
+
+    public Map<String, Object> freeReviewMeta(String tradeDate) {
+        return getFreeReviewMap("/api/free-review/meta", tradeDate);
+    }
+
+    public Map<String, Object> freeReviewSectors(String tradeDate) {
+        return getFreeReviewMap("/api/free-review/sectors", tradeDate);
+    }
+
+    public Map<String, Object> queryFreeReview(
+            FreeReviewQueryRequest request) {
+        FreeReviewQueryRequest safeRequest = normalizeFreeReview(request);
+        return restClient.post()
+                .uri("/api/free-review/query")
+                .body(safeRequest)
+                .retrieve()
+                .body(mapType());
+    }
+
+    public ResponseEntity<byte[]> exportFreeReview(
+            FreeReviewQueryRequest request) {
+        FreeReviewQueryRequest safeRequest = normalizeFreeReview(request);
+        return restClient.post()
+                .uri("/api/free-review/export")
+                .body(safeRequest)
+                .retrieve()
+                .toEntity(byte[].class);
+    }
+
+    private FreeReviewQueryRequest normalizeFreeReview(
+            FreeReviewQueryRequest request) {
+        FreeReviewQueryRequest safe = request == null
+                ? new FreeReviewQueryRequest() : request;
+        int page = safe.getPage() == null ? 1 : safe.getPage();
+        safe.setPage(Math.max(1, page));
+        int pageSize = safe.getPageSize() == null ? 50 : safe.getPageSize();
+        if (pageSize != 50 && pageSize != 100 && pageSize != 200) {
+            pageSize = 50;
+        }
+        safe.setPageSize(pageSize);
+        if (safe.getSortBy() == null || safe.getSortBy().isBlank()) {
+            safe.setSortBy("total_score");
+        }
+        if (safe.getSortDirection() == null
+                || (!safe.getSortDirection().equals("asc")
+                && !safe.getSortDirection().equals("desc"))) {
+            safe.setSortDirection("desc");
+        }
+        return safe;
+    }
+
+    private Map<String, Object> getFreeReviewMap(
+            String path, String tradeDate) {
+        return restClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path(path);
+                    if (tradeDate != null && !tradeDate.isBlank()) {
+                        builder.queryParam("trade_date", tradeDate);
+                    }
+                    return builder.build();
+                })
                 .retrieve()
                 .body(mapType());
     }
