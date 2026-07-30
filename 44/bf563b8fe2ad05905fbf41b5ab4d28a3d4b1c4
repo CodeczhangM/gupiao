@@ -1,0 +1,152 @@
+overnight_monitor_service.py
+  25d656b10b0fbb91 10-11,17-18,20-21,54-55,59-61,70-93,105-137,145-156,189-197,248-274,377-429,431,433-435,493-496,565,597,603,605-606,679
+  47ee1ab46e0253fd 6,12,483-488,497-515,543-544,548,552-564,567-569,571-596,598-599,601-602,609,617-625,677
+tests/test_overnight_monitor_service.py
+  47ee1ab46e0253fd 8,79-117,364
+  25d656b10b0fbb91 10,12,16-20,56-57,59-78,118-164,171,198-199,235,321-363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.6",
+  "base_commit_sha": "44bf563b8fe2ad05905fbf41b5ab4d28a3d4b1c4",
+  "prompts": {
+    "25d656b10b0fbb91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa793-199e-7c50-9966-4b31b964e17a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 371,
+      "overriden_lines": 0
+    },
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 146,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 2339,
+    "git_diff_deleted_lines": 29,
+    "ai_additions": 434,
+    "ai_accepted": 434,
+    "BYMC": 1904,
+    "mixed_additions": 0,
+    "BYAC": 434,
+    "BYRC": 0,
+    "per_file": {
+      "overnight_monitor_service.py": {
+        "BYMC": [
+          "53",
+          "57-58",
+          "64",
+          "68-69",
+          "103-104",
+          "143-144",
+          "187-188",
+          "246-247",
+          "375-376",
+          "432",
+          "481-482",
+          "492",
+          "523-524",
+          "539-542",
+          "549-551",
+          "570",
+          "614-616",
+          "626-629",
+          "635",
+          "641-645",
+          "653",
+          "665",
+          "667-669",
+          "681-684"
+        ],
+        "BYAC": [
+          "6",
+          "10-12",
+          "17-18",
+          "20-21",
+          "54-55",
+          "59-61",
+          "70-93",
+          "105-137",
+          "145-156",
+          "189-197",
+          "248-274",
+          "377-429",
+          "431",
+          "433-435",
+          "483-488",
+          "493-515",
+          "543-544",
+          "548",
+          "552-565",
+          "567-569",
+          "571-599",
+          "601-603",
+          "605-606",
+          "609",
+          "617-625",
+          "677",
+          "679"
+        ],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "1-770"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_service.py": {
+        "BYMC": [
+          "165-170",
+          "172-197",
+          "206",
+          "233-234",
+          "239",
+          "246",
+          "270",
+          "279",
+          "365-398"
+        ],
+        "BYAC": [
+          "8",
+          "10",
+          "12",
+          "16-20",
+          "56-57",
+          "59-164",
+          "171",
+          "198-199",
+          "235",
+          "321-364"
+        ],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "1-1009"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785391766,
+  "requirement_id": ""
+}
