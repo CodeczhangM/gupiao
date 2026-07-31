@@ -9,6 +9,11 @@ from typing import Any, Callable
 import pandas as pd
 
 from data_service import get_cached_scan_inputs, get_market_data, get_stock_minute_bars, get_trade_dates, sync_cached_market_data
+from indicator_settings import (
+    calculate_macd,
+    load_macd_settings,
+    macd_provenance,
+)
 from market_cache import load_market_snapshot, load_recent_daily
 from realtime_market_source import MinuteLoadResult
 from strategy import _macd_kdj_60m_signal, rank_sector_potential
@@ -285,6 +290,13 @@ def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, p
     if "industry" not in market.columns or "ts_code" not in market.columns:
         return {}
 
+    macd_settings = load_macd_settings()
+    macd_basis = macd_provenance(macd_settings)
+    minimum_bars = (
+        int(macd_settings["slow_period"])
+        + int(macd_settings["signal_period"])
+        - 1
+    )
     industry_map = market.dropna(subset=["industry"]).assign(ts_code=lambda df: df["ts_code"].astype(str)).drop_duplicates("ts_code").set_index("ts_code")["industry"].to_dict()
     normalized_frames = []
     for ts_code, frame in bars_by_code.items():
@@ -295,7 +307,7 @@ def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, p
         for column in ["open", "high", "low", "close"]:
             bars[column] = pd.to_numeric(bars[column], errors="coerce") if column in bars else pd.NA
         bars = bars.dropna(subset=["trade_time", "close"])
-        if len(bars) < 35:
+        if len(bars) < minimum_bars:
             continue
         base_close = float(bars["close"].iloc[0] or 0)
         if not base_close:
@@ -320,14 +332,16 @@ def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, p
     result: dict[str, dict[str, Any]] = {}
     for industry, group in sector_bars.groupby("industry"):
         group = group.sort_values("trade_time")
-        if len(group) < 20:
+        if len(group) < minimum_bars:
             continue
         close = group["close"]
         high = group["high"]
         low = group["low"]
-        dif = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
-        dea = dif.ewm(span=9, adjust=False).mean()
-        macd = (dif - dea) * 2
+        dif, dea, macd = calculate_macd(
+            close,
+            macd_settings,
+            min_periods=False,
+        )
         low9 = low.rolling(9, min_periods=9).min()
         high9 = high.rolling(9, min_periods=9).max()
         rsv = ((close - low9) / (high9 - low9) * 100).where(high9 != low9, 50)
@@ -375,6 +389,7 @@ def _sector_60m_signal_from_bars(market: pd.DataFrame, bars_by_code: dict[str, p
             "sector_60m_excluded": excluded,
             "sector_macd_bonus": bonus,
             "sector_macd_status": status,
+            **macd_basis,
         }
     return result
 

@@ -124,10 +124,20 @@ class FreeReviewScoringTests(unittest.TestCase):
             "financial_growth_score", "risk_penalty", "total_score",
             "data_completeness", "financial_improvement_count",
             "score_reasons", "risk_flags", "missing_fields",
+            "macd_fast_period", "macd_slow_period",
+            "macd_signal_period", "macd_parameter_key",
         }
         self.assertTrue(required.issubset(result.columns))
         self.assertAlmostEqual(row["ma5"], 19.7, places=4)
         self.assertGreater(row["ret_20"], 0)
+        self.assertEqual(
+            (
+                row["macd_fast_period"],
+                row["macd_slow_period"],
+                row["macd_signal_period"],
+            ),
+            (5, 34, 5),
+        )
         self.assertEqual(row["financial_end_date"], "20260630")
         self.assertEqual(row["financial_improvement_count"], 7)
         self.assertGreaterEqual(row["total_score"], 0)

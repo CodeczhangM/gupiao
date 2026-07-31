@@ -193,6 +193,16 @@ def macd_parameter_key(settings=None):
     )
 
 
+def macd_provenance(settings=None):
+    values = settings or load_macd_settings()
+    return {
+        "macd_fast_period": int(values["fast_period"]),
+        "macd_slow_period": int(values["slow_period"]),
+        "macd_signal_period": int(values["signal_period"]),
+        "macd_parameter_key": macd_parameter_key(values),
+    }
+
+
 def calculate_macd(close, settings=None, min_periods=True):
     """Return DIF, DEA and the doubled MACD histogram."""
     values = settings or load_macd_settings()

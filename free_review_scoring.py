@@ -6,6 +6,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from indicator_settings import (
+    calculate_macd,
+    load_macd_settings,
+    macd_provenance,
+)
+
 
 SCORE_VERSION = "free-review-v1"
 FINANCIAL_COLUMNS = [
@@ -91,7 +97,10 @@ def _rsi(close: pd.Series, periods: int) -> float | None:
     return None
 
 
-def _history_metrics(group: pd.DataFrame) -> dict[str, Any]:
+def _history_metrics(
+    group: pd.DataFrame,
+    macd_settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     data = group.sort_values("trade_date").copy()
     close = _numeric(data, "close")
     high = _numeric(data, "high").fillna(close)
@@ -143,13 +152,10 @@ def _history_metrics(group: pd.DataFrame) -> dict[str, Any]:
         if len(ma60) >= 6 and pd.notna(ma60.iloc[-6]) and ma60.iloc[-6]
         else None
     )
-    ema12 = close.ewm(span=12, adjust=False, min_periods=12).mean()
-    ema26 = close.ewm(span=26, adjust=False, min_periods=26).mean()
-    dif = ema12 - ema26
-    dea = dif.ewm(span=9, adjust=False, min_periods=9).mean()
+    dif, dea, histogram = calculate_macd(close, macd_settings)
     result["macd_dif"] = _last_number(dif)
     result["macd_dea"] = _last_number(dea)
-    result["macd_hist"] = _last_number((dif - dea) * 2)
+    result["macd_hist"] = _last_number(histogram)
     low9 = low.rolling(9, min_periods=9).min()
     high9 = high.rolling(9, min_periods=9).max()
     rsv = (close - low9) / (high9 - low9).replace(0, np.nan) * 100
@@ -219,6 +225,8 @@ def build_review_snapshot(
     universe = eligible_universe(market, trade_date)
     if universe.empty:
         return universe
+    macd_settings = load_macd_settings()
+    macd_basis = macd_provenance(macd_settings)
     metric_rows = []
     history_groups = (
         {str(code): group for code, group in history.groupby("ts_code")}
@@ -229,7 +237,10 @@ def build_review_snapshot(
         group = history_groups.get(code, pd.DataFrame())
         metric_rows.append({
             "ts_code": code,
-            **(_history_metrics(group) if not group.empty else {}),
+            **(
+                _history_metrics(group, macd_settings)
+                if not group.empty else {}
+            ),
         })
     result = universe.merge(pd.DataFrame(metric_rows), on="ts_code", how="left")
     latest_financial, improvements = _financial_latest(financial)
@@ -379,5 +390,6 @@ def build_review_snapshot(
             "missing_fields": missing,
             "score_version": SCORE_VERSION,
             "trade_date": str(trade_date),
+            **macd_basis,
         })
     return pd.DataFrame(rows)

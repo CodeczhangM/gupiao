@@ -579,6 +579,9 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         self.assertIn("机器人", result)
         self.assertTrue(result["机器人"]["sector_macd_trending_up"])
         self.assertGreater(result["机器人"]["sector_macd_bonus"], 0)
+        self.assertEqual(result["机器人"]["macd_fast_period"], 5)
+        self.assertEqual(result["机器人"]["macd_slow_period"], 34)
+        self.assertEqual(result["机器人"]["macd_signal_period"], 5)
 
     def test_sector_60m_signal_excludes_downward_macd_or_kdj(self):
         market = pd.DataFrame([

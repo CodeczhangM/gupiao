@@ -1307,7 +1307,14 @@ class SectorPotentialRankingTests(unittest.TestCase):
         self.assertEqual(len(picks), 5)
         self.assertNotIn("600998.SH", [item["ts_code"] for item in picks])
         self.assertNotIn("600999.SH", [item["ts_code"] for item in picks])
-        self.assertTrue(all(item["macd_golden_cross_60m"] for item in picks))
+        self.assertTrue(all(item["macd_bullish_60m"] for item in picks))
+        self.assertTrue(all(item["macd_fast_period"] == 5 for item in picks))
+        self.assertTrue(all(item["macd_slow_period"] == 34 for item in picks))
+        self.assertTrue(all(item["macd_signal_period"] == 5 for item in picks))
+        self.assertTrue(all(
+            item["macd_parameter_key"].startswith("macd-5-34-5-v")
+            for item in picks
+        ))
         self.assertTrue(picks[0]["macd_above_zero_60m"])
         self.assertTrue(picks[0]["kdj_golden_cross_60m"])
         self.assertGreaterEqual(picks[0]["intraday_signal_score"], picks[-1]["intraday_signal_score"])

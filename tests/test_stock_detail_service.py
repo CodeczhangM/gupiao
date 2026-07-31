@@ -113,6 +113,14 @@ class StockDetailServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["latest"]["support_resistance"]["support20"], 109.0)
         self.assertEqual(snapshot["latest"]["support_resistance"]["resistance60"], 130.0)
         self.assertIn("dif", snapshot["latest"]["macd"])
+        self.assertEqual(
+            (
+                snapshot["latest"]["macd"]["macd_fast_period"],
+                snapshot["latest"]["macd"]["macd_slow_period"],
+                snapshot["latest"]["macd"]["macd_signal_period"],
+            ),
+            (5, 34, 5),
+        )
         self.assertIn("k", snapshot["latest"]["kdj"])
         self.assertIn("upper", snapshot["latest"]["bollinger"])
         self.assertEqual(snapshot["latest"]["ohlcv"]["turnover_rate"], 3.25)

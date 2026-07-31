@@ -1,5 +1,11 @@
 import pandas as pd
 
+from indicator_settings import (
+    calculate_macd,
+    load_macd_settings,
+    macd_provenance,
+)
+
 
 def clean_data(df: pd.DataFrame):
     df = df.copy()
@@ -454,17 +460,19 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
     bars = bars.sort_values("trade_time").reset_index(drop=True)
     for column in ["open", "high", "low", "close", "vol", "amount"]:
         bars[column] = _numeric_series(bars, column)
-    if len(bars) < 35:
+    macd_settings = load_macd_settings()
+    minimum_bars = (
+        int(macd_settings["slow_period"])
+        + int(macd_settings["signal_period"])
+        - 1
+    )
+    if len(bars) < minimum_bars:
         return None
 
     close = bars["close"]
     high = bars["high"]
     low = bars["low"]
-    ema12 = close.ewm(span=12, adjust=False, min_periods=12).mean()
-    ema26 = close.ewm(span=26, adjust=False, min_periods=26).mean()
-    dif = ema12 - ema26
-    dea = dif.ewm(span=9, adjust=False, min_periods=9).mean()
-    histogram = (dif - dea) * 2
+    dif, dea, histogram = calculate_macd(close, macd_settings)
 
     low9 = low.rolling(9, min_periods=9).min()
     high9 = high.rolling(9, min_periods=9).max()
@@ -551,6 +559,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         "kdj_bullish_60m": kdj_bullish,
         "intraday_signal_score": round(score, 2),
         "intraday_signal_reason": "、".join(reason_parts),
+        **macd_provenance(macd_settings),
         **tail_bias,
     }
 
@@ -766,6 +775,8 @@ def _build_strong_history_stats(hist_df: pd.DataFrame) -> pd.DataFrame:
     hist = hist.sort_values(["ts_code", "trade_date"])
 
     rows = []
+    macd_settings = load_macd_settings()
+    macd_basis = macd_provenance(macd_settings)
     for ts_code, group in hist.groupby("ts_code"):
         # Breakout and reversal pools share these history statistics. The
         # MA60 slope fields below remain unavailable until 100 daily bars.
@@ -973,11 +984,11 @@ def _build_strong_history_stats(hist_df: pd.DataFrame) -> pd.DataFrame:
         close_60days_ago = close_full.iloc[-61]
         ret60 = (last_close / close_60days_ago - 1) * 100 if close_60days_ago else 0
 
-        ema12 = close_full.ewm(span=12, adjust=False).mean()
-        ema26 = close_full.ewm(span=26, adjust=False).mean()
-        dif = ema12 - ema26
-        dea = dif.ewm(span=9, adjust=False).mean()
-        macd = (dif - dea) * 2
+        dif, dea, macd = calculate_macd(
+            close_full,
+            macd_settings,
+            min_periods=False,
+        )
 
         delta = close_full.diff()
         avg_gain = delta.clip(lower=0).rolling(6, min_periods=6).mean()
@@ -1078,6 +1089,7 @@ def _build_strong_history_stats(hist_df: pd.DataFrame) -> pd.DataFrame:
             "previous_kdj_k": kdj_k.iloc[-2],
             "previous_kdj_d": kdj_d.iloc[-2],
             "previous_kdj_j": kdj_j.iloc[-2],
+            **macd_basis,
         })
 
     return pd.DataFrame(rows)
@@ -1097,6 +1109,8 @@ def _build_breakout_confluence_stats(hist_df: pd.DataFrame) -> pd.DataFrame:
     hist = hist.sort_values(["ts_code", "trade_date"])
 
     rows = []
+    macd_settings = load_macd_settings()
+    macd_basis = macd_provenance(macd_settings)
     for ts_code, group in hist.groupby("ts_code"):
         group = group.tail(180).copy()
         if len(group) < 61:
@@ -1188,10 +1202,11 @@ def _build_breakout_confluence_stats(hist_df: pd.DataFrame) -> pd.DataFrame:
         )
         kdj_breakout_signal = bool(kdj_golden_cross or kdj_recent_golden_cross)
 
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
-        dif = ema12 - ema26
-        dea = dif.ewm(span=9, adjust=False).mean()
+        dif, dea, _ = calculate_macd(
+            close,
+            macd_settings,
+            min_periods=False,
+        )
         macd_gap = dif - dea
         normalized_zero_tolerance = max(last_close * 0.005, 0.03)
         macd_zero_axis_ready = bool(
@@ -1237,6 +1252,7 @@ def _build_breakout_confluence_stats(hist_df: pd.DataFrame) -> pd.DataFrame:
                 int(kdj_breakout_signal) * 3 +
                 int(macd_cross_ready) * 4
             ),
+            **macd_basis,
         })
 
     return pd.DataFrame(rows)

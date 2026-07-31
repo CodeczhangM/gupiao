@@ -10,6 +10,11 @@ import pandas as pd
 
 from data_service import get_stock_daily_history
 from database import get_latest_report, get_report
+from indicator_settings import (
+    calculate_macd,
+    load_macd_settings,
+    macd_provenance,
+)
 
 
 _CANDLE_COLUMNS = (
@@ -90,11 +95,8 @@ def build_technical_snapshot(history: Any) -> dict[str, Any]:
 
     ma = {f"ma{period}": _latest(close.rolling(period, min_periods=period).mean()) for period in (5, 10, 20, 60)}
 
-    ema12 = close.ewm(span=12, adjust=False, min_periods=12).mean()
-    ema26 = close.ewm(span=26, adjust=False, min_periods=26).mean()
-    dif = ema12 - ema26
-    dea = dif.ewm(span=9, adjust=False, min_periods=9).mean()
-    macd_histogram = (dif - dea) * 2
+    macd_settings = load_macd_settings()
+    dif, dea, macd_histogram = calculate_macd(close, macd_settings)
 
     low9 = low.rolling(9, min_periods=9).min()
     high9 = high.rolling(9, min_periods=9).max()
@@ -151,7 +153,12 @@ def build_technical_snapshot(history: Any) -> dict[str, Any]:
             for name in ("open", "high", "low", "close", "vol", "pct_chg", "turnover_rate")
         },
         "moving_averages": ma,
-        "macd": {"dif": _latest(dif), "dea": _latest(dea), "histogram": _latest(macd_histogram)},
+        "macd": {
+            "dif": _latest(dif),
+            "dea": _latest(dea),
+            "histogram": _latest(macd_histogram),
+            **macd_provenance(macd_settings),
+        },
         "kdj": {"k": _latest(k), "d": _latest(d), "j": _latest(j)},
         "rsi": {f"rsi{period}": _latest(rsi[period]) for period in (6, 12, 24)},
         "bollinger": {
