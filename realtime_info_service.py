@@ -38,7 +38,12 @@ from overnight_monitor_service import (
 from realtime_tail_premium_service import (
     build_realtime_tail_premium_monitor,
 )
-from strategy import _attach_intraday_signal_stocks, _macd_kdj_60m_signal, rank_sector_potential
+from strategy import (
+    _attach_intraday_signal_stocks,
+    _is_mainboard_a_stock,
+    _macd_kdj_60m_signal,
+    rank_sector_potential,
+)
 
 
 _REALTIME_SECTOR_LIMIT = 8
@@ -605,6 +610,9 @@ def _load_realtime_intraday_signal_bars(
 
     industries = set(sector_potential["industry_name"].dropna().astype(str))
     candidates = market[market["industry"].astype(str).isin(industries)].copy()
+    candidates = candidates[_is_mainboard_a_stock(candidates["ts_code"])].copy()
+    if candidates.empty:
+        return {}
     for column in ("turnover_rate", "volume_ratio", "amount", "pct_chg"):
         candidates[column] = pd.to_numeric(candidates[column], errors="coerce") if column in candidates else 0
     candidates = candidates[

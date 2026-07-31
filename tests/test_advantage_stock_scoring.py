@@ -1319,6 +1319,50 @@ class SectorPotentialRankingTests(unittest.TestCase):
         self.assertTrue(picks[0]["kdj_golden_cross_60m"])
         self.assertGreaterEqual(picks[0]["intraday_signal_score"], picks[-1]["intraday_signal_score"])
 
+    def test_attach_intraday_signal_stocks_excludes_chinext_and_star_market(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "600777.SH",
+                "name": "主板共振",
+                "industry": "能源强势",
+                "close": 11.7,
+                "pct_chg": 4.0,
+                "turnover_rate": 5.0,
+                "volume_ratio": 2.4,
+                "amount": 260_000_000,
+            },
+            {
+                "ts_code": "300777.SZ",
+                "name": "创业共振",
+                "industry": "能源强势",
+                "close": 21.7,
+                "pct_chg": 8.0,
+                "turnover_rate": 5.0,
+                "volume_ratio": 4.4,
+                "amount": 560_000_000,
+            },
+            {
+                "ts_code": "688777.SH",
+                "name": "科创共振",
+                "industry": "能源强势",
+                "close": 31.7,
+                "pct_chg": 9.0,
+                "turnover_rate": 5.0,
+                "volume_ratio": 4.8,
+                "amount": 660_000_000,
+            },
+        ])
+        sector_potential = pd.DataFrame([{"industry_name": "能源强势", "potential_score": 90.0}])
+        minute_bars = {
+            code: build_60min_bars(code, water_macd_kdj_cross_closes())
+            for code in market["ts_code"]
+        }
+
+        result = _attach_intraday_signal_stocks(sector_potential, market, minute_bars, per_sector=5)
+
+        picks = result.iloc[0]["intraday_signal_stocks"]
+        self.assertEqual([item["ts_code"] for item in picks], ["600777.SH"])
+
     def test_attach_intraday_signal_stocks_accepts_recent_macd_cross_continuation(self):
         market = pd.DataFrame([{
             "ts_code": "600777.SH",

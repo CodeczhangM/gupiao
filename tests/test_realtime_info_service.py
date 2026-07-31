@@ -364,6 +364,55 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertLessEqual(max_active, 4)
         self.assertEqual(list(result), codes[:6])
 
+    def test_signal_minutes_skip_chinext_and_star_market_candidates(self):
+        requested_codes = []
+        market = pd.DataFrame([
+            {
+                "ts_code": "600201.SH",
+                "industry": "机器人",
+                "turnover_rate": 5,
+                "volume_ratio": 3,
+                "amount": 800_000,
+                "pct_chg": 4,
+            },
+            {
+                "ts_code": "300201.SZ",
+                "industry": "机器人",
+                "turnover_rate": 5,
+                "volume_ratio": 4,
+                "amount": 900_000,
+                "pct_chg": 8,
+            },
+            {
+                "ts_code": "688201.SH",
+                "industry": "机器人",
+                "turnover_rate": 5,
+                "volume_ratio": 4,
+                "amount": 950_000,
+                "pct_chg": 9,
+            },
+        ])
+        sectors = pd.DataFrame([{"industry_name": "机器人"}])
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            requested_codes.append(ts_code)
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        result = _load_realtime_intraday_signal_bars(
+            market,
+            sectors,
+            "20260729",
+            datetime(2026, 7, 29, 14, 50),
+            minute_loader=minute_loader,
+        )
+
+        self.assertEqual(requested_codes, ["600201.SH"])
+        self.assertEqual(list(result), ["600201.SH"])
+
     @patch("realtime_info_service._load_tail_minute_bars_for_pick")
     def test_intraday_confluence_uses_today_market_when_sector_history_is_empty(self, tail_loader):
         import realtime_info_service

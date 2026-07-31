@@ -591,6 +591,9 @@ def _select_intraday_signal_stocks(
         return []
 
     candidates = sector_market.copy()
+    candidates = candidates[_is_mainboard_a_stock(candidates["ts_code"])].copy()
+    if candidates.empty:
+        return []
     candidates["turnover_num"] = _numeric_series(candidates, "turnover_rate")
     candidates["volume_ratio_num"] = _numeric_series(candidates, "volume_ratio")
     candidates["pct_chg_num"] = _numeric_series(candidates, "pct_chg")
