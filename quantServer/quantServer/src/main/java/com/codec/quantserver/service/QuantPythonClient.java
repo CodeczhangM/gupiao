@@ -2,6 +2,7 @@ package com.codec.quantserver.service;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.FreeReviewQueryRequest;
+import com.codec.quantserver.dto.MacdSettingsRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,19 @@ public class QuantPythonClient {
 
     public Map<String, Object> cacheStatus() {
         return getMap("/api/cache/status");
+    }
+
+    public Map<String, Object> macdSettings() {
+        return getMap("/api/indicator-settings/macd");
+    }
+
+    public Map<String, Object> updateMacdSettings(
+            MacdSettingsRequest request) {
+        return restClient.put()
+                .uri("/api/indicator-settings/macd")
+                .body(request)
+                .retrieve()
+                .body(mapType());
     }
 
     public Map<String, Object> syncCache(boolean forceCurrent) {

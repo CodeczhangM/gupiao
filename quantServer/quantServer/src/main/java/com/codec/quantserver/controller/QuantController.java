@@ -2,12 +2,14 @@ package com.codec.quantserver.controller;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.FreeReviewQueryRequest;
+import com.codec.quantserver.dto.MacdSettingsRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import com.codec.quantserver.service.QuantPythonClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -40,6 +42,17 @@ public class QuantController {
     @GetMapping("/cache/status")
     public Map<String, Object> cacheStatus() {
         return quantPythonClient.cacheStatus();
+    }
+
+    @GetMapping("/indicator-settings/macd")
+    public Map<String, Object> macdSettings() {
+        return quantPythonClient.macdSettings();
+    }
+
+    @PutMapping("/indicator-settings/macd")
+    public Map<String, Object> updateMacdSettings(
+            @RequestBody MacdSettingsRequest request) {
+        return quantPythonClient.updateMacdSettings(request);
     }
 
     @PostMapping("/cache/sync")

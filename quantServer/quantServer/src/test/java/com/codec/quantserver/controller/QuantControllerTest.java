@@ -2,6 +2,7 @@ package com.codec.quantserver.controller;
 
 import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.FreeReviewQueryRequest;
+import com.codec.quantserver.dto.MacdSettingsRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import com.codec.quantserver.service.QuantPythonClient;
 import org.junit.jupiter.api.Test;
@@ -21,11 +22,47 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 class QuantControllerTest {
+
+    @Test
+    void macdSettingsGetAndPutForwardToPythonClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.macdSettings()).thenReturn(Map.of(
+                "fast_period", 5,
+                "slow_period", 34,
+                "signal_period", 5));
+        when(client.updateMacdSettings(any(MacdSettingsRequest.class)))
+                .thenReturn(Map.of("free_review_build", Map.of(
+                        "status", "pending")));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/indicator-settings/macd"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/quant/indicator-settings/macd")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fast_period":6,
+                                  "slow_period":35,
+                                  "signal_period":6
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(client).macdSettings();
+        ArgumentCaptor<MacdSettingsRequest> captor =
+                ArgumentCaptor.forClass(MacdSettingsRequest.class);
+        verify(client).updateMacdSettings(captor.capture());
+        assertThat(captor.getValue().getFastPeriod()).isEqualTo(6);
+        assertThat(captor.getValue().getSlowPeriod()).isEqualTo(35);
+        assertThat(captor.getValue().getSignalPeriod()).isEqualTo(6);
+    }
 
     @Test
     void cacheSyncForwardsForceCurrent() throws Exception {
