@@ -352,7 +352,7 @@ def _load_and_score(
         _minute_price_snapshot(
             snapshot_bars,
             trade_date,
-            stock.get("pre_close"),
+            stock.get("close") if refresh_current_price else stock.get("pre_close"),
         )
         if refresh_current_price or selection_state != "waiting_tail_window"
         else {}

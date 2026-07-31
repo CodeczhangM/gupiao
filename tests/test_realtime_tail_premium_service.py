@@ -216,7 +216,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertEqual(row["ts_code"], "600001.SH")
         self.assertEqual(row["buyable_tail_signal"], "等待14:50")
         self.assertAlmostEqual(row["close"], 11.55)
-        self.assertAlmostEqual(row["pct_chg"], 5.0)
+        self.assertAlmostEqual(row["pct_chg"], 4.054054, places=5)
         self.assertEqual(row["data_as_of"], "2026-07-31 14:45:00")
         self.assertEqual(result["data_as_of"], "2026-07-31 14:45:00")
         self.assertIn(
