@@ -15,6 +15,12 @@ from market_cache import get_cache_status
 from morning_follow_service import build_morning_follow_monitor
 from overnight_monitor_service import build_overnight_monitor
 from free_review_models import FreeReviewQuery
+from indicator_settings import (
+    load_macd_settings,
+    macd_parameter_key,
+    save_macd_settings_and_recalculate,
+)
+from indicator_settings_models import MacdSettingsUpdate
 from free_review_repository import (
     load_build_status as load_free_review_build_status,
 )
@@ -66,6 +72,34 @@ def cache_status():
     except Exception as exc:
         logger.exception("读取行情缓存状态失败")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/indicator-settings/macd")
+def get_macd_indicator_settings():
+    try:
+        settings = load_macd_settings()
+        return {
+            **settings,
+            "macd_parameter_key": macd_parameter_key(settings),
+        }
+    except Exception as exc:
+        logger.exception("读取 MACD 全局设置失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.put("/api/indicator-settings/macd")
+def put_macd_indicator_settings(request: MacdSettingsUpdate):
+    try:
+        return save_macd_settings_and_recalculate(
+            request.fast_period,
+            request.slow_period,
+            request.signal_period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("保存 MACD 全局设置失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/scan/run")

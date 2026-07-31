@@ -51,10 +51,15 @@ _LAST_SUCCESSFUL_REALTIME_RESULTS: dict[tuple, dict[str, Any]] = {}
 _REALTIME_RESULT_LOCK = threading.Lock()
 
 
-def _clear_realtime_result_caches() -> None:
+def clear_realtime_derived_caches() -> None:
     with _REALTIME_RESULT_LOCK:
         _REALTIME_RESULT_CACHE.clear()
         _LAST_SUCCESSFUL_REALTIME_RESULTS.clear()
+        _REALTIME_INTRADAY_RESULT_CACHE.clear()
+
+
+def _clear_realtime_result_caches() -> None:
+    clear_realtime_derived_caches()
 
 
 def _realtime_result_key(limit: int, now: datetime) -> tuple:

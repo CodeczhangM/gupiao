@@ -153,6 +153,54 @@ class IndicatorSettingsTests(unittest.TestCase):
             "macd-5-34-5-v4",
         )
 
+    def test_save_clears_derived_caches_and_starts_rebuild(self):
+        import indicator_settings
+
+        updated = {
+            "fast_period": 6,
+            "slow_period": 35,
+            "signal_period": 6,
+            "version": 2,
+            "updated_at": "2026-07-31 10:00:00",
+        }
+        with (
+            patch(
+                "indicator_settings.update_macd_settings",
+                return_value=updated,
+            ),
+            patch(
+                "realtime_info_service.clear_realtime_derived_caches",
+                create=True,
+            ) as realtime_clear,
+            patch(
+                "overnight_monitor_service.clear_overnight_result_cache",
+                create=True,
+            ) as overnight_clear,
+            patch(
+                "morning_follow_service.clear_morning_follow_result_cache",
+                create=True,
+            ) as morning_clear,
+            patch(
+                "free_review_service.start_free_review_build",
+                return_value={"status": "pending"},
+            ) as rebuild,
+        ):
+            result = (
+                indicator_settings.save_macd_settings_and_recalculate(
+                    6, 35, 6
+                )
+            )
+
+        realtime_clear.assert_called_once_with()
+        overnight_clear.assert_called_once_with()
+        morning_clear.assert_called_once_with()
+        rebuild.assert_called_once_with(force=True)
+        self.assertEqual(result["free_review_build"]["status"], "pending")
+        self.assertEqual(
+            result["settings"]["macd_parameter_key"],
+            "macd-6-35-6-v2",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,11 @@ _SINA_MORNING_CACHE: dict[
 ] = {}
 
 
+def clear_morning_follow_result_cache() -> None:
+    """Clear derived follow-up selections while retaining source bar caches."""
+    _MORNING_FOLLOW_RESULT_CACHE.clear()
+
+
 def _select_candidate_trade_date(trade_dates: list[str], now: datetime) -> str:
     dates = sorted({str(value) for value in trade_dates}, reverse=True)
     if not dates:

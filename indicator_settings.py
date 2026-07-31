@@ -203,6 +203,45 @@ def macd_provenance(settings=None):
     }
 
 
+def save_macd_settings_and_recalculate(
+    fast_period,
+    slow_period,
+    signal_period,
+):
+    """Commit settings, invalidate derived memory results, and queue rebuild."""
+    settings = update_macd_settings(
+        fast_period,
+        slow_period,
+        signal_period,
+    )
+    # Lazy imports avoid cycles because strategy modules consume this module.
+    from morning_follow_service import (
+        clear_morning_follow_result_cache,
+    )
+    from overnight_monitor_service import clear_overnight_result_cache
+    from realtime_info_service import clear_realtime_derived_caches
+    from free_review_service import start_free_review_build
+
+    clear_realtime_derived_caches()
+    clear_overnight_result_cache()
+    clear_morning_follow_result_cache()
+    try:
+        build = start_free_review_build(force=True)
+    except Exception as exc:
+        build = {
+            "status": "queue_failed",
+            "stage": "queued",
+            "error_message": str(exc),
+        }
+    return {
+        "settings": {
+            **settings,
+            **macd_provenance(settings),
+        },
+        "free_review_build": build,
+    }
+
+
 def calculate_macd(close, settings=None, min_periods=True):
     """Return DIF, DEA and the doubled MACD histogram."""
     values = settings or load_macd_settings()

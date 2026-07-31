@@ -28,6 +28,11 @@ _FAILED_CACHE_TTL_SECONDS = 90
 _RESULT_CACHE_TTL_SECONDS = 25
 
 
+def clear_overnight_result_cache() -> None:
+    """Clear derived selections while retaining raw minute-bar caches."""
+    _OVERNIGHT_RESULT_CACHE.clear()
+
+
 def _json_safe(value: Any) -> Any:
     """Convert pandas/numpy values and non-finite floats into JSON-safe values."""
     if value is None or value is pd.NA:
