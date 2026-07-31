@@ -32,6 +32,12 @@ if tushare_http_url:
 MAINBOARD_SUFFIX = (".SH", ".SZ")
 MAINBOARD_EXCLUDE_PREFIX = ("3", "688", "689")   # 创业板、科创板
 TUSHARE_RETRY_DELAYS = (3, 6, 10)
+TUSHARE_STK_MINS_TIMEOUT_SECONDS = int(os.getenv("TUSHARE_STK_MINS_TIMEOUT_SECONDS", "6"))
+TUSHARE_STK_MINS_RETRY_DELAYS = tuple(
+    int(value.strip())
+    for value in os.getenv("TUSHARE_STK_MINS_RETRY_DELAYS", "").split(",")
+    if value.strip()
+)
 
 _query_cache = {}
 
@@ -77,6 +83,12 @@ def _is_retryable_tushare_error(exc: Exception) -> bool:
     return _is_rate_limited(exc) or isinstance(exc, requests.exceptions.RequestException)
 
 
+def _query_policy(api_name: str) -> tuple[int | None, tuple[int, ...]]:
+    if api_name == "stk_mins":
+        return TUSHARE_STK_MINS_TIMEOUT_SECONDS, TUSHARE_STK_MINS_RETRY_DELAYS
+    return None, TUSHARE_RETRY_DELAYS
+
+
 def _query_tushare(api_name: str, **kwargs):
     """调用 Tushare，遇到限流自动等待重试，并缓存相同请求。"""
     if not token:
@@ -87,20 +99,27 @@ def _query_tushare(api_name: str, **kwargs):
         cached = _query_cache[cache_key]
         return cached.copy() if isinstance(cached, pd.DataFrame) else cached
 
+    timeout, retry_delays = _query_policy(api_name)
+    original_timeout = getattr(pro, "_DataApi__timeout", None)
     last_error = None
-    for attempt in range(len(TUSHARE_RETRY_DELAYS) + 1):
+    for attempt in range(len(retry_delays) + 1):
         try:
+            if timeout is not None and original_timeout is not None:
+                pro._DataApi__timeout = timeout
             result = getattr(pro, api_name)(**kwargs)
             _query_cache[cache_key] = result.copy() if isinstance(result, pd.DataFrame) else result
             return result
         except Exception as exc:
             last_error = exc
-            if not _is_retryable_tushare_error(exc) or attempt >= len(TUSHARE_RETRY_DELAYS):
+            if not _is_retryable_tushare_error(exc) or attempt >= len(retry_delays):
                 break
 
-            delay = TUSHARE_RETRY_DELAYS[attempt]
+            delay = retry_delays[attempt]
             print(f"Tushare 请求失败，{delay} 秒后重试 {api_name}（第 {attempt + 1} 次）: {exc}")
             time.sleep(delay)
+        finally:
+            if timeout is not None and original_timeout is not None:
+                pro._DataApi__timeout = original_timeout
 
     raise last_error
 
