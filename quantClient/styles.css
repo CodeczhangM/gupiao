@@ -619,6 +619,62 @@ button {
   min-width: 1500px;
 }
 
+.realtime-info-layout .tail-premium-table table {
+  min-width: 1180px;
+}
+
+.tail-premium-detail-cell {
+  min-width: 150px;
+}
+
+.tail-premium-detail-cell details {
+  position: relative;
+}
+
+.tail-premium-detail-cell summary {
+  color: var(--blue);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tail-premium-detail-grid {
+  width: min(760px, 72vw);
+  margin-top: 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(17, 40, 72, 0.12);
+  text-align: left;
+  white-space: normal;
+}
+
+.tail-premium-detail-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tail-premium-detail-grid b {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tail-premium-detail-grid span {
+  color: var(--text);
+  line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .tail-premium-detail-grid {
+    width: 82vw;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .realtime-data-state {
   display: flex;
   align-items: baseline;

@@ -806,6 +806,15 @@ createApp({
       if (row.tail_auction_available === true) return `${formatNumber(row.tail_auction_return)}%`;
       return this.isAfterClock('09:30') ? '无数据' : '未到';
     },
+    tailPremiumSelectionText() {
+      return tailPremiumSelectionState(this.realtimeInfo.overnight || {});
+    },
+    premiumRiskBadgeClass(row) {
+      return premiumRiskState(row);
+    },
+    tailPremiumDetailText(value) {
+      return detailListText(value);
+    },
     monitorBadgeClass(value) {
       if (value === '主力抢筹' || value === '高开偏强') return 'strong';
       if (value === '低开风险' || value === '放量分歧') return 'risk';
@@ -1312,7 +1321,7 @@ createApp({
       try {
         const forceQuery = forceRefresh ? '&force_refresh=true' : '';
         this.realtimeInfo = (
-          await this.request(`/realtime-info?limit=10${forceQuery}`)
+          await this.request(`/realtime-info?limit=20${forceQuery}`)
         ) || {};
       } catch (error) {
         if (showError) this.error = error.message;

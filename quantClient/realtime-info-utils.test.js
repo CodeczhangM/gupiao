@@ -3,6 +3,9 @@ const {
   realtimeCacheState,
   realtimeDataStatus,
   screeningDataTimeText,
+  tailPremiumSelectionState,
+  premiumRiskState,
+  detailListText,
   tailVolumeDisplay,
 } = require('./realtime-info-utils.js');
 
@@ -128,5 +131,24 @@ assert.equal(
   }),
   '筛选数据时间 --',
 );
+
+assert.deepEqual(
+  tailPremiumSelectionState({ selection_state: 'waiting_tail_window' }),
+  { text: '14:50前预观察', state: 'muted' },
+);
+assert.deepEqual(
+  tailPremiumSelectionState({ selection_state: 'live_tail_window' }),
+  { text: '盘末动态候选', state: 'live' },
+);
+assert.deepEqual(
+  tailPremiumSelectionState({ selection_state: 'closed_final' }),
+  { text: '收盘最终结果', state: 'fresh' },
+);
+assert.equal(premiumRiskState({ risk_level: '高' }), 'risk');
+assert.equal(premiumRiskState({ risk_level: '中' }), 'watch');
+assert.equal(premiumRiskState({ risk_level: '低' }), 'strong');
+assert.equal(detailListText(['尾盘承接', '板块强势']), '尾盘承接；板块强势');
+assert.equal(detailListText('等待确认'), '等待确认');
+assert.equal(detailListText([]), '--');
 
 console.log('realtime tail-volume display regression ok');

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260730-free-review-v1">
+  <link rel="stylesheet" href="./styles.css?v=20260731-tail-premium-v1">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -698,25 +698,28 @@
 
         <div class="panel wide-panel">
           <div class="panel-head">
-            <h3>隔夜选股</h3>
-            <span>{{ realtimeOvernightRows.length }} 只 · {{ macdBasisText(realtimeInfo.overnight || realtimeInfo) }}</span>
+            <h3>盘末隔夜溢价 TOP20</h3>
+            <span>
+              {{ realtimeOvernightRows.length }} 只
+              · {{ tailPremiumSelectionText().text }}
+              · 数据截至 {{ realtimeInfo.overnight?.data_as_of || realtimeInfo.data_as_of || '--' }}
+              · {{ macdBasisText(realtimeInfo.overnight || realtimeInfo) }}
+            </span>
           </div>
-          <div class="table-wrap intraday-monitor-table">
+          <div class="table-wrap intraday-monitor-table tail-premium-table">
             <table>
               <thead>
                 <tr>
                   <th>股票</th>
                   <th>板块</th>
-                  <th>当前价</th>
-                  <th>当日高</th>
-                  <th>隔夜分</th>
-                  <th>买点</th>
-                  <th>隔夜倾向</th>
-                  <th>板块60m</th>
+                  <th>现价/涨幅</th>
+                  <th>综合分</th>
+                  <th>尾盘分</th>
+                  <th>量比/换手</th>
                   <th>14:30后</th>
-                  <th>尾盘量能</th>
-                  <th>集合竞价</th>
-                  <th>计划/原因</th>
+                  <th>风险</th>
+                  <th>操作</th>
+                  <th>详细指标</th>
                 </tr>
               </thead>
               <tbody>
@@ -727,29 +730,79 @@
                     <br><span class="mono">{{ row.ts_code }}</span>
                   </td>
                   <td>{{ row.industry || '--' }}</td>
-                  <td>{{ formatNumber(row.current_price) }}</td>
-                  <td>{{ formatNumber(row.day_high) }}</td>
-                  <td><strong>{{ formatNumber(row.overnight_candidate_score) }}</strong></td>
-                  <td><span class="monitor-badge" :class="overnightBadgeClass(row.buyable_tail_signal)">{{ row.buyable_tail_signal || '观察' }}</span></td>
-                  <td><span class="monitor-badge" :class="overnightBadgeClass(row.overnight_bias)">{{ row.overnight_bias || '--' }}</span></td>
-                  <td><span class="monitor-badge" :class="sectorMacdBadgeClass(row)">{{ row.sector_macd_status || '--' }}</span></td>
+                  <td>
+                    {{ formatNumber(row.current_price ?? row.close) }}
+                    <br><span :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</span>
+                  </td>
+                  <td><strong>{{ formatNumber(row.premium_score) }}</strong></td>
+                  <td>{{ formatNumber(row.tail_score) }}/35</td>
+                  <td>
+                    {{ formatNumber(row.volume_ratio) }}倍
+                    <br>{{ formatNumber(row.turnover_rate) }}%
+                  </td>
                   <td :class="signedClass(row.tail_return_after_1430)">
                     {{ tailReturnText(row) }}
+                    <br><small>{{ tailVolumeText(row) }}</small>
                   </td>
                   <td>
-                    <span class="monitor-badge" :class="tailVolumeBadgeClass(row)">
-                      {{ tailVolumeText(row) }}
+                    <span class="monitor-badge" :class="premiumRiskBadgeClass(row)">
+                      {{ row.risk_level || '未知' }}
+                    </span>
+                    <br><small>扣{{ formatNumber(row.risk_score) }}分</small>
+                  </td>
+                  <td>
+                    <span class="monitor-badge" :class="overnightBadgeClass(row.buyable_tail_signal)">
+                      {{ row.buyable_tail_signal || '观察' }}
                     </span>
                   </td>
-                  <td :class="signedClass(row.tail_auction_return)">
-                    {{ auctionReturnText(row) }}
-                  </td>
-                  <td class="monitor-reason-cell" :title="(row.overnight_reason || '') + ' ' + (row.next_morning_sell_plan || '')">
-                    {{ row.overnight_reason || '--' }} · {{ row.next_morning_sell_plan || '--' }}
+                  <td class="tail-premium-detail-cell">
+                    <details>
+                      <summary>查看详情</summary>
+                      <div class="tail-premium-detail-grid">
+                        <div><b>六项评分</b><span>
+                          尾盘 {{ formatNumber(row.tail_score) }}/35 ·
+                          涨停 {{ formatNumber(row.limit_score) }}/20 ·
+                          板块 {{ formatNumber(row.sector_score) }}/15 ·
+                          趋势 {{ formatNumber(row.trend_score) }}/10 ·
+                          成交量 {{ formatNumber(row.volume_score) }}/10 ·
+                          位置 {{ formatNumber(row.position_score) }}/10
+                        </span></div>
+                        <div><b>尾盘指标</b><span>
+                          14:30后 {{ formatNumber(row.tail_return_after_1430) }}% ·
+                          尾盘量比 {{ formatNumber(row.tail_volume_ratio) }}倍 ·
+                          收盘位置 {{ formatNumber((row.tail_close_position || 0) * 100) }}% ·
+                          早盘竞价 {{ formatNumber(row.opening_auction_return) }}%
+                        </span></div>
+                        <div><b>涨停基因</b><span>
+                          20日 {{ row.limit_count_20d ?? 0 }} 次 ·
+                          最近 {{ row.latest_limit_date || '--' }} ·
+                          连板 {{ row.continuous_limit_days ?? 0 }} 天
+                        </span></div>
+                        <div><b>趋势位置</b><span>
+                          MA5 {{ formatNumber(row.ma5) }} · MA10 {{ formatNumber(row.ma10) }} ·
+                          MA20 {{ formatNumber(row.ma20) }} · MA60 {{ formatNumber(row.ma60) }} ·
+                          DIF {{ formatNumber(row.macd_dif) }} · DEA {{ formatNumber(row.macd_dea) }} ·
+                          20日涨幅 {{ formatNumber(row.return20) }}% ·
+                          60日高位 {{ formatNumber((row.high_position_60 || 0) * 100) }}%
+                        </span></div>
+                        <div><b>板块</b><span>
+                          涨幅 {{ formatNumber(row.sector_change) }}% ·
+                          排名 {{ row.sector_rank || '--' }} ·
+                          涨停 {{ row.sector_limit_count ?? 0 }} 家
+                        </span></div>
+                        <div><b>买入理由</b><span>{{ tailPremiumDetailText(row.buy_reasons) }}</span></div>
+                        <div><b>风险项</b><span>{{ tailPremiumDetailText(row.risk_items) }}</span></div>
+                        <div><b>T+1计划</b><span>{{ row.next_day_plan || row.next_morning_sell_plan || '--' }}</span></div>
+                        <div><b>数据</b><span>
+                          {{ row.minute_data_source || '--' }} ·
+                          {{ tailPremiumDetailText(row.data_quality_warnings) }}
+                        </span></div>
+                      </div>
+                    </details>
                   </td>
                 </tr>
                 <tr v-if="realtimeOvernightRows.length === 0">
-                  <td colspan="12" class="empty">点击拉取实时信息后展示</td>
+                  <td colspan="10" class="empty">点击拉取实时信息后展示；14:50前仅提供预观察</td>
                 </tr>
               </tbody>
             </table>
@@ -1135,9 +1188,9 @@
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="./cache-utils.js?v=20260712-cache-date-v2"></script>
   <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
-  <script src="./realtime-info-utils.js?v=20260730-db-cache-v1"></script>
+  <script src="./realtime-info-utils.js?v=20260731-tail-premium-v1"></script>
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
   <script src="./free-review-utils.js?v=20260730-free-review-v1"></script>
-  <script src="./main.js?v=20260730-free-review-v1"></script>
+  <script src="./main.js?v=20260731-tail-premium-v1"></script>
 </body>
 </html>
