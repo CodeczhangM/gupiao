@@ -274,6 +274,51 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(result.bars.iloc[-1]["close"], 10.1)
         external.assert_not_called()
 
+    def test_force_refresh_bypasses_fresh_database_minutes(self):
+        import realtime_info_service
+
+        cached = pd.DataFrame([{
+            "ts_code": "600201.SH",
+            "trade_time": "2026-07-30 14:49:00",
+            "close": 10,
+        }])
+        refreshed = pd.DataFrame([{
+            "ts_code": "600201.SH",
+            "trade_time": "2026-07-30 14:50:00",
+            "close": 10.1,
+        }])
+        with (
+            patch(
+                "realtime_info_service.load_minute_cache",
+                return_value=cached,
+            ),
+            patch(
+                "realtime_info_service.minute_cache_is_fresh",
+                return_value=True,
+            ),
+            patch(
+                "realtime_info_service._minute_result_with_1459_fallback",
+                return_value=MinuteLoadResult(
+                    refreshed,
+                    "eastmoney_fallback",
+                    [],
+                ),
+            ) as provider,
+        ):
+            result = realtime_info_service._persistent_minute_result(
+                "600201.SH",
+                "2026-07-30 14:25:00",
+                "2026-07-30 14:50:00",
+                "1min",
+                "20260730",
+                datetime(2026, 7, 30, 14, 51),
+                force_refresh=True,
+            )
+
+        provider.assert_called_once()
+        self.assertEqual(result.source, "eastmoney_fallback")
+        self.assertEqual(result.bars.iloc[-1]["close"], 10.1)
+
     def test_signal_minutes_use_at_most_four_workers(self):
         active = 0
         max_active = 0
@@ -626,7 +671,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                     },
                     "overnight": {"stocks": []},
                 },
-            ),
+            ) as build,
         ):
             result = build_realtime_info(
                 now=datetime(2026, 7, 30, 14, 41),
@@ -639,6 +684,11 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "fresh",
         )
         database_result.assert_not_called()
+        build.assert_called_once_with(
+            now=datetime(2026, 7, 30, 14, 41),
+            limit=10,
+            force_refresh=True,
+        )
 
     def test_empty_live_refresh_returns_last_success_as_stale(self):
         live_section = {

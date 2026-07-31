@@ -55,16 +55,23 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def _cached_minute_bars(ts_code: str, start_datetime: str, end_datetime: str, freq: str) -> pd.DataFrame:
+def _cached_minute_bars(
+    ts_code: str,
+    start_datetime: str,
+    end_datetime: str,
+    freq: str,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
     key = (ts_code, start_datetime, end_datetime, freq)
     now = time.monotonic()
     ttl = _CACHE_TTL_SECONDS.get(freq, 30)
-    cached = _MINUTE_BAR_CACHE.get(key)
-    if cached and now - cached[0] <= ttl:
-        return cached[1].copy()
-    failed = _FAILED_MINUTE_BAR_CACHE.get(key)
-    if failed and now - failed[0] <= _FAILED_CACHE_TTL_SECONDS:
-        raise failed[1]
+    if not force_refresh:
+        cached = _MINUTE_BAR_CACHE.get(key)
+        if cached and now - cached[0] <= ttl:
+            return cached[1].copy()
+        failed = _FAILED_MINUTE_BAR_CACHE.get(key)
+        if failed and now - failed[0] <= _FAILED_CACHE_TTL_SECONDS:
+            raise failed[1]
 
     try:
         bars = get_stock_minute_bars(ts_code, start_datetime, end_datetime, freq=freq)

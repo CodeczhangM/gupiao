@@ -14,6 +14,7 @@ from intraday_monitor_service import _main_force_status, _market_phase
 from market_cache import get_complete_dates, load_market_snapshot, load_recent_daily
 from realtime_market_source import (
     MinuteLoadResult,
+    invalidate_realtime_minute_cache,
     load_eastmoney_market_snapshot,
     load_minutes_with_fallback,
 )
@@ -448,11 +449,23 @@ def _minute_result_with_1459_fallback(
     end_datetime: str,
     freq: str,
     trade_date: str,
+    force_refresh: bool = False,
 ) -> MinuteLoadResult:
     stale_primary: list[pd.DataFrame] = []
+    if force_refresh:
+        invalidate_realtime_minute_cache(ts_code, freq, trade_date)
 
     def primary_loader(code, start, end, freq="60min"):
-        bars = _cached_minute_bars(code, start, end, freq=freq)
+        if force_refresh:
+            bars = _cached_minute_bars(
+                code,
+                start,
+                end,
+                freq=freq,
+                force_refresh=True,
+            )
+        else:
+            bars = _cached_minute_bars(code, start, end, freq=freq)
         if isinstance(bars, pd.DataFrame) and not bars.empty:
             stale_primary[:] = [bars]
         if _has_trade_date_minutes({freq: bars}, trade_date):
@@ -460,7 +473,21 @@ def _minute_result_with_1459_fallback(
         fallback_end = _fallback_1459_end_datetime(trade_date, end)
         if not fallback_end:
             return bars
-        fallback = _cached_minute_bars(code, start, fallback_end, freq=freq)
+        if force_refresh:
+            fallback = _cached_minute_bars(
+                code,
+                start,
+                fallback_end,
+                freq=freq,
+                force_refresh=True,
+            )
+        else:
+            fallback = _cached_minute_bars(
+                code,
+                start,
+                fallback_end,
+                freq=freq,
+            )
         return fallback if _has_trade_date_minutes({freq: fallback}, trade_date) else bars
 
     loaded = load_minutes_with_fallback(
@@ -491,25 +518,27 @@ def _persistent_minute_result(
     freq: str,
     trade_date: str,
     now: datetime,
+    force_refresh: bool = False,
 ) -> MinuteLoadResult:
     cache_warnings: list[str] = []
-    try:
-        cached = load_minute_cache(
-            ts_code,
-            start_datetime,
-            end_datetime,
-            freq,
-        )
-        if minute_cache_is_fresh(
-            cached,
-            start_datetime,
-            end_datetime,
-            now,
-            freq,
-        ):
-            return MinuteLoadResult(cached.copy(), "database", [])
-    except Exception as exc:
-        cache_warnings.append(f"分钟数据库读取失败: {exc}")
+    if not force_refresh:
+        try:
+            cached = load_minute_cache(
+                ts_code,
+                start_datetime,
+                end_datetime,
+                freq,
+            )
+            if minute_cache_is_fresh(
+                cached,
+                start_datetime,
+                end_datetime,
+                now,
+                freq,
+            ):
+                return MinuteLoadResult(cached.copy(), "database", [])
+        except Exception as exc:
+            cache_warnings.append(f"分钟数据库读取失败: {exc}")
 
     loaded = _minute_result_with_1459_fallback(
         ts_code,
@@ -517,6 +546,7 @@ def _persistent_minute_result(
         end_datetime,
         freq,
         trade_date,
+        force_refresh=force_refresh,
     )
     if loaded.bars is not None and not loaded.bars.empty:
         try:
@@ -709,6 +739,7 @@ def _build_realtime_intraday_section(
     snapshot_data_current: bool = True,
     minute_loader: Callable[..., MinuteLoadResult] | None = None,
     shared_context: dict[str, Any] | None = None,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     cache_key = (
         str(trade_date),
@@ -717,7 +748,11 @@ def _build_realtime_intraday_section(
         _realtime_end_datetime(trade_date, now=now),
         macd_parameter_key(),
     )
-    cached = _REALTIME_INTRADAY_RESULT_CACHE.get(cache_key)
+    cached = (
+        None
+        if force_refresh
+        else _REALTIME_INTRADAY_RESULT_CACHE.get(cache_key)
+    )
     if cached and time.monotonic() - cached[0] <= _REALTIME_INTRADAY_CACHE_TTL_SECONDS:
         result = _json_safe(cached[1])
         result["result_cache_hit"] = True
@@ -929,6 +964,7 @@ def _build_realtime_intraday_section(
 def _build_realtime_info_uncached(
     now: datetime | None = None,
     limit: int = 10,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     current = now or datetime.now()
     performance = {
@@ -982,6 +1018,7 @@ def _build_realtime_info_uncached(
                 freq,
                 trade_date,
                 current,
+                force_refresh=force_refresh,
             )
         ),
         stats=performance,
@@ -998,6 +1035,7 @@ def _build_realtime_info_uncached(
         snapshot_data_current=snapshot_data_current,
         minute_loader=realtime_minute_loader,
         shared_context=shared_context,
+        force_refresh=force_refresh,
     )
     intraday.pop("_leader_codes", None)
 
@@ -1234,7 +1272,11 @@ def build_realtime_info(
 
     build_error = None
     try:
-        fresh = _build_realtime_info_uncached(now=current, limit=limit)
+        fresh = _build_realtime_info_uncached(
+            now=current,
+            limit=limit,
+            force_refresh=force_refresh,
+        )
     except Exception as exc:
         build_error = str(exc)
         fresh = {

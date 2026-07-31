@@ -43,6 +43,21 @@ def clear_realtime_source_caches() -> None:
         _PROVIDER_HEALTH.clear()
 
 
+def invalidate_realtime_minute_cache(
+    ts_code: str,
+    freq: str,
+    trade_date: str,
+) -> None:
+    """Drop mutable provider responses without resetting failure circuits."""
+    target = (str(ts_code), str(freq), str(trade_date))
+    for key in list(_MINUTE_CACHE):
+        if (
+            len(key) >= 5
+            and (str(key[1]), str(key[3]), str(key[4])) == target
+        ):
+            _MINUTE_CACHE.pop(key, None)
+
+
 def _provider_available(provider: str) -> bool:
     with _PROVIDER_HEALTH_LOCK:
         failures, blocked_until = _PROVIDER_HEALTH.get(provider, (0, 0.0))
