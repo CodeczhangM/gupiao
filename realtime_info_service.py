@@ -45,7 +45,7 @@ _REALTIME_SECTOR_LIMIT = 8
 _REALTIME_CANDIDATES_PER_SECTOR = 6
 _REALTIME_PICKS_PER_SECTOR = 5
 _REALTIME_TAIL_CANDIDATE_LIMIT = 15
-_REALTIME_OVERNIGHT_MAX_FETCH = 15
+_REALTIME_OVERNIGHT_MAX_FETCH = 30
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
 _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
@@ -1043,7 +1043,7 @@ def _build_realtime_info_uncached(
     try:
         overnight = build_realtime_tail_premium_monitor(
             limit=limit,
-            max_fetch=max(_REALTIME_OVERNIGHT_MAX_FETCH, limit * 3),
+            max_fetch=max(_REALTIME_OVERNIGHT_MAX_FETCH, limit),
             max_leaders=_REALTIME_OVERNIGHT_MAX_LEADERS,
             now=current,
             market_override=market,

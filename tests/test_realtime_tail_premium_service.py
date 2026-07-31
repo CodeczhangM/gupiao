@@ -111,13 +111,19 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         return MinuteLoadResult(bars, "fixture", [])
 
     def test_monitor_builds_explainable_live_tail_candidate(self):
+        frequencies = []
+
+        def loader(ts_code, start, end, freq, trade_date):
+            frequencies.append(freq)
+            return self._loader(ts_code, start, end, freq, trade_date)
+
         result = build_realtime_tail_premium_monitor(
             limit=20,
             now=datetime(2026, 7, 31, 14, 50),
             market_override=self.market,
             history_override=self.history,
             trade_date_override="20260731",
-            minute_loader=self._loader,
+            minute_loader=loader,
             sector_potential_override=pd.DataFrame([{
                 "industry": "食品",
                 "avg_pct_chg": 2.5,
@@ -136,6 +142,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertIn("tail_score", row)
         self.assertIn("risk_items", row)
         self.assertEqual(result["data_as_of"], "2026-07-31 14:49:00")
+        self.assertEqual(set(frequencies), {"1min"})
 
     def test_before_1450_is_observation_only(self):
         result = build_realtime_tail_premium_monitor(

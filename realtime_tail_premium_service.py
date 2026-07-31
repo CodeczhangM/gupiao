@@ -10,12 +10,10 @@ import pandas as pd
 from indicator_settings import macd_provenance
 from overnight_monitor_service import (
     _datetime_window,
-    _history_window,
     _json_safe,
 )
 from realtime_market_source import MinuteLoadResult
 from strategy import (
-    _macd_kdj_60m_signal,
     _tail_next_day_bias,
     rank_sector_potential,
 )
@@ -160,32 +158,13 @@ def _load_and_score(
 ) -> tuple[dict[str, Any], str | None, list[str]]:
     warnings: list[str] = []
     tail_bars = pd.DataFrame()
-    bars_60m = pd.DataFrame()
     minute_source = "unavailable"
     if minute_loader is not None:
-        start_60m, end_60m = _history_window(trade_date)
         tail_start, tail_end = _datetime_window(
             trade_date,
             "14:25:00",
             "15:00:00",
         )
-        current_end = min(
-            pd.Timestamp(end_60m),
-            pd.Timestamp(now.replace(second=0, microsecond=0)),
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        try:
-            loaded_60m = minute_loader(
-                str(stock.get("ts_code") or ""),
-                start_60m,
-                current_end,
-                "60min",
-                trade_date,
-            )
-            bars_60m = loaded_60m.bars
-            minute_source = loaded_60m.source
-            warnings.extend(loaded_60m.warnings)
-        except Exception as exc:
-            warnings.append(f"60分钟数据失败: {str(exc)[:120]}")
         try:
             loaded_tail = minute_loader(
                 str(stock.get("ts_code") or ""),
@@ -209,19 +188,9 @@ def _load_and_score(
         tail_bars,
         _finite(stock.get("pct_chg"), 0),
     )
-    signal_60m: dict[str, Any] = {}
-    if bars_60m is not None and not bars_60m.empty:
-        try:
-            signal_60m = _macd_kdj_60m_signal(
-                pd.Series(stock),
-                {"60m": bars_60m, "tail_1m": tail_bars},
-            ) or {}
-        except Exception as exc:
-            warnings.append(f"60分钟指标失败: {str(exc)[:120]}")
     scored = score_tail_premium_row({
         **stock,
         **sector,
-        **signal_60m,
         **tail_signal,
     })
     score = float(scored.get("premium_score") or 0)
@@ -237,7 +206,7 @@ def _load_and_score(
     else:
         action = "观察"
         bias = "信号待确认"
-    latest = _latest_bar_time(tail_bars) or _latest_bar_time(bars_60m)
+    latest = _latest_bar_time(tail_bars)
     result = {
         **scored,
         "buyable_tail_signal": action,
