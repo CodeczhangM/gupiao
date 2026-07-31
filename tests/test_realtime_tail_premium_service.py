@@ -83,6 +83,26 @@ def _morning_bars(ts_code):
     ])
 
 
+def _morning_bars_with_last_close(ts_code, close):
+    rows = [
+        ("09:30:00", close * 0.98, close * 1.01, close * 0.97, close * 0.99, 1000),
+        ("14:45:00", close * 0.99, close * 1.01, close * 0.98, close, 1800),
+    ]
+    return pd.DataFrame([
+        {
+            "ts_code": ts_code,
+            "trade_time": f"2026-07-31 {clock}",
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": last_close,
+            "vol": volume,
+            "amount": last_close * volume,
+        }
+        for clock, open_, high, low, last_close, volume in rows
+    ])
+
+
 class RealtimeTailPremiumServiceTests(unittest.TestCase):
     def setUp(self):
         rows = [
@@ -224,7 +244,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
             requested,
         )
 
-    def test_stale_waiting_refreshes_only_displayed_candidates(self):
+    def test_stale_waiting_refreshes_candidate_pool_before_final_screening(self):
         requested_codes = []
         extra = self.market.iloc[[0]].copy()
         extra["ts_code"] = "600003.SH"
@@ -254,7 +274,55 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(result["candidate_count"], 1)
-        self.assertEqual(len(requested_codes), 1)
+        self.assertGreater(len(requested_codes), 1)
+
+    def test_stale_waiting_filters_after_current_minute_metrics(self):
+        weak = self.market.iloc[[0]].copy()
+        weak["ts_code"] = "600010.SH"
+        weak["name"] = "昨日强势"
+        weak["close"] = 12.0
+        weak["pct_chg"] = 8.0
+        weak["volume_ratio"] = 3.5
+        weak["turnover_rate"] = 8.0
+        strong = self.market.iloc[[0]].copy()
+        strong["ts_code"] = "600011.SH"
+        strong["name"] = "今日转强"
+        strong["close"] = 10.0
+        strong["pct_chg"] = 1.0
+        strong["volume_ratio"] = 2.0
+        strong["turnover_rate"] = 6.0
+        market = pd.concat([weak, strong], ignore_index=True)
+        history = pd.concat([
+            _history("600010.SH", "昨日强势", "食品"),
+            _history("600011.SH", "今日转强", "食品"),
+        ], ignore_index=True)
+
+        def loader(ts_code, start, end, freq, trade_date):
+            close = 11.7 if ts_code == "600010.SH" else 10.35
+            return MinuteLoadResult(
+                _morning_bars_with_last_close(ts_code, close),
+                "fixture",
+                [],
+            )
+
+        result = build_realtime_tail_premium_monitor(
+            limit=2,
+            now=datetime(2026, 7, 31, 14, 45),
+            market_override=market,
+            history_override=history,
+            trade_date_override="20260731",
+            minute_loader=loader,
+            source_metadata={
+                "data_current": False,
+                "data_source": "previous_snapshot",
+            },
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        codes = [row["ts_code"] for row in result["stocks"]]
+        self.assertIn("600011.SH", codes)
+        self.assertNotIn("600010.SH", codes)
+        self.assertGreater(result["stocks"][0]["pct_chg"], 0)
 
     def test_raw_prefilter_limits_factor_universe_to_strong_liquid_stocks(self):
         market = pd.DataFrame([

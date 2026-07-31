@@ -280,6 +280,106 @@ def _minute_price_snapshot(
     return snapshot
 
 
+def _warning_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    if value is None:
+        return []
+    try:
+        if pd.isna(value):
+            return []
+    except (TypeError, ValueError):
+        pass
+    return [str(value)] if str(value) else []
+
+
+def _refresh_waiting_market_with_current_minutes(
+    market: pd.DataFrame,
+    trade_date: str,
+    now: datetime,
+    minute_loader: Callable[..., MinuteLoadResult] | None,
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    if market is None or market.empty or minute_loader is None:
+        return market, [], []
+    price_start, price_end = _current_day_minute_window(trade_date, now)
+
+    def load(record: dict[str, Any]) -> dict[str, Any]:
+        code = str(record.get("ts_code") or "")
+        warnings: list[str] = []
+        source = "unavailable"
+        bars = pd.DataFrame()
+        try:
+            loaded = minute_loader(
+                code,
+                price_start,
+                price_end,
+                "1min",
+                trade_date,
+            )
+            bars = loaded.bars
+            source = loaded.source if not bars.empty else source
+            warnings.extend(loaded.warnings)
+        except Exception as exc:
+            warnings.append(f"实时1分钟数据失败: {str(exc)[:120]}")
+        snapshot = _minute_price_snapshot(
+            bars,
+            trade_date,
+            record.get("close"),
+        )
+        latest = _latest_bar_time(bars)
+        result = {**record, **snapshot}
+        if snapshot:
+            result["amount_unit"] = "yuan"
+            result["amount_source"] = source
+        result["minute_data_source"] = source
+        result["minute_data_warnings"] = list(dict.fromkeys(warnings))
+        result["data_as_of"] = latest
+        return result
+
+    records = market.to_dict("records")
+    if len(records) <= 1:
+        refreshed = [load(record) for record in records]
+    else:
+        with ThreadPoolExecutor(
+            max_workers=min(MAX_MINUTE_WORKERS, len(records))
+        ) as executor:
+            refreshed = list(executor.map(load, records))
+    warnings = list(dict.fromkeys(
+        warning
+        for row in refreshed
+        for warning in _warning_list(row.get("minute_data_warnings"))
+    ))
+    latest_times = [
+        str(row.get("data_as_of"))
+        for row in refreshed
+        if row.get("data_as_of")
+    ]
+    return pd.DataFrame(refreshed), latest_times, warnings
+
+
+def _filter_waiting_realtime_candidates(factors: pd.DataFrame) -> pd.DataFrame:
+    if factors is None or factors.empty:
+        return pd.DataFrame()
+    data = factors.copy()
+    pct = pd.to_numeric(data.get("pct_chg", 0), errors="coerce").fillna(0)
+    volume_ratio = pd.to_numeric(
+        data.get("volume_ratio", 0),
+        errors="coerce",
+    ).fillna(0)
+    turnover = pd.to_numeric(
+        data.get("turnover_rate", 0),
+        errors="coerce",
+    ).fillna(0)
+    current_minutes = data.get("data_as_of", pd.Series("", index=data.index))
+    mask = (
+        pct.ge(0.5)
+        & volume_ratio.ge(1.2)
+        & turnover.ge(2)
+        & current_minutes.astype(str).ne("")
+    )
+    return data[mask].copy().reset_index(drop=True)
+
+
 def _load_and_score(
     stock: dict[str, Any],
     trade_date: str,
@@ -289,10 +389,10 @@ def _load_and_score(
     selection_state: str,
     refresh_current_price: bool = False,
 ) -> tuple[dict[str, Any], str | None, list[str]]:
-    warnings: list[str] = []
+    warnings: list[str] = _warning_list(stock.get("minute_data_warnings"))
     tail_bars = pd.DataFrame()
     price_bars = pd.DataFrame()
-    minute_source = "unavailable"
+    minute_source = str(stock.get("minute_data_source") or "unavailable")
     if minute_loader is not None:
         if refresh_current_price and selection_state == "waiting_tail_window":
             price_start, price_end = _current_day_minute_window(
@@ -398,7 +498,15 @@ def _load_and_score(
         ),
     }
     price_latest = _latest_bar_time(price_bars)
-    data_as_of = max([value for value in (latest, price_latest) if value], default=None)
+    preloaded_latest = stock.get("data_as_of")
+    data_as_of = max(
+        [
+            str(value)
+            for value in (latest, price_latest, preloaded_latest)
+            if value
+        ],
+        default=None,
+    )
     result["data_as_of"] = data_as_of
     return result, data_as_of, warnings
 
@@ -442,12 +550,32 @@ def build_realtime_tail_premium_monitor(
             else "thousand_yuan"
         )
     state, state_label = _selection_state(current)
-    raw_fetch = max(
-        max_fetch * 4,
-        max(1, int(limit)) * 4,
-        120,
+    stale_waiting_refresh = state == "waiting_tail_window" and not bool(
+        metadata.get("data_current", True)
+    )
+    raw_fetch = (
+        max(1, min(int(max_fetch), 100))
+        if stale_waiting_refresh
+        else max(
+            max_fetch * 4,
+            max(1, int(limit)) * 4,
+            120,
+        )
     )
     factor_market = _raw_tail_prefilter_market(market, raw_fetch)
+    refreshed_latest_times: list[str] = []
+    refreshed_warnings: list[str] = []
+    if stale_waiting_refresh:
+        (
+            factor_market,
+            refreshed_latest_times,
+            refreshed_warnings,
+        ) = _refresh_waiting_market_with_current_minutes(
+            factor_market,
+            trade_date,
+            current,
+            minute_loader,
+        )
     if not factor_market.empty and not history.empty and "ts_code" in history:
         factor_codes = set(factor_market["ts_code"].astype(str))
         factor_history = history[
@@ -456,10 +584,10 @@ def build_realtime_tail_premium_monitor(
     else:
         factor_history = history
     factors = build_daily_factor_frame(factor_market, factor_history, trade_date)
-    eligible = _prefilter(
-        eligible_tail_universe(factors),
-        max_fetch=max_fetch,
-    )
+    eligible = eligible_tail_universe(factors)
+    if stale_waiting_refresh:
+        eligible = _filter_waiting_realtime_candidates(eligible)
+    eligible = _prefilter(eligible, max_fetch=max_fetch)
     sectors = _sector_map(
         market,
         history,
@@ -474,16 +602,13 @@ def build_realtime_tail_premium_monitor(
             minute_loader,
             sectors.get(str(record.get("industry") or ""), {}),
             state,
-            refresh_current_price=not bool(metadata.get("data_current", True)),
+            refresh_current_price=(
+                not stale_waiting_refresh
+                and not bool(metadata.get("data_current", True))
+            ),
         )
 
-    if state == "waiting_tail_window" and not bool(
-        metadata.get("data_current", True)
-    ):
-        records_frame = eligible.head(max(1, min(int(limit), len(eligible))))
-    else:
-        records_frame = eligible
-    records = records_frame.to_dict("records")
+    records = eligible.to_dict("records")
     if len(records) <= 1:
         loaded = [worker(record) for record in records]
     else:
@@ -492,11 +617,16 @@ def build_realtime_tail_premium_monitor(
         ) as executor:
             loaded = list(executor.map(worker, records))
     rows = [item[0] for item in loaded]
-    latest_times = [item[1] for item in loaded if item[1]]
+    latest_times = refreshed_latest_times + [
+        item[1] for item in loaded if item[1]
+    ]
     warnings = list(dict.fromkeys(
-        warning
-        for item in loaded
-        for warning in item[2]
+        list(refreshed_warnings)
+        + [
+            warning
+            for item in loaded
+            for warning in item[2]
+        ]
     ))
     ranked = rank_tail_premium_candidates(
         pd.DataFrame(rows),
