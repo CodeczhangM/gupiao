@@ -15,6 +15,7 @@ from realtime_info_service import (
     _load_realtime_market_inputs,
     _load_realtime_intraday_signal_bars,
     _minute_result_with_1459_fallback,
+    _snapshot_supports_realtime_filters,
     _trading_session_progress,
 )
 from tests.test_advantage_stock_scoring import build_60min_bars, build_tail_1min_bars, water_macd_kdj_cross_closes
@@ -412,6 +413,48 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertEqual(requested_codes, ["600201.SH"])
         self.assertEqual(list(result), ["600201.SH"])
+
+    def test_signal_minutes_accept_relaxed_positive_mainboard_candidate(self):
+        requested_codes = []
+        market = pd.DataFrame([{
+            "ts_code": "600202.SH",
+            "industry": "机器人",
+            "turnover_rate": 1.0,
+            "volume_ratio": 1.0,
+            "amount": 300_000,
+            "pct_chg": 0.2,
+        }])
+        sectors = pd.DataFrame([{"industry_name": "机器人"}])
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            requested_codes.append(ts_code)
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        result = _load_realtime_intraday_signal_bars(
+            market,
+            sectors,
+            "20260729",
+            datetime(2026, 7, 29, 14, 50),
+            minute_loader=minute_loader,
+        )
+
+        self.assertEqual(requested_codes, ["600202.SH"])
+        self.assertEqual(list(result), ["600202.SH"])
+
+    def test_snapshot_supports_relaxed_realtime_filter_candidates(self):
+        market = pd.DataFrame([{
+            "ts_code": "600202.SH",
+            "pct_chg": 0.2,
+            "turnover_rate": 1.0,
+            "volume_ratio": 1.0,
+            "amount": 100_000,
+        }])
+
+        self.assertTrue(_snapshot_supports_realtime_filters(market))
 
     @patch("realtime_info_service._load_tail_minute_bars_for_pick")
     def test_intraday_confluence_uses_today_market_when_sector_history_is_empty(self, tail_loader):

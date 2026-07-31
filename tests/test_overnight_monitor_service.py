@@ -13,6 +13,7 @@ from overnight_monitor_service import (
     _MINUTE_BAR_CACHE,
     _OVERNIGHT_RESULT_CACHE,
     build_overnight_monitor,
+    _candidate_universe,
     _json_safe,
     _overnight_labels,
     _cached_minute_bars,
@@ -135,6 +136,34 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         self.assertIn(
             "eastmoney_fallback", result["minute_data_sources"]
         )
+
+    def test_candidate_universe_accepts_relaxed_intraday_strength(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "600301.SH",
+                "name": "温和隔夜",
+                "industry": "机器人",
+                "close": 10,
+                "pct_chg": 0.5,
+                "turnover_rate": 1.0,
+                "volume_ratio": 1.0,
+                "amount": 100_000,
+            },
+            {
+                "ts_code": "600302.SH",
+                "name": "微弱剔除",
+                "industry": "机器人",
+                "close": 10,
+                "pct_chg": 0.49,
+                "turnover_rate": 5.0,
+                "volume_ratio": 3.0,
+                "amount": 500_000,
+            },
+        ])
+
+        result = _candidate_universe(market, max_fetch=10)
+
+        self.assertEqual(result["ts_code"].tolist(), ["600301.SH"])
 
     def test_preloaded_candidate_60m_bars_are_not_loaded_twice(self):
         calls = {}
@@ -343,11 +372,12 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         result = build_overnight_monitor(limit=10, now=datetime(2026, 7, 28, 14, 50))
 
         codes = [row["ts_code"] for row in result["stocks"]]
-        self.assertEqual(codes[0], "600101.SH")
+        self.assertIn("600101.SH", codes)
         self.assertNotIn("600102.SH", codes)
-        self.assertNotIn("600104.SH", codes)
-        self.assertEqual(result["stocks"][0]["overnight_bias"], "尾盘透支风险")
-        self.assertEqual(result["stocks"][0]["buyable_tail_signal"], "观察")
+        self.assertIn("600104.SH", codes)
+        first_buyable = next(row for row in result["stocks"] if row["ts_code"] == "600101.SH")
+        self.assertEqual(first_buyable["overnight_bias"], "尾盘透支风险")
+        self.assertEqual(first_buyable["buyable_tail_signal"], "观察")
         self.assertTrue(result["stocks"][0]["tail_auction_available"])
         self.assertEqual(result["refresh_interval_seconds"], 30)
         self.assertTrue(result["auto_refresh_enabled"])

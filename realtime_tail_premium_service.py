@@ -428,9 +428,9 @@ def _filter_waiting_realtime_candidates(factors: pd.DataFrame) -> pd.DataFrame:
     amount = pd.to_numeric(data.get("amount", 0), errors="coerce").fillna(0)
     current_minutes = data.get("data_as_of", pd.Series("", index=data.index))
     mask = (
-        pct.ge(0.5)
-        & volume_ratio.ge(1.2)
-        & amount.ge(50_000_000)
+        pct.ge(0)
+        & volume_ratio.ge(1.0)
+        & amount.ge(30_000_000)
         & current_minutes.astype(str).ne("")
     )
     return data[mask].copy().reset_index(drop=True)

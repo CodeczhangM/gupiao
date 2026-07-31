@@ -6,6 +6,7 @@ import pandas as pd
 from realtime_market_source import MinuteLoadResult
 from realtime_tail_premium_service import (
     build_realtime_tail_premium_monitor,
+    _filter_waiting_realtime_candidates,
     _raw_tail_prefilter_market,
 )
 
@@ -377,6 +378,28 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertEqual(codes, ["600021.SH"])
         self.assertGreaterEqual(result["stocks"][0]["amount"], 50_000_000)
         self.assertGreaterEqual(result["stocks"][0]["volume_ratio"], 1.2)
+
+    def test_waiting_realtime_filter_accepts_relaxed_positive_candidate(self):
+        factors = pd.DataFrame([
+            {
+                "ts_code": "600030.SH",
+                "pct_chg": 0.0,
+                "volume_ratio": 1.0,
+                "amount": 30_000_000,
+                "data_as_of": "2026-07-31 14:18:00",
+            },
+            {
+                "ts_code": "600031.SH",
+                "pct_chg": -0.01,
+                "volume_ratio": 3.0,
+                "amount": 90_000_000,
+                "data_as_of": "2026-07-31 14:18:00",
+            },
+        ])
+
+        result = _filter_waiting_realtime_candidates(factors)
+
+        self.assertEqual(result["ts_code"].tolist(), ["600030.SH"])
 
     def test_raw_prefilter_limits_factor_universe_to_strong_liquid_stocks(self):
         market = pd.DataFrame([

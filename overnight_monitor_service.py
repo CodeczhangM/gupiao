@@ -235,9 +235,9 @@ def _candidate_universe(market: pd.DataFrame, max_fetch: int, leader_codes: dict
     for column in ["pct_chg", "turnover_rate", "volume_ratio", "amount", "close"]:
         data[column] = pd.to_numeric(data[column], errors="coerce") if column in data else 0
     base = data[
-        data["pct_chg"].between(2, 8.5, inclusive="both")
-        & data["turnover_rate"].between(2, 15, inclusive="both")
-        & (data["volume_ratio"] > 1.3)
+        data["pct_chg"].between(0.5, 9.5, inclusive="both")
+        & data["turnover_rate"].between(1, 18, inclusive="both")
+        & (data["volume_ratio"] >= 1.0)
         & (data["amount"] >= 100_000)
     ].copy()
     if not base.empty:

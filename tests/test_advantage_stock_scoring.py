@@ -1306,7 +1306,7 @@ class SectorPotentialRankingTests(unittest.TestCase):
 
         self.assertEqual(len(picks), 5)
         self.assertIn("600998.SH", [item["ts_code"] for item in picks])
-        self.assertNotIn("600999.SH", [item["ts_code"] for item in picks])
+        self.assertIn("600999.SH", [item["ts_code"] for item in picks])
         self.assertTrue(all(item["macd_bullish_60m"] for item in picks))
         self.assertTrue(all(item["macd_fast_period"] == 5 for item in picks))
         self.assertTrue(all(item["macd_slow_period"] == 34 for item in picks))
@@ -1362,6 +1362,27 @@ class SectorPotentialRankingTests(unittest.TestCase):
 
         picks = result.iloc[0]["intraday_signal_stocks"]
         self.assertEqual([item["ts_code"] for item in picks], ["600777.SH"])
+
+    def test_attach_intraday_signal_stocks_accepts_relaxed_positive_mainboard_candidate(self):
+        market = pd.DataFrame([{
+            "ts_code": "600778.SH",
+            "name": "温和共振",
+            "industry": "能源强势",
+            "close": 11.7,
+            "pct_chg": 0.2,
+            "turnover_rate": 1.0,
+            "volume_ratio": 1.0,
+            "amount": 80_000_000,
+        }])
+        sector_potential = pd.DataFrame([{"industry_name": "能源强势", "potential_score": 90.0}])
+        minute_bars = {
+            "600778.SH": build_60min_bars("600778.SH", water_macd_kdj_cross_closes())
+        }
+
+        result = _attach_intraday_signal_stocks(sector_potential, market, minute_bars, per_sector=5)
+
+        picks = result.iloc[0]["intraday_signal_stocks"]
+        self.assertEqual([item["ts_code"] for item in picks], ["600778.SH"])
 
     def test_attach_intraday_signal_stocks_accepts_recent_macd_cross_continuation(self):
         market = pd.DataFrame([{

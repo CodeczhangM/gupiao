@@ -599,9 +599,9 @@ def _select_intraday_signal_stocks(
     candidates["pct_chg_num"] = _numeric_series(candidates, "pct_chg")
     candidates["amount_num"] = _numeric_series(candidates, "amount")
     candidates = candidates[
-        candidates["turnover_num"].between(1.5, 10, inclusive="both")
-        & (candidates["volume_ratio_num"] >= 1.2)
-        & (candidates["pct_chg_num"] >= 0.5)
+        candidates["turnover_num"].between(1.0, 12, inclusive="both")
+        & (candidates["volume_ratio_num"] >= 1.0)
+        & (candidates["pct_chg_num"] >= 0.2)
     ].copy()
     if candidates.empty:
         return []

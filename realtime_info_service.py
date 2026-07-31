@@ -315,13 +315,15 @@ def _snapshot_supports_realtime_filters(market: pd.DataFrame) -> bool:
         market["volume_ratio"], errors="coerce"
     )
     amount = pd.to_numeric(market["amount"], errors="coerce")
-    intraday_candidate = turnover.between(
-        2, 10, inclusive="both"
-    ) & volume_ratio.gt(2)
+    intraday_candidate = (
+        pct_chg.ge(0.2)
+        & turnover.between(1.0, 12, inclusive="both")
+        & volume_ratio.ge(1.0)
+    )
     overnight_candidate = (
-        pct_chg.between(2, 8.5, inclusive="both")
-        & turnover.between(2, 15, inclusive="both")
-        & volume_ratio.gt(1.3)
+        pct_chg.between(0.5, 9.5, inclusive="both")
+        & turnover.between(1, 18, inclusive="both")
+        & volume_ratio.ge(1.0)
         & amount.ge(100_000)
     )
     return bool((intraday_candidate | overnight_candidate).any())
@@ -616,9 +618,9 @@ def _load_realtime_intraday_signal_bars(
     for column in ("turnover_rate", "volume_ratio", "amount", "pct_chg"):
         candidates[column] = pd.to_numeric(candidates[column], errors="coerce") if column in candidates else 0
     candidates = candidates[
-        candidates["turnover_rate"].between(1.5, 10, inclusive="both")
-        & (candidates["volume_ratio"] >= 1.2)
-        & (candidates["pct_chg"] >= 0.5)
+        candidates["turnover_rate"].between(1.0, 12, inclusive="both")
+        & (candidates["volume_ratio"] >= 1.0)
+        & (candidates["pct_chg"] >= 0.2)
     ].copy()
     if candidates.empty:
         return {}
