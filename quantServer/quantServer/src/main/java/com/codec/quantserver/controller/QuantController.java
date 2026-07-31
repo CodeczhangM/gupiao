@@ -141,7 +141,7 @@ public class QuantController {
 
     @GetMapping("/realtime-info")
     public Map<String, Object> realtimeInfo(
-            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(defaultValue = "20") int limit,
             @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh) {
         return quantPythonClient.realtimeInfo(limit, forceRefresh);
     }

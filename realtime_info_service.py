@@ -1249,7 +1249,7 @@ def _save_database_realtime_result(
 
 def build_realtime_info(
     now: datetime | None = None,
-    limit: int = 10,
+    limit: int = 20,
     force_refresh: bool = False,
 ) -> dict[str, Any]:
     current = now or datetime.now()

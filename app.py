@@ -224,7 +224,7 @@ def morning_follow_monitor(limit: int = Query(10, ge=1, le=100)):
 
 @app.get("/api/realtime-info")
 def realtime_info(
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=100),
     force_refresh: bool = False,
 ):
     try:

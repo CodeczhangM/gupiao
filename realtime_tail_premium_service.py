@@ -286,6 +286,15 @@ def build_realtime_tail_premium_monitor(
         if isinstance(history_override, pd.DataFrame)
         else pd.DataFrame()
     )
+    metadata = dict(source_metadata or {})
+    if not market.empty and "amount_unit" not in market:
+        market["amount_unit"] = (
+            "yuan"
+            if str(metadata.get("data_source") or "").startswith(
+                "eastmoney"
+            )
+            else "thousand_yuan"
+        )
     state, state_label = _selection_state(current)
     factors = build_daily_factor_frame(market, history, trade_date)
     eligible = _prefilter(
@@ -328,7 +337,6 @@ def build_realtime_tail_premium_monitor(
         limit=limit,
     )
     stocks = [_json_safe(row) for row in ranked.to_dict("records")]
-    metadata = dict(source_metadata or {})
     return _json_safe({
         "trade_date": trade_date,
         "data_trade_date": trade_date,
@@ -359,4 +367,3 @@ def build_realtime_tail_premium_monitor(
         "stocks": stocks,
         **macd_provenance(),
     })
-
