@@ -627,15 +627,28 @@ def _market_previous_close_for_minute_pct(
     trade_date: str,
     base_trade_date: str | None = None,
 ) -> Any:
+    explicit = _first_present(row.get("previous_close_for_pct"))
+    if explicit is not None:
+        return explicit
     if base_trade_date and str(base_trade_date) != str(trade_date):
         return _first_present(
             row.get("close"),
             row.get("pre_close"),
             row.get("previous_close"),
         )
+    direct = _first_present(row.get("pre_close"), row.get("previous_close"))
+    if direct is not None:
+        return direct
+    close = _first_present(row.get("close"))
+    pct_chg = _first_present(row.get("pct_chg"))
+    try:
+        close_value = float(close)
+        pct_value = float(pct_chg)
+        if close_value and pct_value > -99:
+            return close_value / (1 + pct_value / 100)
+    except (TypeError, ValueError):
+        pass
     return _first_present(
-        row.get("pre_close"),
-        row.get("previous_close"),
         row.get("close"),
     )
 
@@ -661,6 +674,7 @@ def _apply_minute_snapshots_to_market(
             base_trade_date=base_trade_date,
         )
         snapshot = _minute_price_snapshot(str(ts_code), bars, trade_date, previous_close)
+        snapshot["previous_close_for_pct"] = previous_close
         for key, value in snapshot.items():
             if key not in result.columns:
                 result[key] = None

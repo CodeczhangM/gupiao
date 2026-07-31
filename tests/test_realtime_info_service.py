@@ -15,6 +15,7 @@ from realtime_info_service import (
     _apply_minute_snapshots_to_market,
     _load_realtime_market_inputs,
     _load_realtime_intraday_signal_bars,
+    _minute_price_snapshot,
     _minute_result_with_1459_fallback,
     _snapshot_supports_realtime_filters,
     _trading_session_progress,
@@ -1671,6 +1672,54 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(result.iloc[0]["pct_chg"], 1.006711, places=5)
+
+    def test_tail_snapshot_keeps_derived_previous_close_after_price_overlay(self):
+        market = pd.DataFrame([{
+            "trade_date": "20260731",
+            "ts_code": "600733.SH",
+            "close": 6.02,
+            "pct_chg": 1.006711,
+        }])
+        bars_by_code = {
+            "600733.SH": {
+                "60m": pd.DataFrame([{
+                    "ts_code": "600733.SH",
+                    "trade_time": "2026-07-31 14:30:00",
+                    "open": 5.96,
+                    "high": 6.08,
+                    "low": 5.71,
+                    "close": 6.02,
+                    "vol": 1000,
+                    "amount": 6020,
+                }])
+            }
+        }
+
+        overlaid = _apply_minute_snapshots_to_market(
+            market,
+            bars_by_code,
+            "20260731",
+        )
+        tail_snapshot = _minute_price_snapshot(
+            "600733.SH",
+            {
+                "tail_1m": pd.DataFrame([{
+                    "ts_code": "600733.SH",
+                    "trade_time": "2026-07-31 14:59:00",
+                    "open": 6.01,
+                    "high": 6.03,
+                    "low": 6.0,
+                    "close": 6.02,
+                    "vol": 1000,
+                    "amount": 6020,
+                }])
+            },
+            "20260731",
+            overlaid.iloc[0].get("previous_close_for_pct"),
+        )
+
+        self.assertAlmostEqual(overlaid.iloc[0]["previous_close_for_pct"], 5.96, places=5)
+        self.assertAlmostEqual(tail_snapshot["pct_chg"], 1.006711, places=5)
 
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)

@@ -1,5 +1,7 @@
 import unittest
 from datetime import datetime
+import threading
+import time
 from unittest.mock import patch
 
 import pandas as pd
@@ -89,6 +91,57 @@ class RealtimeMinuteWarmupTests(unittest.TestCase):
         self.assertEqual(loader.call_args.args[1], "2026-07-31 14:43:00")
         self.assertEqual(loader.call_args.args[2], "2026-07-31 14:57:00")
         saver.assert_called_once()
+
+    def test_warmup_fetches_missing_minutes_with_bounded_parallelism(self):
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+
+        def load(*args, **kwargs):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.02)
+            with lock:
+                active -= 1
+            ts_code = args[0]
+            return type(
+                "MinuteLoadResult",
+                (),
+                {
+                    "bars": pd.DataFrame([{
+                        "ts_code": ts_code,
+                        "trade_time": "2026-07-31 14:57:00",
+                        "open": 10,
+                        "high": 10,
+                        "low": 10,
+                        "close": 10,
+                        "vol": 1000,
+                        "amount": 10000,
+                    }]),
+                    "source": "eastmoney_fallback",
+                    "warnings": [],
+                },
+            )()
+
+        with (
+            patch("realtime_minute_warmup.load_minute_cache", return_value=pd.DataFrame()),
+            patch("realtime_minute_warmup.load_minutes_with_fallback", side_effect=load),
+            patch("realtime_minute_warmup.save_minute_cache"),
+            patch("realtime_minute_warmup.get_stock_minute_bars", return_value=pd.DataFrame()),
+        ):
+            result = warm_realtime_minute_cache(
+                now=datetime(2026, 7, 31, 14, 58, 10),
+                candidate_codes=["600001.SH", "600002.SH", "600003.SH", "600004.SH"],
+                frequencies=("1min",),
+                max_workers=3,
+                tushare_per_minute_limit=200,
+            )
+
+        self.assertEqual(result["fetched_count"], 4)
+        self.assertGreater(max_active, 1)
+        self.assertLessEqual(max_active, 3)
 
     def test_start_realtime_minute_warmup_is_idempotent(self):
         with patch("realtime_minute_warmup.threading.Thread") as thread_class:
