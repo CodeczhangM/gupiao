@@ -1,0 +1,163 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "974d03087fe48fbd050e8b9b15c3785d7b190c43",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4296,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 260,
+    "git_diff_deleted_lines": 40,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 260,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "free_review_repository.py": {
+        "BYMC": [
+          "17-18",
+          "88",
+          "106",
+          "121-124",
+          "233-236",
+          "271",
+          "274",
+          "292",
+          "295",
+          "326",
+          "404",
+          "479",
+          "488",
+          "491-534",
+          "545",
+          "549",
+          "551",
+          "553",
+          "564"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_scoring.py": {
+        "BYMC": [
+          "12",
+          "17-22",
+          "236",
+          "398"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_service.py": {
+        "BYMC": [
+          "26-29",
+          "48",
+          "77",
+          "79",
+          "140",
+          "174",
+          "176",
+          "205"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "intraday_monitor_service.py": {
+        "BYMC": [
+          "10",
+          "199-202",
+          "299",
+          "305"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "morning_follow_service.py": {
+        "BYMC": [
+          "14",
+          "30",
+          "1075",
+          "1082",
+          "1207"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "overnight_monitor_service.py": {
+        "BYMC": [
+          "15",
+          "25",
+          "75-81",
+          "84",
+          "97",
+          "101",
+          "103-108",
+          "731"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "12",
+          "48-50",
+          "60",
+          "62-66",
+          "711",
+          "1088-1091",
+          "1145",
+          "1211",
+          "1214",
+          "1253-1256"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_repository.py": {
+        "BYMC": [
+          "160-222"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_morning_follow_service.py": {
+        "BYMC": [
+          "51-70"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_service.py": {
+        "BYMC": [
+          "61-77"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "97-114"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785463519,
+  "requirement_id": ""
+}
