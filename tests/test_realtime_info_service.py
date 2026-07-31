@@ -469,7 +469,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "realtime_info_service.load_result_cache",
                 return_value={
                     "payload": cached_payload,
-                    "updated_at": "2026-07-30 14:40:00",
+                    "updated_at": "2026-07-30 14:40:50",
                 },
                 create=True,
             ),
@@ -486,7 +486,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(result["cache_source"], "database")
         self.assertEqual(
             result["cache_updated_at"],
-            "2026-07-30 14:40:00",
+            "2026-07-30 14:40:50",
         )
         self.assertTrue(result["result_cache_hit"])
         self.assertEqual(
@@ -494,6 +494,113 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "600298.SH",
         )
         build.assert_not_called()
+
+    def test_database_result_expires_during_trading(self):
+        cached_payload = {
+            "trade_date": "20260730",
+            "data_trade_date": "20260730",
+            "data_as_of": "2026-07-30 14:40:20",
+            "data_status": "live",
+            "intraday": {"stocks": [{"ts_code": "cached"}]},
+            "overnight": {"stocks": []},
+        }
+        fresh_payload = {
+            "trade_date": "20260730",
+            "data_trade_date": "20260730",
+            "data_as_of": "2026-07-30 14:40:59",
+            "intraday": {"stocks": [{"ts_code": "fresh"}]},
+            "overnight": {"stocks": []},
+        }
+        with (
+            patch(
+                "realtime_info_service.load_result_cache",
+                return_value={
+                    "payload": cached_payload,
+                    "updated_at": "2026-07-30 14:40:29",
+                },
+            ),
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+                return_value=fresh_payload,
+            ) as build,
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 41, 0),
+                limit=10,
+            )
+
+        build.assert_called_once()
+        self.assertEqual(
+            result["intraday"]["stocks"][0]["ts_code"],
+            "fresh",
+        )
+
+    def test_database_result_rejects_prior_trade_date_as_live(self):
+        cached_payload = {
+            "trade_date": "20260729",
+            "data_trade_date": "20260729",
+            "data_as_of": "2026-07-29 15:00:00",
+            "data_status": "live",
+            "intraday": {"stocks": [{"ts_code": "cached"}]},
+            "overnight": {"stocks": []},
+        }
+        with (
+            patch(
+                "realtime_info_service.load_result_cache",
+                return_value={
+                    "payload": cached_payload,
+                    "updated_at": "2026-07-30 14:40:55",
+                },
+            ),
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+                return_value={
+                    "trade_date": "20260730",
+                    "data_trade_date": "20260730",
+                    "intraday": {"stocks": [{"ts_code": "fresh"}]},
+                    "overnight": {"stocks": []},
+                },
+            ) as build,
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 41, 0),
+                limit=10,
+            )
+
+        build.assert_called_once()
+        self.assertEqual(result["data_trade_date"], "20260730")
+
+    def test_final_post_close_result_remains_reusable(self):
+        payload = {
+            "trade_date": "20260730",
+            "data_trade_date": "20260730",
+            "data_as_of": "2026-07-30 15:00:00",
+            "data_status": "live",
+            "intraday": {"stocks": [{"ts_code": "final"}]},
+            "overnight": {"stocks": []},
+        }
+        with (
+            patch(
+                "realtime_info_service.load_result_cache",
+                return_value={
+                    "payload": payload,
+                    "updated_at": "2026-07-30 15:00:10",
+                },
+            ),
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+            ) as build,
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 30, 16, 30),
+                limit=10,
+            )
+
+        build.assert_not_called()
+        self.assertEqual(
+            result["intraday"]["stocks"][0]["ts_code"],
+            "final",
+        )
 
     def test_force_refresh_bypasses_database_result_fast_path(self):
         with (

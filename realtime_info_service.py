@@ -1098,7 +1098,67 @@ def _database_realtime_result_key(limit: int) -> str:
     )
 
 
-def _load_database_realtime_result(limit: int) -> dict[str, Any] | None:
+def _parse_cache_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+def _database_result_is_fresh(
+    payload: dict[str, Any],
+    updated_at: Any,
+    now: datetime,
+) -> bool:
+    updated = _parse_cache_datetime(updated_at)
+    data_as_of = _parse_cache_datetime(payload.get("data_as_of"))
+    if updated is None or data_as_of is None:
+        return False
+    current = now.replace(tzinfo=None) if now.tzinfo else now
+    trade_date = str(
+        payload.get("data_trade_date")
+        or payload.get("trade_date")
+        or ""
+    )
+    today = current.strftime("%Y%m%d")
+    clock = current.strftime("%H:%M:%S")
+    updated_age = max(0.0, (current - updated).total_seconds())
+
+    if "09:30:00" <= clock <= "11:30:00" or (
+        "13:00:00" <= clock < "15:00:00"
+    ):
+        if trade_date != today or updated_age > 25:
+            return False
+        return (
+            data_as_of.strftime("%Y%m%d") == today
+            and max(0.0, (current - data_as_of).total_seconds()) <= 120
+        )
+    if "11:30:00" < clock < "13:00:00":
+        return (
+            trade_date == today
+            and data_as_of.strftime("%Y%m%d") == today
+            and data_as_of.strftime("%H:%M:%S") >= "11:29:00"
+        )
+    if clock >= "15:00:00":
+        return (
+            trade_date == today
+            and data_as_of.strftime("%Y%m%d") == today
+            and data_as_of.strftime("%H:%M:%S") >= "14:59:00"
+        )
+    # Before the open, the completed prior-session snapshot may be shown,
+    # but it must retain its non-current/stale label from the payload.
+    return payload.get("data_current") is False
+
+
+def _load_database_realtime_result(
+    limit: int,
+    *,
+    now: datetime | None = None,
+    require_fresh: bool = True,
+) -> dict[str, Any] | None:
     try:
         cached = load_result_cache(
             "realtime_info",
@@ -1110,6 +1170,12 @@ def _load_database_realtime_result(limit: int) -> dict[str, Any] | None:
         return None
     result = _json_safe(cached["payload"])
     if not _has_realtime_stocks(result):
+        return None
+    if require_fresh and not _database_result_is_fresh(
+        result,
+        cached.get("updated_at"),
+        now or datetime.now(),
+    ):
         return None
     result["cache_source"] = "database"
     result["cache_updated_at"] = cached.get("updated_at")
@@ -1159,7 +1225,10 @@ def build_realtime_info(
             result["result_cache_hit"] = True
             result["cache_source"] = "memory"
             return result
-        database_cached = _load_database_realtime_result(limit)
+        database_cached = _load_database_realtime_result(
+            limit,
+            now=current,
+        )
         if database_cached is not None:
             return database_cached
 
@@ -1220,7 +1289,11 @@ def build_realtime_info(
         with _REALTIME_RESULT_LOCK:
             previous = _LAST_SUCCESSFUL_REALTIME_RESULTS.get(successful_key)
         if previous is None:
-            previous = _load_database_realtime_result(limit)
+            previous = _load_database_realtime_result(
+                limit,
+                now=current,
+                require_fresh=False,
+            )
         if previous is not None:
             warnings = list(previous.get("fallback_warnings") or [])
             stale_performance = dict(previous.get("performance") or {})
