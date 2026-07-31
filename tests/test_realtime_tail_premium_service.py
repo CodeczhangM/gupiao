@@ -1,0 +1,160 @@
+import unittest
+from datetime import datetime
+
+import pandas as pd
+
+from realtime_market_source import MinuteLoadResult
+from realtime_tail_premium_service import (
+    build_realtime_tail_premium_monitor,
+)
+
+
+def _history(ts_code, name, industry, *, falling=False):
+    closes = [
+        (20 - index * 0.1) if falling else (10 + index * 0.03)
+        for index in range(70)
+    ]
+    return pd.DataFrame([
+        {
+            "ts_code": ts_code,
+            "name": name,
+            "industry": industry,
+            "trade_date": (
+                pd.Timestamp("2026-04-20") + pd.offsets.BDay(index)
+            ).strftime("%Y%m%d"),
+            "open": close * 0.99,
+            "high": close * 1.02,
+            "low": close * 0.98,
+            "close": close,
+            "pre_close": closes[index - 1] if index else close,
+            "vol": 1_000_000,
+            "amount": 100_000,
+            "amount_unit": "thousand_yuan",
+            "pct_chg": (
+                (close / closes[index - 1] - 1) * 100 if index else 0
+            ),
+        }
+        for index, close in enumerate(closes)
+    ])
+
+
+def _tail_bars(ts_code):
+    times = [
+        "14:25:00", "14:26:00", "14:27:00", "14:28:00",
+        "14:29:00", "14:30:00", "14:31:00", "14:40:00",
+        "14:49:00",
+    ]
+    closes = [11, 11, 11, 11, 11, 11, 11.03, 11.06, 11.10]
+    volumes = [1000, 1000, 1000, 1000, 1000, 1000, 1500, 1600, 1700]
+    return pd.DataFrame([
+        {
+            "ts_code": ts_code,
+            "trade_time": f"2026-07-31 {clock}",
+            "open": close - 0.01,
+            "high": close + 0.02,
+            "low": close - 0.02,
+            "close": close,
+            "vol": volume,
+            "amount": close * volume,
+        }
+        for clock, close, volume in zip(times, closes, volumes)
+    ])
+
+
+class RealtimeTailPremiumServiceTests(unittest.TestCase):
+    def setUp(self):
+        rows = [
+            {
+                "ts_code": "600001.SH",
+                "name": "优选股份",
+                "industry": "食品",
+                "open": 11.05,
+                "high": 11.2,
+                "low": 10.9,
+                "close": 11.1,
+                "pre_close": 11,
+                "vol": 2_000_000,
+                "amount": 120_000_000,
+                "amount_unit": "yuan",
+                "pct_chg": 0.91,
+                "turnover_rate": 8,
+                "volume_ratio": 1.8,
+            },
+            {
+                "ts_code": "600002.SH",
+                "name": "*ST 风险",
+                "industry": "食品",
+                "open": 11,
+                "high": 11.1,
+                "low": 10.9,
+                "close": 11,
+                "pre_close": 11,
+                "vol": 1_000_000,
+                "amount": 100_000_000,
+                "amount_unit": "yuan",
+                "pct_chg": 0,
+                "turnover_rate": 5,
+                "volume_ratio": 1.2,
+            },
+        ]
+        self.market = pd.DataFrame(rows)
+        self.history = pd.concat([
+            _history("600001.SH", "优选股份", "食品"),
+            _history("600002.SH", "*ST 风险", "食品"),
+        ])
+
+    def _loader(self, ts_code, start, end, freq, trade_date):
+        if freq == "1min":
+            bars = _tail_bars(ts_code)
+        else:
+            bars = pd.DataFrame()
+        return MinuteLoadResult(bars, "fixture", [])
+
+    def test_monitor_builds_explainable_live_tail_candidate(self):
+        result = build_realtime_tail_premium_monitor(
+            limit=20,
+            now=datetime(2026, 7, 31, 14, 50),
+            market_override=self.market,
+            history_override=self.history,
+            trade_date_override="20260731",
+            minute_loader=self._loader,
+            sector_potential_override=pd.DataFrame([{
+                "industry": "食品",
+                "avg_pct_chg": 2.5,
+                "up_ratio": 0.8,
+                "limit_up_count": 2,
+                "sector_rank": 1,
+            }]),
+        )
+
+        self.assertEqual(result["selection_state"], "live_tail_window")
+        self.assertEqual(result["candidate_count"], 1)
+        row = result["stocks"][0]
+        self.assertEqual(row["ts_code"], "600001.SH")
+        self.assertAlmostEqual(row["opening_auction_return"], 0.454545, places=5)
+        self.assertIn("premium_score", row)
+        self.assertIn("tail_score", row)
+        self.assertIn("risk_items", row)
+        self.assertEqual(result["data_as_of"], "2026-07-31 14:49:00")
+
+    def test_before_1450_is_observation_only(self):
+        result = build_realtime_tail_premium_monitor(
+            limit=20,
+            now=datetime(2026, 7, 31, 14, 45),
+            market_override=self.market,
+            history_override=self.history,
+            trade_date_override="20260731",
+            minute_loader=self._loader,
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        self.assertEqual(result["selection_state"], "waiting_tail_window")
+        self.assertTrue(result["stocks"])
+        self.assertEqual(
+            result["stocks"][0]["buyable_tail_signal"],
+            "等待14:50",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -26,7 +26,6 @@ from realtime_cache import (
     save_result_cache,
 )
 from overnight_monitor_service import (
-    build_overnight_monitor,
     _cached_minute_bars,
     _datetime_window,
     _history_window,
@@ -34,6 +33,9 @@ from overnight_monitor_service import (
     _leader_codes_from_ranked_sector_potential,
     _mask_unavailable_tail_fields,
     _realtime_end_datetime,
+)
+from realtime_tail_premium_service import (
+    build_realtime_tail_premium_monitor,
 )
 from strategy import _attach_intraday_signal_stocks, _macd_kdj_60m_signal, rank_sector_potential
 
@@ -1001,9 +1003,9 @@ def _build_realtime_info_uncached(
 
     overnight_started = time.perf_counter()
     try:
-        overnight = build_overnight_monitor(
+        overnight = build_realtime_tail_premium_monitor(
             limit=limit,
-            max_fetch=_REALTIME_OVERNIGHT_MAX_FETCH,
+            max_fetch=max(_REALTIME_OVERNIGHT_MAX_FETCH, limit * 3),
             max_leaders=_REALTIME_OVERNIGHT_MAX_LEADERS,
             now=current,
             market_override=market,

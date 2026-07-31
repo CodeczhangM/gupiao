@@ -419,7 +419,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 return_value=live_section,
             ) as intraday_builder,
             patch(
-                "realtime_info_service.build_overnight_monitor",
+                "realtime_info_service.build_realtime_tail_premium_monitor",
                 return_value={"trade_date": "20260730", "stocks": []},
             ) as overnight_builder,
         ):
@@ -561,7 +561,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 return_value=live_section,
             ),
             patch(
-                "realtime_info_service.build_overnight_monitor",
+                "realtime_info_service.build_realtime_tail_premium_monitor",
                 return_value={"trade_date": "20260730", "stocks": []},
             ),
         ):
@@ -581,7 +581,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 return_value={"trade_date": "20260730", "stocks": []},
             ),
             patch(
-                "realtime_info_service.build_overnight_monitor",
+                "realtime_info_service.build_realtime_tail_premium_monitor",
                 return_value={"trade_date": "20260730", "stocks": []},
             ),
         ):
@@ -615,7 +615,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 return_value={"trade_date": "20260730", "stocks": []},
             ),
             patch(
-                "realtime_info_service.build_overnight_monitor",
+                "realtime_info_service.build_realtime_tail_premium_monitor",
                 return_value={"trade_date": "20260730", "stocks": []},
             ),
         ):
@@ -741,7 +741,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(result.bars.iloc[0]["close"], 39.12)
 
     @patch(
-        "realtime_info_service.build_overnight_monitor",
+        "realtime_info_service.build_realtime_tail_premium_monitor",
         return_value={"trade_date": "20260730", "stocks": []},
     )
     @patch(
@@ -802,7 +802,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "；".join(result["fallback_warnings"]),
         )
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._build_realtime_intraday_section")
     @patch("realtime_info_service.load_recent_daily")
     @patch("realtime_info_service.load_market_snapshot")
@@ -815,7 +815,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_market_snapshot,
         load_recent_daily,
         build_realtime_intraday_section,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         load_market_snapshot.return_value = pd.DataFrame([
@@ -827,7 +827,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "trade_date": "20260729",
             "stocks": [{"ts_code": "600101.SH", "name": "实时共振"}],
         }
-        build_overnight_monitor.return_value = {
+        build_realtime_tail_premium_monitor.return_value = {
             "trade_date": "20260729",
             "stocks": [{"ts_code": "600102.SH", "name": "隔夜候选"}],
         }
@@ -843,8 +843,8 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         sync_cached_market_data.assert_called_once_with(force_current=True)
         load_recent_daily.assert_called_once_with("20260729", 100)
         build_realtime_intraday_section.assert_called_once()
-        build_overnight_monitor.assert_called_once()
-        kwargs = build_overnight_monitor.call_args.kwargs
+        build_realtime_tail_premium_monitor.assert_called_once()
+        kwargs = build_realtime_tail_premium_monitor.call_args.kwargs
         self.assertEqual(kwargs["trade_date_override"], "20260729")
         self.assertEqual(
             kwargs["source_metadata"]["data_source"],
@@ -855,7 +855,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             kwargs["market_override"].iloc[0]["close"], 12.34
         )
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._build_realtime_intraday_section")
     @patch("realtime_info_service.load_recent_daily")
     @patch("realtime_info_service.load_market_snapshot")
@@ -868,7 +868,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_market_snapshot,
         load_recent_daily,
         build_realtime_intraday_section,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         load_market_snapshot.return_value = pd.DataFrame([
@@ -885,7 +885,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "tail_strength_score": 82,
             }],
         }
-        build_overnight_monitor.return_value = {
+        build_realtime_tail_premium_monitor.return_value = {
             "trade_date": "20260729",
             "stocks": [{
                 "ts_code": "600102.SH",
@@ -914,7 +914,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertTrue(overnight["tail_auction_available"])
         self.assertEqual(overnight["tail_auction_return"], 0.15)
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -929,7 +929,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         market = pd.DataFrame([
@@ -949,7 +949,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_market_snapshot.return_value = market
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
-        build_overnight_monitor.return_value = {"trade_date": "20260729", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260729", "stocks": []}
 
         def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
             if freq == "60min":
@@ -980,7 +980,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertIn(("600201.SH", "2026-05-20 09:30:00", "2026-07-29 14:49:00", "60min"), called_windows)
         self.assertIn(("600201.SH", "2026-07-29 14:25:00", "2026-07-29 14:49:00", "1min"), called_windows)
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars")
     @patch("realtime_info_service.rank_sector_potential")
     @patch("realtime_info_service.load_recent_daily")
@@ -995,7 +995,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {
             "data_trade_date": "20260729",
@@ -1026,7 +1026,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "600201.SH",
             water_macd_kdj_cross_closes(),
         )
-        build_overnight_monitor.return_value = {
+        build_realtime_tail_premium_monitor.return_value = {
             "trade_date": "20260729",
             "stocks": [],
         }
@@ -1042,7 +1042,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             2.571429,
         )
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1057,7 +1057,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {
             "data_trade_date": "20260728",
@@ -1082,7 +1082,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_market_snapshot.side_effect = [pd.DataFrame(), previous_market]
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
-        build_overnight_monitor.return_value = {"trade_date": "20260729", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260729", "stocks": []}
 
         def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
             if freq == "60min":
@@ -1146,7 +1146,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             freq="60min",
         )
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1161,7 +1161,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         market = pd.DataFrame([
@@ -1182,7 +1182,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
         cached_minute_bars.return_value = build_60min_bars("600201.SH", water_macd_kdj_cross_closes())
-        build_overnight_monitor.return_value = {"trade_date": "20260729", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260729", "stocks": []}
 
         first = build_realtime_info(now=datetime(2026, 7, 29, 14, 50, 5))
         second = build_realtime_info(now=datetime(2026, 7, 29, 14, 50, 45))
@@ -1191,7 +1191,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertTrue(second["intraday"]["result_cache_hit"])
         self.assertEqual(cached_minute_bars.call_count, 2)
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1206,7 +1206,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         load_market_snapshot.return_value = pd.DataFrame([{
@@ -1223,7 +1223,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         }])
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
-        build_overnight_monitor.return_value = {"trade_date": "20260729", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260729", "stocks": []}
 
         tail = pd.DataFrame([
             {"ts_code": "600201.SH", "trade_time": "2026-07-29 14:25:00", "open": 18.0, "high": 18.0, "low": 18.0, "close": 18.0, "vol": 1000, "amount": 18_000},
@@ -1255,7 +1255,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(row["day_high"], 18.72)
         self.assertGreater(row["tail_return_after_1430"], 3.0)
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1270,7 +1270,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         load_market_snapshot.return_value = pd.DataFrame([{
@@ -1288,7 +1288,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
         cached_minute_bars.return_value = build_60min_bars("600201.SH", water_macd_kdj_cross_closes())
-        build_overnight_monitor.return_value = {"trade_date": "20260729", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260729", "stocks": []}
 
         result = build_realtime_info(now=datetime(2026, 7, 29, 14, 50))
 
@@ -1298,7 +1298,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertIsNone(row["tail_return_after_1430"])
         self.assertEqual(row["main_force_reason"], "当日分时未返回")
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1313,7 +1313,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {
             "data_trade_date": "20260728",
@@ -1335,7 +1335,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_market_snapshot.side_effect = [pd.DataFrame(), base_market]
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
-        build_overnight_monitor.return_value = {"trade_date": "20260728", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260728", "stocks": []}
         stale_60m = build_60min_bars("600201.SH", water_macd_kdj_cross_closes())
 
         def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
@@ -1371,7 +1371,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertTrue(row["tail_after_1430_available"])
         self.assertEqual(row["current_price"], 18.68)
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1386,7 +1386,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260729", "cache_updated": True}
         load_market_snapshot.return_value = pd.DataFrame([{
@@ -1403,7 +1403,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         }])
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
-        build_overnight_monitor.return_value = {"trade_date": "20260729", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260729", "stocks": []}
         stale_60m = build_60min_bars("600201.SH", water_macd_kdj_cross_closes())
         fresh_tail = pd.DataFrame([
             {"ts_code": "600201.SH", "trade_time": "2026-07-29 14:25:00", "open": 18.0, "high": 18.0, "low": 18.0, "close": 18.0, "vol": 1000, "amount": 18_000},
@@ -1439,7 +1439,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertIn(("600201.SH", "2026-05-20 09:30:00", "2026-07-29 14:59:00", "60min"), called_windows)
         self.assertIn(("600201.SH", "2026-07-29 14:25:00", "2026-07-29 14:59:00", "1min"), called_windows)
 
-    @patch("realtime_info_service.build_overnight_monitor")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)
     @patch("realtime_info_service.load_recent_daily", create=True)
@@ -1454,7 +1454,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_recent_daily,
         rank_sector_potential,
         cached_minute_bars,
-        build_overnight_monitor,
+        build_realtime_tail_premium_monitor,
     ):
         sync_cached_market_data.return_value = {"data_trade_date": "20260728", "cache_updated": True}
         base_market = pd.DataFrame([{
@@ -1472,7 +1472,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         load_market_snapshot.side_effect = [pd.DataFrame(), base_market]
         load_recent_daily.return_value = pd.DataFrame([{"ts_code": "600201.SH", "trade_date": "20260728", "close": 17.85}])
         rank_sector_potential.return_value = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
-        build_overnight_monitor.return_value = {"trade_date": "20260728", "stocks": []}
+        build_realtime_tail_premium_monitor.return_value = {"trade_date": "20260728", "stocks": []}
 
         def fake_bars(ts_code, start_datetime, end_datetime, freq="60min"):
             if freq == "60min" and end_datetime.startswith("2026-07-28"):
