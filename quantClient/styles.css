@@ -1235,6 +1235,46 @@ tr:hover td {
   padding: 14px 16px;
 }
 
+.macd-settings-panel {
+  padding: 14px 16px;
+}
+
+.macd-settings-panel .primary {
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 0 16px;
+}
+
+.macd-settings-fields {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.macd-settings-fields label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.macd-settings-fields input {
+  width: 110px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: #fff;
+}
+
+.macd-settings-fields small {
+  flex: 1 1 360px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .free-review-build-state {
   display: flex;
   align-items: center;

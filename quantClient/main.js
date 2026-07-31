@@ -564,6 +564,17 @@ createApp({
       },
       freeReviewPresets: loadFreeReviewPresets(localStorage),
       freeReviewPresetName: '',
+      macdSettings: {
+        fast_period: 5,
+        slow_period: 34,
+        signal_period: 5,
+      },
+      macdSettingsForm: {
+        fast_period: 5,
+        slow_period: 34,
+        signal_period: 5,
+      },
+      macdSettingsSaving: false,
       reviewForm: {
         tsCode: '',
         buyDate: '',
@@ -721,6 +732,15 @@ createApp({
     formatNumber,
     signedClass,
     displayMoney,
+    macdBasisText(payload = {}) {
+      const source = (
+        payload && (
+          payload.macd_fast_period != null
+          || payload.fast_period != null
+        )
+      ) ? payload : this.macdSettings;
+      return macdParameterLabel(source);
+    },
     freeReviewMetricValue(row, metric) {
       const value = row ? row[metric.key] : null;
       if (value === null || value === undefined || value === '') return '--';
@@ -883,6 +903,7 @@ createApp({
       this.error = '';
       try {
         await this.checkHealth();
+        await this.loadMacdSettings(false);
         await this.loadCacheStatus(false);
         if (this.activeTab === 'free_review') {
           await this.loadFreeReview(false);
@@ -913,6 +934,66 @@ createApp({
         this.freeReviewPageSize,
         this.freeReviewSort,
       );
+    },
+    async loadMacdSettings(showError = true) {
+      try {
+        const settings = (
+          await this.request('/indicator-settings/macd')
+        ) || {};
+        this.macdSettings = settings;
+        this.macdSettingsForm = {
+          fast_period: Number(settings.fast_period ?? 5),
+          slow_period: Number(settings.slow_period ?? 34),
+          signal_period: Number(settings.signal_period ?? 5),
+        };
+      } catch (error) {
+        if (showError) this.error = error.message;
+      }
+    },
+    async saveMacdSettingsAndRecalculate() {
+      const validation = validateMacdSettings(this.macdSettingsForm);
+      if (!validation.valid) {
+        this.error = validation.message;
+        return;
+      }
+      this.macdSettingsSaving = true;
+      this.error = '';
+      try {
+        const result = await this.request('/indicator-settings/macd', {
+          method: 'PUT',
+          body: JSON.stringify(this.macdSettingsForm),
+        });
+        this.macdSettings = result.settings || this.macdSettings;
+        this.macdSettingsForm = {
+          fast_period: Number(this.macdSettings.fast_period),
+          slow_period: Number(this.macdSettings.slow_period),
+          signal_period: Number(this.macdSettings.signal_period),
+        };
+        this.freeReviewBuild = result.free_review_build || {};
+        this.freeReviewMeta = {
+          ...this.freeReviewMeta,
+          ready: false,
+          score_version: this.freeReviewBuild.score_version,
+          ...this.macdSettings,
+        };
+        this.freeReviewResult = {
+          items: [], total: 0, page: 1,
+          page_size: this.freeReviewPageSize, pages: 0,
+        };
+        this.freeReviewSectors = [];
+        this.intradayMonitor = {};
+        this.overnightMonitor = {};
+        this.realtimeInfo = {};
+        if (['pending', 'running'].includes(this.freeReviewBuild.status)) {
+          this.startFreeReviewBuildPolling();
+        } else if (this.freeReviewBuild.status === 'queue_failed') {
+          this.error = this.freeReviewBuild.error_message || '参数已保存，但复盘重建启动失败';
+        }
+      } catch (error) {
+        this.error = error.message;
+      } finally {
+        this.macdSettingsSaving = false;
+      }
     },
     async loadFreeReview(showError = true, resetPage = false) {
       if (this.freeReviewLoading) return;

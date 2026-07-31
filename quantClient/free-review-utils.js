@@ -204,11 +204,38 @@
     return { state: 'idle', text: '尚未构建', detail: '请生成最新完整交易日快照' };
   }
 
+  function validateMacdSettings(settings = {}) {
+    const values = [
+      Number(settings.fast_period),
+      Number(settings.slow_period),
+      Number(settings.signal_period),
+    ];
+    if (values.some((value) => !Number.isInteger(value))) {
+      return { valid: false, message: 'MACD 周期必须是整数' };
+    }
+    if (values.some((value) => value < 2 || value > 120)) {
+      return { valid: false, message: 'MACD 周期必须在 2–120 之间' };
+    }
+    if (values[0] >= values[1]) {
+      return { valid: false, message: '快线周期必须小于慢线周期' };
+    }
+    return { valid: true, message: '' };
+  }
+
+  function macdParameterLabel(settings = {}) {
+    const fast = settings.macd_fast_period ?? settings.fast_period ?? 5;
+    const slow = settings.macd_slow_period ?? settings.slow_period ?? 34;
+    const signal = settings.macd_signal_period ?? settings.signal_period ?? 5;
+    return `MACD ${fast}/${slow}/${signal}`;
+  }
+
   return {
     FREE_REVIEW_METRIC_GROUPS,
     normalizeFreeReviewQuery,
     saveFreeReviewPreset,
     loadFreeReviewPresets,
     freeReviewBuildState,
+    validateMacdSettings,
+    macdParameterLabel,
   };
 }));

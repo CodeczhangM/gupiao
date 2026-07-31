@@ -5,6 +5,8 @@ const {
   saveFreeReviewPreset,
   loadFreeReviewPresets,
   freeReviewBuildState,
+  validateMacdSettings,
+  macdParameterLabel,
 } = require('./free-review-utils.js');
 
 const query = normalizeFreeReviewQuery({
@@ -50,5 +52,23 @@ assert.equal(freeReviewBuildState({ status: 'failed', error_message: '权限不�
 assert.ok(FREE_REVIEW_METRIC_GROUPS.length >= 5);
 assert.ok(FREE_REVIEW_METRIC_GROUPS.flatMap((group) => group.metrics)
   .some((metric) => metric.key === 'pe_ttm'));
+
+assert.deepEqual(
+  validateMacdSettings({ fast_period: 5, slow_period: 34, signal_period: 5 }),
+  { valid: true, message: '' },
+);
+assert.equal(validateMacdSettings({
+  fast_period: 5.5, slow_period: 34, signal_period: 5,
+}).valid, false);
+assert.equal(validateMacdSettings({
+  fast_period: 34, slow_period: 34, signal_period: 5,
+}).valid, false);
+assert.equal(validateMacdSettings({
+  fast_period: 1, slow_period: 34, signal_period: 5,
+}).valid, false);
+assert.equal(
+  macdParameterLabel({ fast_period: 5, slow_period: 34, signal_period: 5 }),
+  'MACD 5/34/5',
+);
 
 console.log('free-review utility regression ok');

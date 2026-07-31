@@ -96,6 +96,41 @@
           <article><span>生成时间</span><strong class="small-value">{{ freeReviewMeta.generated_at || '--' }}</strong></article>
         </div>
 
+        <div class="panel macd-settings-panel">
+          <div class="panel-head">
+            <div>
+              <h3>全局 MACD 参数</h3>
+              <span>
+                当前 {{ macdBasisText(macdSettings) }}
+                · 版本 {{ macdSettings.version || '--' }}
+                · 更新 {{ macdSettings.updated_at || '--' }}
+              </span>
+            </div>
+            <button
+              class="primary"
+              @click="saveMacdSettingsAndRecalculate"
+              :disabled="macdSettingsSaving"
+            >
+              {{ macdSettingsSaving ? '保存中' : '保存并重新计算' }}
+            </button>
+          </div>
+          <div class="macd-settings-fields">
+            <label>
+              <span>快线周期</span>
+              <input type="number" min="2" max="120" step="1" v-model.number="macdSettingsForm.fast_period">
+            </label>
+            <label>
+              <span>慢线周期</span>
+              <input type="number" min="2" max="120" step="1" v-model.number="macdSettingsForm.slow_period">
+            </label>
+            <label>
+              <span>信号周期</span>
+              <input type="number" min="2" max="120" step="1" v-model.number="macdSettingsForm.signal_period">
+            </label>
+            <small>应用于自由复盘、日线选股、60分实时共振、隔夜与次日早盘；保存后保留原始行情缓存。</small>
+          </div>
+        </div>
+
         <div class="panel free-review-build-panel">
           <div class="free-review-build-state" :class="`is-${freeReviewBuildView.state}`">
             <div>
@@ -103,6 +138,7 @@
               <span>{{ freeReviewBuildView.detail }}</span>
             </div>
             <small>只使用最新完整交易日；财务指标严格按公告日回看，避免未来数据。</small>
+            <small>{{ macdBasisText(freeReviewMeta) }}</small>
           </div>
         </div>
 
@@ -408,6 +444,7 @@
               · {{ intradayMonitor.updated_at || '--' }}
               · {{ intradayDataTimeText }}
               · {{ intradayMonitorRows.length }} 只
+              · {{ macdBasisText(intradayMonitor) }}
             </span>
             <div class="realtime-data-state" :class="`is-${intradayCacheState.state}`">
               <strong>{{ intradayCacheState.text }}</strong>
@@ -485,6 +522,7 @@
               {{ overnightMonitor.market_phase || '未加载' }}
               · 候选日 {{ overnightMonitor.candidate_trade_date || '--' }}
               · {{ overnightMonitorRows.length }} 只
+              · {{ macdBasisText(overnightMonitor) }}
             </span>
             <span
               class="monitor-badge morning-follow-data-status"
@@ -579,6 +617,7 @@
                 · {{ realtimeInfo.updated_at || '--' }}
                 · {{ realtimeInfo.data_current === false ? '非当日' : '当日' }}
                 · {{ realtimeInfoDataTimeText }}
+                · {{ macdBasisText(realtimeInfo) }}
               </span>
               <div class="realtime-data-state" :class="`is-${realtimeInfoStatus.state}`">
                 <strong>{{ realtimeInfoStatus.text }}</strong>
@@ -608,7 +647,7 @@
         <div class="panel wide-panel">
           <div class="panel-head">
             <h3>实时共振</h3>
-            <span>{{ realtimeIntradayRows.length }} 只</span>
+            <span>{{ realtimeIntradayRows.length }} 只 · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}</span>
           </div>
           <div class="table-wrap intraday-monitor-table">
             <table>
@@ -660,7 +699,7 @@
         <div class="panel wide-panel">
           <div class="panel-head">
             <h3>隔夜选股</h3>
-            <span>{{ realtimeOvernightRows.length }} 只</span>
+            <span>{{ realtimeOvernightRows.length }} 只 · {{ macdBasisText(realtimeInfo.overnight || realtimeInfo) }}</span>
           </div>
           <div class="table-wrap intraday-monitor-table">
             <table>

@@ -51,5 +51,20 @@ assert.match(
   /if \(meta\.ready === false\)/,
   '首次尚无快照时不应继续请求筛选结果',
 );
+[
+  '快线周期',
+  '慢线周期',
+  '信号周期',
+  '保存并重新计算',
+].forEach((text) => assert.ok(html.includes(text), `MACD 设置缺少：${text}`));
+assert.match(html, /v-model\.number="macdSettingsForm\.fast_period"/);
+assert.match(html, /v-model\.number="macdSettingsForm\.slow_period"/);
+assert.match(html, /v-model\.number="macdSettingsForm\.signal_period"/);
+assert.match(main, /loadMacdSettings/);
+assert.match(main, /saveMacdSettingsAndRecalculate/);
+assert.ok(
+  (html.match(/macdBasisText/g) || []).length >= 5,
+  '自由复盘、实时信息、实时共振、隔夜和次日早盘都应显示 MACD 口径',
+);
 
 console.log('free-review layout regression ok');
