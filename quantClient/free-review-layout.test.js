@@ -46,5 +46,10 @@ assert.doesNotMatch(html, /class="stage-guide"/);
 assert.match(main, /activeTab:\s*'free_review'/);
 assert.match(main, /page_size/);
 assert.match(main, /response\.blob\(\)/);
+assert.match(
+  main,
+  /if \(meta\.ready === false\)/,
+  '首次尚无快照时不应继续请求筛选结果',
+);
 
 console.log('free-review layout regression ok');

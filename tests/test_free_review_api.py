@@ -50,6 +50,20 @@ class FreeReviewApiTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 404)
 
     @patch(
+        "app.free_review_meta",
+        side_effect=LookupError("自由复盘选股快照尚未生成"),
+    )
+    def test_meta_returns_not_ready_payload_before_first_build(
+        self,
+        _service,
+    ):
+        result = app.free_review_metadata(trade_date=None)
+
+        self.assertFalse(result["ready"])
+        self.assertEqual(result["stock_count"], 0)
+        self.assertIn("尚未生成", result["message"])
+
+    @patch(
         "app.query_free_review",
         side_effect=ValueError("不支持的筛选字段"),
     )

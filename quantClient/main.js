@@ -921,6 +921,24 @@ createApp({
       try {
         const meta = await this.request('/free-review/meta');
         this.freeReviewMeta = meta || {};
+        if (meta.ready === false) {
+          this.freeReviewResult = {
+            items: [],
+            total: 0,
+            page: 1,
+            page_size: this.freeReviewPageSize,
+            pages: 0,
+          };
+          this.freeReviewSectors = [];
+          try {
+            this.freeReviewBuild = (
+              await this.request('/free-review/build-status')
+            ) || {};
+          } catch {
+            this.freeReviewBuild = {};
+          }
+          return;
+        }
         const payload = this.freeReviewQueryPayload();
         const [result, sectors] = await Promise.all([
           this.request('/free-review/query', {

@@ -237,9 +237,23 @@ def free_review_metadata(
     trade_date: str | None = Query(None, pattern=r"^\d{8}$"),
 ):
     try:
-        return free_review_meta(trade_date)
+        return {
+            "ready": True,
+            **free_review_meta(trade_date),
+        }
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "ready": False,
+            "trade_date": trade_date,
+            "score_version": "free-review-v1",
+            "generated_at": None,
+            "stock_count": 0,
+            "sector_count": 0,
+            "financial_coverage": 0,
+            "available_filters": [],
+            "data_warnings": [],
+            "message": str(exc),
+        }
     except Exception as exc:
         logger.exception("读取自由复盘选股元数据失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
