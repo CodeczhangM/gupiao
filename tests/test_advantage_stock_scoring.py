@@ -1305,7 +1305,7 @@ class SectorPotentialRankingTests(unittest.TestCase):
         picks = result.iloc[0]["intraday_signal_stocks"]
 
         self.assertEqual(len(picks), 5)
-        self.assertNotIn("600998.SH", [item["ts_code"] for item in picks])
+        self.assertIn("600998.SH", [item["ts_code"] for item in picks])
         self.assertNotIn("600999.SH", [item["ts_code"] for item in picks])
         self.assertTrue(all(item["macd_bullish_60m"] for item in picks))
         self.assertTrue(all(item["macd_fast_period"] == 5 for item in picks))

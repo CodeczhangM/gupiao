@@ -64,9 +64,9 @@ def _tail_bars(ts_code):
 
 def _morning_bars(ts_code):
     rows = [
-        ("09:30:00", 11.05, 11.12, 10.98, 11.10, 1000),
-        ("10:30:00", 11.10, 11.42, 11.08, 11.40, 1500),
-        ("14:45:00", 11.40, 11.60, 11.35, 11.55, 1800),
+        ("09:30:00", 11.05, 11.12, 10.98, 11.10, 6_000_000),
+        ("10:30:00", 11.10, 11.42, 11.08, 11.40, 6_000_000),
+        ("14:45:00", 11.40, 11.60, 11.35, 11.55, 6_000_000),
     ]
     return pd.DataFrame([
         {
@@ -83,10 +83,10 @@ def _morning_bars(ts_code):
     ])
 
 
-def _morning_bars_with_last_close(ts_code, close):
+def _morning_bars_with_last_close(ts_code, close, *, volume=18_000_000):
     rows = [
-        ("09:30:00", close * 0.98, close * 1.01, close * 0.97, close * 0.99, 1000),
-        ("14:45:00", close * 0.99, close * 1.01, close * 0.98, close, 1800),
+        ("09:30:00", close * 0.98, close * 1.01, close * 0.97, close * 0.99, volume * 0.4),
+        ("14:45:00", close * 0.99, close * 1.01, close * 0.98, close, volume * 0.6),
     ]
     return pd.DataFrame([
         {
@@ -323,6 +323,60 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertIn("600011.SH", codes)
         self.assertNotIn("600010.SH", codes)
         self.assertGreater(result["stocks"][0]["pct_chg"], 0)
+
+    def test_stale_waiting_candidates_start_from_current_performance_not_prior_strength(self):
+        prior_strong = self.market.iloc[[0]].copy()
+        prior_strong["ts_code"] = "600020.SH"
+        prior_strong["name"] = "昨日涨停"
+        prior_strong["close"] = 12.0
+        prior_strong["pct_chg"] = 9.8
+        prior_strong["volume_ratio"] = 4.0
+        prior_strong["turnover_rate"] = 8.0
+        prior_strong["amount"] = 900_000_000
+        today_strong = self.market.iloc[[0]].copy()
+        today_strong["ts_code"] = "600021.SH"
+        today_strong["name"] = "今日走强"
+        today_strong["close"] = 10.0
+        today_strong["pct_chg"] = 0.1
+        today_strong["volume_ratio"] = 0.9
+        today_strong["turnover_rate"] = 3.0
+        today_strong["amount"] = 850_000_000
+        market = pd.concat([prior_strong, today_strong], ignore_index=True)
+        history = pd.concat([
+            _history("600020.SH", "昨日涨停", "食品"),
+            _history("600021.SH", "今日走强", "食品"),
+        ], ignore_index=True)
+
+        def loader(ts_code, start, end, freq, trade_date):
+            if ts_code == "600020.SH":
+                close, volume = 11.88, 200_000
+            else:
+                close, volume = 10.45, 100_000_000
+            return MinuteLoadResult(
+                _morning_bars_with_last_close(ts_code, close, volume=volume),
+                "fixture",
+                [],
+            )
+
+        result = build_realtime_tail_premium_monitor(
+            limit=2,
+            max_fetch=2,
+            now=datetime(2026, 7, 31, 14, 45),
+            market_override=market,
+            history_override=history,
+            trade_date_override="20260731",
+            minute_loader=loader,
+            source_metadata={
+                "data_current": False,
+                "data_source": "previous_snapshot",
+            },
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        codes = [row["ts_code"] for row in result["stocks"]]
+        self.assertEqual(codes, ["600021.SH"])
+        self.assertGreaterEqual(result["stocks"][0]["amount"], 50_000_000)
+        self.assertGreaterEqual(result["stocks"][0]["volume_ratio"], 1.2)
 
     def test_raw_prefilter_limits_factor_universe_to_strong_liquid_stocks(self):
         market = pd.DataFrame([

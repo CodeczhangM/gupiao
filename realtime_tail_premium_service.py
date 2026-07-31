@@ -169,6 +169,8 @@ def _prefilter(factors: pd.DataFrame, max_fetch: int) -> pd.DataFrame:
 def _raw_tail_prefilter_market(
     market: pd.DataFrame,
     max_fetch: int,
+    *,
+    current_first: bool = False,
 ) -> pd.DataFrame:
     if market is None or market.empty or "ts_code" not in market:
         return pd.DataFrame()
@@ -186,12 +188,18 @@ def _raw_tail_prefilter_market(
         )
     else:
         amount_yuan = data["amount"]
-    data["_raw_tail_prefilter_score"] = (
-        data["pct_chg"].clip(-3, 10) * 3.0
-        + data["volume_ratio"].clip(0, 5) * 5.0
-        + data["turnover_rate"].clip(0, 25) * 0.35
-        + (amount_yuan / 100_000_000).clip(0, 12)
-    )
+    if current_first:
+        data["_raw_tail_prefilter_score"] = (
+            (amount_yuan / 100_000_000).clip(0, 20) * 2.0
+            + data["turnover_rate"].clip(0, 25) * 0.35
+        )
+    else:
+        data["_raw_tail_prefilter_score"] = (
+            data["pct_chg"].clip(-3, 10) * 3.0
+            + data["volume_ratio"].clip(0, 5) * 5.0
+            + data["turnover_rate"].clip(0, 25) * 0.35
+            + (amount_yuan / 100_000_000).clip(0, 12)
+        )
     return (
         data.sort_values(
             ["_raw_tail_prefilter_score", "amount", "ts_code"],
@@ -213,6 +221,23 @@ def _latest_bar_time(frame: pd.DataFrame) -> str | None:
     return times.max().isoformat(sep=" ", timespec="seconds")
 
 
+def _session_progress(now: datetime) -> float:
+    minutes = now.hour * 60 + now.minute + now.second / 60
+    morning_start = 9 * 60 + 30
+    morning_end = 11 * 60 + 30
+    afternoon_start = 13 * 60
+    afternoon_end = 15 * 60
+    if minutes <= morning_start:
+        return 0.0
+    if minutes < morning_end:
+        return (minutes - morning_start) / 240
+    if minutes < afternoon_start:
+        return 0.5
+    if minutes < afternoon_end:
+        return (120 + minutes - afternoon_start) / 240
+    return 1.0
+
+
 def _current_day_minute_window(trade_date: str, now: datetime) -> tuple[str, str]:
     start, session_end = _datetime_window(trade_date, "09:30:00", "15:00:00")
     end = min(
@@ -228,6 +253,10 @@ def _minute_price_snapshot(
     bars: pd.DataFrame,
     trade_date: str,
     previous_close: Any,
+    previous_volume: Any = None,
+    previous_amount: Any = None,
+    previous_amount_unit: Any = None,
+    progress: float | None = None,
 ) -> dict[str, Any]:
     if bars is None or bars.empty or "trade_time" not in bars:
         return {}
@@ -277,6 +306,27 @@ def _minute_price_snapshot(
     previous = _finite(previous_close)
     if previous:
         snapshot["pct_chg"] = round((latest_close / previous - 1) * 100, 6)
+    prior_amount = _finite(previous_amount)
+    if prior_amount and str(previous_amount_unit or "").lower() not in {
+        "yuan",
+        "元",
+        "cny",
+    }:
+        prior_amount *= 1000
+    current_amount = snapshot.get("amount")
+    if prior_amount and current_amount and progress and progress > 0:
+        snapshot["volume_ratio"] = round(
+            float(current_amount) / prior_amount / progress,
+            6,
+        )
+        return snapshot
+    prior_volume = _finite(previous_volume)
+    current_volume = snapshot.get("vol")
+    if prior_volume and current_volume and progress and progress > 0:
+        snapshot["volume_ratio"] = round(
+            float(current_volume) / prior_volume / progress,
+            6,
+        )
     return snapshot
 
 
@@ -325,6 +375,10 @@ def _refresh_waiting_market_with_current_minutes(
             bars,
             trade_date,
             record.get("close"),
+            record.get("vol"),
+            record.get("amount"),
+            record.get("amount_unit"),
+            _session_progress(now),
         )
         latest = _latest_bar_time(bars)
         result = {**record, **snapshot}
@@ -366,15 +420,12 @@ def _filter_waiting_realtime_candidates(factors: pd.DataFrame) -> pd.DataFrame:
         data.get("volume_ratio", 0),
         errors="coerce",
     ).fillna(0)
-    turnover = pd.to_numeric(
-        data.get("turnover_rate", 0),
-        errors="coerce",
-    ).fillna(0)
+    amount = pd.to_numeric(data.get("amount", 0), errors="coerce").fillna(0)
     current_minutes = data.get("data_as_of", pd.Series("", index=data.index))
     mask = (
         pct.ge(0.5)
         & volume_ratio.ge(1.2)
-        & turnover.ge(2)
+        & amount.ge(50_000_000)
         & current_minutes.astype(str).ne("")
     )
     return data[mask].copy().reset_index(drop=True)
@@ -453,6 +504,10 @@ def _load_and_score(
             snapshot_bars,
             trade_date,
             stock.get("close") if refresh_current_price else stock.get("pre_close"),
+            stock.get("vol"),
+            stock.get("amount"),
+            stock.get("amount_unit"),
+            _session_progress(now),
         )
         if refresh_current_price or selection_state != "waiting_tail_window"
         else {}
@@ -562,7 +617,11 @@ def build_realtime_tail_premium_monitor(
             120,
         )
     )
-    factor_market = _raw_tail_prefilter_market(market, raw_fetch)
+    factor_market = _raw_tail_prefilter_market(
+        market,
+        raw_fetch,
+        current_first=stale_waiting_refresh,
+    )
     refreshed_latest_times: list[str] = []
     refreshed_warnings: list[str] = []
     if stale_waiting_refresh:

@@ -364,6 +364,54 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertLessEqual(max_active, 4)
         self.assertEqual(list(result), codes[:6])
 
+    @patch("realtime_info_service._load_tail_minute_bars_for_pick")
+    def test_intraday_confluence_uses_today_market_when_sector_history_is_empty(self, tail_loader):
+        import realtime_info_service
+
+        market = pd.DataFrame([{
+            "trade_date": "20260731",
+            "ts_code": "600301.SH",
+            "name": "今日共振",
+            "industry": "机器人",
+            "close": 12.6,
+            "high": 12.8,
+            "low": 12.1,
+            "pct_chg": 3.2,
+            "turnover_rate": 4.8,
+            "volume_ratio": 1.5,
+            "amount": 180_000_000,
+        }])
+        tail_loader.return_value = MinuteLoadResult(
+            pd.DataFrame(), "not_available", []
+        )
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            self.assertEqual(freq, "60min")
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        result = realtime_info_service._build_realtime_intraday_section(
+            market,
+            pd.DataFrame(),
+            "20260731",
+            datetime(2026, 7, 31, 14, 20),
+            limit=10,
+            minute_loader=minute_loader,
+            force_refresh=True,
+        )
+
+        self.assertEqual(
+            [row["ts_code"] for row in result["stocks"]],
+            ["600301.SH"],
+        )
+        row = result["stocks"][0]
+        self.assertTrue(row["macd_golden_cross_60m"])
+        self.assertTrue(row["kdj_golden_cross_60m"])
+        self.assertIn("多头", row["intraday_signal_reason"])
+
     def test_tail_minutes_are_limited_before_fetch(self):
         import realtime_info_service
 

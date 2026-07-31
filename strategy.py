@@ -472,6 +472,18 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
     close = bars["close"]
     high = bars["high"]
     low = bars["low"]
+    ma5_60m = close.rolling(5, min_periods=5).mean()
+    ma10_60m = close.rolling(10, min_periods=10).mean()
+    ma20_60m = close.rolling(20, min_periods=20).mean()
+    bullish_stack_60m = bool(
+        len(close) >= 21
+        and pd.notna(ma5_60m.iloc[-1])
+        and pd.notna(ma10_60m.iloc[-1])
+        and pd.notna(ma20_60m.iloc[-1])
+        and close.iloc[-1] >= ma5_60m.iloc[-1] >= ma10_60m.iloc[-1] >= ma20_60m.iloc[-1]
+        and ma5_60m.iloc[-1] >= ma5_60m.iloc[-2]
+        and ma10_60m.iloc[-1] >= ma10_60m.iloc[-2]
+    )
     dif, dea, histogram = calculate_macd(close, macd_settings)
 
     low9 = low.rolling(9, min_periods=9).min()
@@ -514,6 +526,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         + (25 if not macd_above_zero and macd_recent_golden_cross and not macd_golden_cross else 0)
         + (15 if macd_histogram_up else 0)
         + (20 if kdj_golden_cross else 12 if kdj_recent_golden_cross else 8 if kdj_bullish else 0)
+        + (12 if bullish_stack_60m else 0)
         + min(float(volume_ratio or 0), 5) * 4
         + min(max(float(pct_chg or 0), 0), 10) * 1.5
         + min(float(amount or 0) / 100_000_000, 10)
@@ -531,6 +544,10 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         reason_parts.append("KDJ金叉延续")
     elif kdj_bullish:
         reason_parts.append("KDJ多头")
+    if macd_bullish and kdj_bullish:
+        reason_parts.append("共振多头")
+    if bullish_stack_60m:
+        reason_parts.append("60分多头向上")
     reason_parts.append(f"量比{float(volume_ratio or 0):.2f}")
     reason_parts.append(f"换手{float(row.get('turnover_num', row.get('turnover_rate', 0)) or 0):.2f}%")
 
@@ -551,6 +568,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         "macd_bullish_60m": macd_bullish,
         "macd_histogram_up_60m": macd_histogram_up,
         "macd_above_zero_60m": macd_above_zero,
+        "bullish_stack_60m": bullish_stack_60m,
         "kdj_k_60m": round(float(k.iloc[-1]), 6),
         "kdj_d_60m": round(float(d.iloc[-1]), 6),
         "kdj_j_60m": round(float(j.iloc[-1]), 6),
@@ -578,8 +596,9 @@ def _select_intraday_signal_stocks(
     candidates["pct_chg_num"] = _numeric_series(candidates, "pct_chg")
     candidates["amount_num"] = _numeric_series(candidates, "amount")
     candidates = candidates[
-        candidates["turnover_num"].between(2, 10, inclusive="both") &
-        (candidates["volume_ratio_num"] > 2)
+        candidates["turnover_num"].between(1.5, 10, inclusive="both")
+        & (candidates["volume_ratio_num"] >= 1.2)
+        & (candidates["pct_chg_num"] >= 0.5)
     ].copy()
     if candidates.empty:
         return []
@@ -594,6 +613,7 @@ def _select_intraday_signal_stocks(
         picks,
         key=lambda item: (
             item.get("macd_above_zero_60m", False),
+            item.get("bullish_stack_60m", False),
             item.get("kdj_golden_cross_60m", False),
             item.get("intraday_signal_score", 0),
             item.get("volume_ratio", 0) or 0,

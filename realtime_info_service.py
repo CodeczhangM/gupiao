@@ -608,8 +608,9 @@ def _load_realtime_intraday_signal_bars(
     for column in ("turnover_rate", "volume_ratio", "amount", "pct_chg"):
         candidates[column] = pd.to_numeric(candidates[column], errors="coerce") if column in candidates else 0
     candidates = candidates[
-        candidates["turnover_rate"].between(2, 10, inclusive="both")
-        & (candidates["volume_ratio"] > 2)
+        candidates["turnover_rate"].between(1.5, 10, inclusive="both")
+        & (candidates["volume_ratio"] >= 1.2)
+        & (candidates["pct_chg"] >= 0.5)
     ].copy()
     if candidates.empty:
         return {}
@@ -658,6 +659,52 @@ def _load_realtime_intraday_signal_bars(
                 "warnings": loaded.warnings,
             }
     return bars_by_code
+
+
+def _today_sector_potential(market: pd.DataFrame, limit: int) -> pd.DataFrame:
+    if market is None or market.empty or "industry" not in market:
+        return pd.DataFrame()
+    data = market.copy()
+    data["industry"] = data["industry"].fillna("").astype(str)
+    data = data[data["industry"] != ""].copy()
+    if data.empty:
+        return pd.DataFrame()
+    for column in ("pct_chg", "amount", "volume_ratio", "turnover_rate"):
+        data[column] = (
+            pd.to_numeric(data[column], errors="coerce")
+            if column in data
+            else 0
+        )
+    grouped = data.groupby("industry").agg(
+        stock_count=("ts_code", "count"),
+        avg_pct_chg=("pct_chg", "mean"),
+        up_ratio=("pct_chg", lambda values: float((values > 0).mean())),
+        strong_ratio=("pct_chg", lambda values: float((values >= 3).mean())),
+        amount_sum=("amount", "sum"),
+        volume_ratio=("volume_ratio", "mean"),
+        turnover_rate=("turnover_rate", "mean"),
+    ).reset_index()
+    grouped = grouped[grouped["stock_count"] >= 1].copy()
+    if grouped.empty:
+        return pd.DataFrame()
+    grouped["potential_score"] = (
+        grouped["avg_pct_chg"].clip(lower=0, upper=8) * 8
+        + grouped["up_ratio"].clip(0, 1) * 20
+        + grouped["strong_ratio"].clip(0, 1) * 20
+        + grouped["volume_ratio"].clip(0, 4) * 5
+        + (grouped["amount_sum"] / 100_000_000).clip(0, 10)
+    ).round(2)
+    grouped = (
+        grouped.sort_values(
+            ["potential_score", "amount_sum"],
+            ascending=[False, False],
+            kind="mergesort",
+        )
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    grouped["rank"] = grouped.index + 1
+    return grouped.rename(columns={"industry": "industry_name"})
 
 
 def _has_any_trade_date_signal_bars(bars_by_code: dict[str, dict[str, pd.DataFrame]], trade_date: str) -> bool:
@@ -769,7 +816,16 @@ def _build_realtime_intraday_section(
         trade_date,
         now,
     )
-    sector_potential = rank_sector_potential(realtime_market, history, limit=_REALTIME_SECTOR_LIMIT)
+    sector_potential = rank_sector_potential(
+        realtime_market,
+        history,
+        limit=_REALTIME_SECTOR_LIMIT,
+    )
+    if sector_potential is None or sector_potential.empty:
+        sector_potential = _today_sector_potential(
+            realtime_market,
+            _REALTIME_SECTOR_LIMIT,
+        )
     leader_codes = _leader_codes_from_ranked_sector_potential(
         sector_potential
     )
