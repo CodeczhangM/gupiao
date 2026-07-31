@@ -1,0 +1,128 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "6aac6def01911b86f654929b04942e20433d4160",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4296,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 156,
+    "git_diff_deleted_lines": 34,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 156,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "free_review_scoring.py": {
+        "BYMC": [
+          "9-14",
+          "100-103",
+          "155",
+          "158",
+          "228-229",
+          "240-243",
+          "393"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "indicator_settings.py": {
+        "BYMC": [
+          "196-205"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "overnight_monitor_service.py": {
+        "BYMC": [
+          "12-16",
+          "293-299",
+          "310",
+          "335",
+          "340-344",
+          "392"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "stock_detail_service.py": {
+        "BYMC": [
+          "13-17",
+          "98-99",
+          "156-161"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "strategy.py": {
+        "BYMC": [
+          "3-8",
+          "463-469",
+          "475",
+          "562",
+          "778-779",
+          "987-991",
+          "1092",
+          "1112-1113",
+          "1205-1209",
+          "1255"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_advantage_stock_scoring.py": {
+        "BYMC": [
+          "1310-1317"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_scoring.py": {
+        "BYMC": [
+          "127-128",
+          "133-140"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_macd_configuration_usage.py": {
+        "BYMC": [
+          "1-34"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_overnight_monitor_service.py": {
+        "BYMC": [
+          "582-584"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_stock_detail_service.py": {
+        "BYMC": [
+          "116-123"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785463018,
+  "requirement_id": ""
+}
