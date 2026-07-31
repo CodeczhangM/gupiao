@@ -12,6 +12,7 @@ from realtime_info_service import (
     build_realtime_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
     _fill_missing_realtime_volume_ratio,
+    _apply_minute_snapshots_to_market,
     _load_realtime_market_inputs,
     _load_realtime_intraday_signal_bars,
     _minute_result_with_1459_fallback,
@@ -1551,6 +1552,36 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(row["current_price"], 18.68)
         self.assertEqual(row["day_high"], 18.72)
         self.assertGreater(row["tail_return_after_1430"], 3.0)
+
+    def test_minute_snapshot_pct_uses_pre_close_not_stale_close(self):
+        market = pd.DataFrame([{
+            "ts_code": "600733.SH",
+            "close": 5.74,
+            "pre_close": 5.96,
+            "pct_chg": -3.69,
+        }])
+        bars_by_code = {
+            "600733.SH": {
+                "60m": pd.DataFrame([{
+                    "ts_code": "600733.SH",
+                    "trade_time": "2026-07-31 15:00:00",
+                    "open": 6.0,
+                    "high": 6.08,
+                    "low": 5.71,
+                    "close": 6.02,
+                    "vol": 1000,
+                    "amount": 6020,
+                }])
+            }
+        }
+
+        result = _apply_minute_snapshots_to_market(
+            market,
+            bars_by_code,
+            "20260731",
+        )
+
+        self.assertAlmostEqual(result.iloc[0]["pct_chg"], 1.006711, places=5)
 
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)

@@ -8,6 +8,7 @@ from realtime_tail_premium_service import (
     build_realtime_tail_premium_monitor,
     _filter_waiting_realtime_candidates,
     _raw_tail_prefilter_market,
+    _refresh_waiting_market_with_current_minutes,
 )
 
 
@@ -237,13 +238,57 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertEqual(row["ts_code"], "600001.SH")
         self.assertEqual(row["buyable_tail_signal"], "等待14:50")
         self.assertAlmostEqual(row["close"], 11.55)
-        self.assertAlmostEqual(row["pct_chg"], 4.054054, places=5)
+        self.assertAlmostEqual(row["pct_chg"], 5.0, places=5)
         self.assertEqual(row["data_as_of"], "2026-07-31 14:45:00")
         self.assertEqual(result["data_as_of"], "2026-07-31 14:45:00")
         self.assertIn(
             ("2026-07-31 09:30:00", "2026-07-31 14:45:00", "1min"),
             requested,
         )
+
+    def test_before_1450_pct_uses_pre_close_not_stale_close(self):
+        market = pd.DataFrame([{
+            "ts_code": "600733.SH",
+            "name": "北汽蓝谷",
+            "close": 5.74,
+            "pre_close": 5.96,
+            "pct_chg": -3.69,
+            "vol": 100_000,
+            "amount": 50_000_000,
+            "amount_unit": "yuan",
+        }])
+
+        def loader(ts_code, start, end, freq, trade_date):
+            rows = [
+                ("09:30:00", 5.96, 6.08, 5.71, 6.00, 6_000_000),
+                ("14:45:00", 6.00, 6.08, 5.90, 6.02, 6_000_000),
+            ]
+            return MinuteLoadResult(
+                pd.DataFrame([{
+                    "ts_code": ts_code,
+                    "trade_time": f"2026-07-31 {time_text}",
+                    "open": open_,
+                    "high": high,
+                    "low": low,
+                    "close": close,
+                    "vol": vol,
+                    "amount": close * vol,
+                } for time_text, open_, high, low, close, vol in rows]),
+                "fixture",
+                [],
+            )
+
+        result, _latest_times, _warnings = _refresh_waiting_market_with_current_minutes(
+            market,
+            "20260731",
+            datetime(2026, 7, 31, 14, 45),
+            loader,
+        )
+
+        row = result.iloc[0]
+        self.assertEqual(row["ts_code"], "600733.SH")
+        self.assertAlmostEqual(row["close"], 6.02)
+        self.assertAlmostEqual(row["pct_chg"], 1.006711, places=5)
 
     def test_stale_waiting_refreshes_candidate_pool_before_final_screening(self):
         requested_codes = []
@@ -282,6 +327,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         weak["ts_code"] = "600010.SH"
         weak["name"] = "昨日强势"
         weak["close"] = 12.0
+        weak["pre_close"] = 12.0
         weak["pct_chg"] = 8.0
         weak["volume_ratio"] = 3.5
         weak["turnover_rate"] = 8.0
@@ -289,6 +335,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         strong["ts_code"] = "600011.SH"
         strong["name"] = "今日转强"
         strong["close"] = 10.0
+        strong["pre_close"] = 10.0
         strong["pct_chg"] = 1.0
         strong["volume_ratio"] = 2.0
         strong["turnover_rate"] = 6.0
@@ -330,6 +377,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         prior_strong["ts_code"] = "600020.SH"
         prior_strong["name"] = "昨日涨停"
         prior_strong["close"] = 12.0
+        prior_strong["pre_close"] = 12.0
         prior_strong["pct_chg"] = 9.8
         prior_strong["volume_ratio"] = 4.0
         prior_strong["turnover_rate"] = 8.0
@@ -338,6 +386,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         today_strong["ts_code"] = "600021.SH"
         today_strong["name"] = "今日走强"
         today_strong["close"] = 10.0
+        today_strong["pre_close"] = 10.0
         today_strong["pct_chg"] = 0.1
         today_strong["volume_ratio"] = 0.9
         today_strong["turnover_rate"] = 3.0

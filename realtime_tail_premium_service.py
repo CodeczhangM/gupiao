@@ -379,7 +379,11 @@ def _refresh_waiting_market_with_current_minutes(
         snapshot = _minute_price_snapshot(
             bars,
             trade_date,
-            record.get("close"),
+            _finite(
+                record.get("pre_close"),
+                record.get("previous_close"),
+                record.get("close"),
+            ),
             record.get("vol"),
             record.get("amount"),
             record.get("amount_unit"),
@@ -508,7 +512,13 @@ def _load_and_score(
         _minute_price_snapshot(
             snapshot_bars,
             trade_date,
-            stock.get("close") if refresh_current_price else stock.get("pre_close"),
+            _finite(
+                stock.get("pre_close"),
+                stock.get("previous_close"),
+                stock.get("close"),
+            )
+            if refresh_current_price
+            else stock.get("pre_close"),
             stock.get("vol"),
             stock.get("amount"),
             stock.get("amount_unit"),

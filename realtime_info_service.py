@@ -589,7 +589,11 @@ def _apply_minute_snapshots_to_market(market: pd.DataFrame, bars_by_code: dict[s
         mask = result["ts_code"] == str(ts_code)
         if not mask.any():
             continue
-        previous_close = result.loc[mask, "close"].iloc[0] if "close" in result else None
+        previous_close = _first_present(
+            result.loc[mask, "pre_close"].iloc[0] if "pre_close" in result else None,
+            result.loc[mask, "previous_close"].iloc[0] if "previous_close" in result else None,
+            result.loc[mask, "close"].iloc[0] if "close" in result else None,
+        )
         snapshot = _minute_price_snapshot(str(ts_code), bars, trade_date, previous_close)
         for key, value in snapshot.items():
             if key not in result.columns:
@@ -921,7 +925,11 @@ def _build_realtime_intraday_section(
                 ts_code,
                 {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},
                 trade_date,
-                market_snapshot.get("close"),
+                _first_present(
+                    market_snapshot.get("pre_close"),
+                    market_snapshot.get("previous_close"),
+                    market_snapshot.get("close"),
+                ),
             )
             signal = {**signal, **tail_snapshot}
             refreshed = _macd_kdj_60m_signal(
