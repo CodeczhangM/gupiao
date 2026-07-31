@@ -1,0 +1,103 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "6bfa4999eb4a5c382caffa7e2580024830953b37",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4347,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 567,
+    "git_diff_deleted_lines": 43,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 566,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "realtime_info_service.py": {
+        "BYMC": [
+          "37-38",
+          "1006",
+          "1008"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_tail_premium_service.py": {
+        "BYMC": [
+          "1-362"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "422",
+          "564",
+          "584",
+          "618",
+          "744",
+          "805",
+          "818",
+          "830",
+          "846-847",
+          "858",
+          "871",
+          "888",
+          "917",
+          "932",
+          "952",
+          "983",
+          "998",
+          "1029",
+          "1045",
+          "1060",
+          "1085",
+          "1149",
+          "1164",
+          "1185",
+          "1194",
+          "1209",
+          "1226",
+          "1258",
+          "1273",
+          "1291",
+          "1301",
+          "1316",
+          "1338",
+          "1374",
+          "1389",
+          "1406",
+          "1442",
+          "1457",
+          "1475"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_tail_premium_service.py": {
+        "BYMC": [
+          "1-160"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785466239,
+  "requirement_id": ""
+}
