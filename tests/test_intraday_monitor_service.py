@@ -23,6 +23,7 @@ def latest_report_fixture():
                     {
                         "ts_code": "301073.SZ",
                         "name": "君亭酒店",
+                        "pre_close": 10.0,
                         "pct_chg": 8.0,
                         "turnover_rate": 5.0,
                         "volume_ratio": 2.5,
@@ -36,6 +37,7 @@ def latest_report_fixture():
                     {
                         "ts_code": "301108.SZ",
                         "name": "洁雅股份",
+                        "pre_close": 10.0,
                         "pct_chg": 4.0,
                         "turnover_rate": 4.0,
                         "volume_ratio": 2.3,
@@ -201,16 +203,23 @@ class IntradayMonitorServiceTests(unittest.TestCase):
             if freq == "60min":
                 return build_60min_bars(ts_code, water_macd_kdj_continuation_closes())
             if ts_code == "301073.SZ":
-                return build_tail_1min_bars(
+                bars = build_tail_1min_bars(
                     ts_code,
                     [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.05, 10.08, 10.1, 10.15, 10.2, 10.25, 10.35],
                     [1000, 1000, 1000, 1000, 1000, 1000, 2500, 2800, 3200, 3600, 4200, 5000, 8000],
                 )
-            return build_tail_1min_bars(
-                ts_code,
-                [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 9.98, 9.96, 9.94, 9.92, 9.9, 9.88, 9.84],
-                [3000, 3000, 3000, 3000, 3000, 3000, 3000, 3200, 3400, 3600, 3800, 4000, 6000],
+            else:
+                bars = build_tail_1min_bars(
+                    ts_code,
+                    [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 9.98, 9.96, 9.94, 9.92, 9.9, 9.88, 9.84],
+                    [3000, 3000, 3000, 3000, 3000, 3000, 3000, 3200, 3400, 3600, 3800, 4000, 6000],
+                )
+            bars["trade_time"] = bars["trade_time"].astype(str).str.replace(
+                "2026-07-27",
+                "2026-07-28",
+                regex=False,
             )
+            return bars
 
         cached_minute_bars.side_effect = fake_bars
 
@@ -220,11 +229,12 @@ class IntradayMonitorServiceTests(unittest.TestCase):
         self.assertEqual(result["trade_date"], "20260728")
         self.assertEqual(result["latest_trade_date"], "20260728")
         self.assertTrue(result["data_current"])
-        self.assertEqual(result["data_as_of"], "2026-07-27 15:00:00")
+        self.assertEqual(result["data_as_of"], "2026-07-28 15:00:00")
         self.assertTrue(result["auto_refresh_enabled"])
         self.assertEqual(len(result["stocks"]), 2)
         by_code = {row["ts_code"]: row for row in result["stocks"]}
         self.assertEqual(by_code["301073.SZ"]["industry"], "酒店餐饮")
+        self.assertAlmostEqual(by_code["301073.SZ"]["pct_chg"], 3.5)
         self.assertEqual(by_code["301073.SZ"]["next_day_bias"], "高开偏强")
         self.assertEqual(by_code["301073.SZ"]["main_force_status"], "主力抢筹")
         self.assertEqual(by_code["301108.SZ"]["next_day_bias"], "低开风险")

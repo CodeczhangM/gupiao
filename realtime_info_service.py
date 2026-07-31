@@ -580,7 +580,30 @@ def _minute_missing_reason(trade_date: str, end_datetime: str) -> str:
     return "当日分时未返回，等待数据源更新"
 
 
-def _apply_minute_snapshots_to_market(market: pd.DataFrame, bars_by_code: dict[str, dict[str, pd.DataFrame]], trade_date: str) -> pd.DataFrame:
+def _market_previous_close_for_minute_pct(
+    row: dict[str, Any],
+    trade_date: str,
+    base_trade_date: str | None = None,
+) -> Any:
+    if base_trade_date and str(base_trade_date) != str(trade_date):
+        return _first_present(
+            row.get("close"),
+            row.get("pre_close"),
+            row.get("previous_close"),
+        )
+    return _first_present(
+        row.get("pre_close"),
+        row.get("previous_close"),
+        row.get("close"),
+    )
+
+
+def _apply_minute_snapshots_to_market(
+    market: pd.DataFrame,
+    bars_by_code: dict[str, dict[str, pd.DataFrame]],
+    trade_date: str,
+    base_trade_date: str | None = None,
+) -> pd.DataFrame:
     if market is None or market.empty or not bars_by_code or "ts_code" not in market.columns:
         return market
     result = market.copy()
@@ -589,10 +612,11 @@ def _apply_minute_snapshots_to_market(market: pd.DataFrame, bars_by_code: dict[s
         mask = result["ts_code"] == str(ts_code)
         if not mask.any():
             continue
-        previous_close = _first_present(
-            result.loc[mask, "pre_close"].iloc[0] if "pre_close" in result else None,
-            result.loc[mask, "previous_close"].iloc[0] if "previous_close" in result else None,
-            result.loc[mask, "close"].iloc[0] if "close" in result else None,
+        market_row = result.loc[mask].iloc[0].to_dict()
+        previous_close = _market_previous_close_for_minute_pct(
+            market_row,
+            trade_date,
+            base_trade_date=base_trade_date,
         )
         snapshot = _minute_price_snapshot(str(ts_code), bars, trade_date, previous_close)
         for key, value in snapshot.items():
@@ -866,7 +890,12 @@ def _build_realtime_intraday_section(
         )
         if fallback_bars:
             intraday_bars = fallback_bars
-    signal_market = _apply_minute_snapshots_to_market(realtime_market, intraday_bars, trade_date)
+    signal_market = _apply_minute_snapshots_to_market(
+        realtime_market,
+        intraday_bars,
+        trade_date,
+        base_trade_date=base_trade_date,
+    )
     sector_potential = _attach_intraday_signal_stocks(
         sector_potential,
         signal_market,
@@ -925,10 +954,10 @@ def _build_realtime_intraday_section(
                 ts_code,
                 {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},
                 trade_date,
-                _first_present(
-                    market_snapshot.get("pre_close"),
-                    market_snapshot.get("previous_close"),
-                    market_snapshot.get("close"),
+                _market_previous_close_for_minute_pct(
+                    market_snapshot,
+                    trade_date,
+                    base_trade_date=base_trade_date,
                 ),
             )
             signal = {**signal, **tail_snapshot}

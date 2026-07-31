@@ -1583,6 +1583,38 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertAlmostEqual(result.iloc[0]["pct_chg"], 1.006711, places=5)
 
+    def test_minute_snapshot_pct_uses_prior_snapshot_close_for_today_minutes(self):
+        market = pd.DataFrame([{
+            "trade_date": "20260730",
+            "ts_code": "600733.SH",
+            "close": 5.96,
+            "pre_close": 5.74,
+            "pct_chg": 3.83,
+        }])
+        bars_by_code = {
+            "600733.SH": {
+                "60m": pd.DataFrame([{
+                    "ts_code": "600733.SH",
+                    "trade_time": "2026-07-31 15:00:00",
+                    "open": 6.0,
+                    "high": 6.08,
+                    "low": 5.71,
+                    "close": 6.02,
+                    "vol": 1000,
+                    "amount": 6020,
+                }])
+            }
+        }
+
+        result = _apply_minute_snapshots_to_market(
+            market,
+            bars_by_code,
+            "20260731",
+            base_trade_date="20260730",
+        )
+
+        self.assertAlmostEqual(result.iloc[0]["pct_chg"], 1.006711, places=5)
+
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)
     @patch("realtime_info_service.rank_sector_potential", create=True)

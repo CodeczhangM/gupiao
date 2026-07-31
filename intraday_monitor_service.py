@@ -81,6 +81,75 @@ def _latest_bar_time(*frames: pd.DataFrame | None) -> str | None:
     )
 
 
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if pd.notna(number):
+            return number
+    return None
+
+
+def _realtime_price_snapshot(
+    stock: dict[str, Any],
+    trade_date: str,
+    *frames: pd.DataFrame | None,
+) -> dict[str, Any]:
+    day_text = datetime.strptime(str(trade_date), "%Y%m%d").strftime("%Y-%m-%d")
+    current_frames = []
+    for frame in frames:
+        if frame is None or frame.empty or "trade_time" not in frame.columns:
+            continue
+        data = frame[frame["trade_time"].astype(str).str.startswith(day_text)].copy()
+        if data.empty:
+            continue
+        data["trade_time"] = pd.to_datetime(data["trade_time"], errors="coerce")
+        data = data.dropna(subset=["trade_time"])
+        if not data.empty:
+            current_frames.append(data)
+    if not current_frames:
+        return {}
+
+    intraday = (
+        pd.concat(current_frames, ignore_index=True)
+        .drop_duplicates(subset=["ts_code", "trade_time"], keep="last")
+        .sort_values("trade_time")
+    )
+    for column in ("close", "high", "low"):
+        intraday[column] = (
+            pd.to_numeric(intraday[column], errors="coerce")
+            if column in intraday
+            else pd.NA
+        )
+    close_values = intraday["close"].dropna()
+    if close_values.empty:
+        return {}
+    latest_close = float(close_values.iloc[-1])
+    previous_close = _first_number(
+        stock.get("pre_close"),
+        stock.get("previous_close"),
+    )
+    pct_chg = None
+    if previous_close:
+        pct_chg = round((latest_close / previous_close - 1) * 100, 6)
+    return {
+        "close": latest_close,
+        "current_price": latest_close,
+        "high": float(intraday["high"].max())
+        if intraday["high"].notna().any()
+        else latest_close,
+        "day_high": float(intraday["high"].max())
+        if intraday["high"].notna().any()
+        else latest_close,
+        "day_low": float(intraday["low"].min())
+        if intraday["low"].notna().any()
+        else latest_close,
+        **({"pct_chg": pct_chg} if pct_chg is not None else {}),
+    }
+
+
 def _persistent_minute_bars(
     ts_code: str,
     start_datetime: str,
@@ -183,7 +252,18 @@ def _monitor_row(stock: dict[str, Any], trade_date: str, fetch_realtime: bool, n
     )
     if not signal:
         signal = {**stock, "next_day_bias": "数据不足", "tail_strength_score": None}
-    signal = {**stock, **signal, **_opening_auction_signal(stock, end_datetime)}
+    realtime_snapshot = _realtime_price_snapshot(
+        stock,
+        trade_date,
+        bars_60m,
+        tail_1m,
+    )
+    signal = {
+        **stock,
+        **signal,
+        **realtime_snapshot,
+        **_opening_auction_signal(stock, end_datetime),
+    }
     signal = _mask_unavailable_tail_fields(signal, end_datetime)
     status, status_reason = _main_force_status(signal)
     return {
