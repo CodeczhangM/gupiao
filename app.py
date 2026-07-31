@@ -7,6 +7,10 @@ from backtest_service import run_backtest
 from database import get_latest_report, get_report, init_db, list_reports, save_report
 from quant_service import run_quant_scan
 from realtime_info_service import build_realtime_info
+from realtime_minute_warmup import (
+    get_realtime_minute_warmup_status,
+    start_realtime_minute_warmup,
+)
 from stock_detail_service import get_stock_technical_detail
 from trade_review_service import review_trade
 from data_service import get_trade_dates, sync_cached_market_data
@@ -40,6 +44,14 @@ app = FastAPI(
     description="基于 Tushare 行情、规则策略和可选本地 AI 的半量化选股分析 API。",
     version="0.1.0",
 )
+
+
+@app.on_event("startup")
+def startup_realtime_minute_warmup():
+    try:
+        start_realtime_minute_warmup()
+    except Exception:
+        logger.exception("启动实时分钟后台预热失败")
 
 
 @app.get("/health")
@@ -235,6 +247,11 @@ def realtime_info(
     except Exception as exc:
         logger.exception("获取实时信息失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/realtime-minute-warmup/status")
+def realtime_minute_warmup_status():
+    return get_realtime_minute_warmup_status()
 
 
 @app.post("/api/free-review/build")

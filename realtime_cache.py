@@ -279,6 +279,42 @@ def minute_cache_is_fresh(
     return True
 
 
+def minute_cache_next_fetch_start(
+    frame: pd.DataFrame,
+    requested_start: str,
+    requested_end: str,
+    freq: str,
+) -> tuple[str | None, bool]:
+    if (
+        frame is None
+        or frame.empty
+        or "trade_time" not in frame.columns
+    ):
+        return requested_start, False
+    times = pd.to_datetime(frame["trade_time"], errors="coerce").dropna()
+    if times.empty:
+        return requested_start, False
+    start = pd.Timestamp(requested_start)
+    end = pd.Timestamp(requested_end)
+    step = timedelta(minutes=60 if str(freq) == "60min" else 1)
+    start_tolerance = timedelta(
+        seconds=3700 if str(freq) == "60min" else 60
+    )
+    end_tolerance = timedelta(
+        seconds=3700 if str(freq) == "60min" else 90
+    )
+    has_start = times.min() <= start + start_tolerance
+    latest = times.max()
+    if has_start and latest >= end - end_tolerance:
+        return None, True
+    if not has_start:
+        return requested_start, False
+    next_start = latest + step
+    if next_start > end:
+        return None, True
+    return next_start.strftime("%Y-%m-%d %H:%M:%S"), False
+
+
 def prune_realtime_cache(keep_trade_dates: list[str]) -> None:
     keep = tuple(dict.fromkeys(str(value) for value in keep_trade_dates))
     if not keep:

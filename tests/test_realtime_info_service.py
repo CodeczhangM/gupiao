@@ -276,6 +276,63 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(result.bars.iloc[-1]["close"], 10.1)
         external.assert_not_called()
 
+    def test_persistent_minute_result_fetches_only_missing_database_tail(self):
+        import realtime_info_service
+
+        cached = pd.DataFrame([
+            {
+                "ts_code": "600201.SH",
+                "trade_time": "2026-07-30 14:25:00",
+                "close": 10.0,
+            },
+            {
+                "ts_code": "600201.SH",
+                "trade_time": "2026-07-30 14:42:00",
+                "close": 10.1,
+            },
+        ])
+        refreshed = pd.DataFrame([
+            {
+                "ts_code": "600201.SH",
+                "trade_time": "2026-07-30 14:43:00",
+                "close": 10.2,
+            },
+        ])
+        with (
+            patch(
+                "realtime_info_service.load_minute_cache",
+                return_value=cached,
+                create=True,
+            ),
+            patch(
+                "realtime_info_service.minute_cache_is_fresh",
+                return_value=False,
+                create=True,
+            ),
+            patch(
+                "realtime_info_service._minute_result_with_1459_fallback",
+                return_value=MinuteLoadResult(
+                    refreshed,
+                    "eastmoney_fallback",
+                    [],
+                ),
+            ) as provider,
+            patch("realtime_info_service.save_minute_cache"),
+        ):
+            result = realtime_info_service._persistent_minute_result(
+                "600201.SH",
+                "2026-07-30 14:25:00",
+                "2026-07-30 14:50:00",
+                "1min",
+                "20260730",
+                datetime(2026, 7, 30, 14, 51),
+            )
+
+        provider.assert_called_once()
+        self.assertEqual(provider.call_args.args[1], "2026-07-30 14:43:00")
+        self.assertEqual(result.bars.iloc[0]["close"], 10.0)
+        self.assertEqual(result.bars.iloc[-1]["close"], 10.2)
+
     def test_force_refresh_bypasses_fresh_database_minutes(self):
         import realtime_info_service
 

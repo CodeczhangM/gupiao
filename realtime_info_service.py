@@ -21,6 +21,7 @@ from realtime_market_source import (
 from realtime_cache import (
     load_minute_cache,
     load_result_cache,
+    minute_cache_next_fetch_start,
     minute_cache_is_fresh,
     prune_realtime_cache,
     save_minute_cache,
@@ -528,6 +529,7 @@ def _persistent_minute_result(
     force_refresh: bool = False,
 ) -> MinuteLoadResult:
     cache_warnings: list[str] = []
+    cached = pd.DataFrame()
     if not force_refresh:
         try:
             cached = load_minute_cache(
@@ -546,10 +548,21 @@ def _persistent_minute_result(
                 return MinuteLoadResult(cached.copy(), "database", [])
         except Exception as exc:
             cache_warnings.append(f"分钟数据库读取失败: {exc}")
+            cached = pd.DataFrame()
+    fetch_start = start_datetime
+    if not force_refresh and cached is not None and not cached.empty:
+        fetch_start, cache_hit = minute_cache_next_fetch_start(
+            cached,
+            start_datetime,
+            end_datetime,
+            freq,
+        )
+        if cache_hit or not fetch_start:
+            return MinuteLoadResult(cached.copy(), "database", cache_warnings)
 
     loaded = _minute_result_with_1459_fallback(
         ts_code,
-        start_datetime,
+        fetch_start,
         end_datetime,
         freq,
         trade_date,
@@ -565,6 +578,35 @@ def _persistent_minute_result(
             )
         except Exception as exc:
             cache_warnings.append(f"分钟数据库写入失败: {exc}")
+    if (
+        not force_refresh
+        and cached is not None
+        and not cached.empty
+        and loaded.bars is not None
+        and not loaded.bars.empty
+    ):
+        combined = (
+            pd.concat([cached, loaded.bars], ignore_index=True)
+            .drop_duplicates(subset=["ts_code", "trade_time"], keep="last")
+            .sort_values("trade_time")
+            .reset_index(drop=True)
+        )
+        return MinuteLoadResult(
+            combined,
+            loaded.source,
+            list(loaded.warnings) + cache_warnings,
+        )
+    if (
+        not force_refresh
+        and cached is not None
+        and not cached.empty
+        and (loaded.bars is None or loaded.bars.empty)
+    ):
+        return MinuteLoadResult(
+            cached.copy(),
+            "database_stale",
+            list(loaded.warnings) + cache_warnings,
+        )
     return MinuteLoadResult(
         loaded.bars.copy(),
         loaded.source,
