@@ -23,6 +23,8 @@
 ├── free_review_repository.py
 ├── free_review_scoring.py
 ├── free_review_service.py
+├── indicator_settings.py
+├── indicator_settings_models.py
 ├── intraday_monitor_service.py
 ├── market_cache.py
 ├── quant_service.py
@@ -141,6 +143,7 @@ financial_indicator_cache  最近 8 个季度财务指标
 financial_cache_sync       财务季度同步状态
 review_stock_snapshot      每个完整交易日的全市场筛选宽表
 review_snapshot_build      快照构建阶段、进度和失败原因
+indicator_settings         全局指标参数及配置版本（MACD 默认 5/34/5）
 ```
 
 财务同步使用 `fina_indicator_vip`，Tushare 账号需要至少 5000 积分权限。
@@ -732,11 +735,14 @@ for required_file in \
   piao/free_review_repository.py \
   piao/free_review_scoring.py \
   piao/free_review_service.py \
+  piao/indicator_settings.py \
+  piao/indicator_settings_models.py \
   piao/realtime_cache.py \
   piao/realtime_info_service.py \
   piao/intraday_monitor_service.py \
   piao/quantClient/index.html \
   piao/quantClient/free-review-utils.js \
+  piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/MacdSettingsRequest.java \
   piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/FreeReviewQueryRequest.java \
   piao/quantServer/quantServer/src/main/java/com/codec/quantserver/dto/FreeReviewRange.java \
   piao/quantServer/quantServer/pom.xml
@@ -813,6 +819,8 @@ tar -xzf "$RELEASE_ARCHIVE" -C "$STAGING_DIR"
 
 test -f "$STAGING_DIR/piao/app.py"
 test -f "$STAGING_DIR/piao/free_review_service.py"
+test -f "$STAGING_DIR/piao/indicator_settings.py"
+test -f "$STAGING_DIR/piao/indicator_settings_models.py"
 test -f "$STAGING_DIR/piao/financial_cache.py"
 test -f "$STAGING_DIR/piao/realtime_cache.py"
 test -f "$STAGING_DIR/piao/quantClient/index.html"
@@ -828,11 +836,20 @@ python3 -m py_compile \
   app.py database.py data_service.py market_cache.py realtime_cache.py \
   financial_cache.py free_review_models.py free_review_repository.py \
   free_review_scoring.py free_review_service.py \
+  indicator_settings.py indicator_settings_models.py \
   realtime_market_source.py realtime_info_service.py \
   intraday_monitor_service.py overnight_monitor_service.py \
   morning_follow_service.py
 
 python3 -c "import settings; settings.load_env_files(); from realtime_cache import init_realtime_cache; init_realtime_cache(); print('realtime cache schema ready')"
+
+python3 -c "
+import settings
+settings.load_env_files()
+from indicator_settings import init_indicator_settings
+init_indicator_settings()
+print('indicator settings ready')
+"
 
 python3 -c "
 import settings
@@ -916,12 +933,39 @@ mysql -uquant_user -p quant -e "
 SHOW TABLES LIKE 'financial_indicator_cache';
 SHOW TABLES LIKE 'review_stock_snapshot';
 SHOW TABLES LIKE 'review_snapshot_build';
+SHOW TABLES LIKE 'indicator_settings';
 SELECT COUNT(*) AS financial_rows FROM financial_indicator_cache;
 SELECT COUNT(*) AS review_rows FROM review_stock_snapshot;
-SELECT COUNT(*) AS build_rows FROM review_snapshot_build;"
+SELECT COUNT(*) AS build_rows FROM review_snapshot_build;
+SELECT setting_key, fast_period, slow_period, signal_period, version,
+       updated_at
+FROM indicator_settings;"
 ```
 
-### 11.8 首次强制刷新与快速缓存验证
+### 11.8 验证全局 MACD 参数
+
+先通过 Spring 代理读取当前设置。首次初始化应为快线 5、慢线 34、信号线 5：
+
+```bash
+curl --fail \
+  'http://127.0.0.1:8081/api/quant/indicator-settings/macd'
+```
+
+验证保存和重算链路：
+
+```bash
+curl --fail -X PUT \
+  'http://127.0.0.1:8081/api/quant/indicator-settings/macd' \
+  -H 'Content-Type: application/json' \
+  -d '{"fast_period":5,"slow_period":34,"signal_period":5}'
+```
+
+保存会增加配置版本、清理进程内派生结果，并启动自由复盘重建。日线与分钟
+原始行情缓存不会被删除。新的 `realtime_result_cache.cache_key` 和
+`review_stock_snapshot.score_version` 会包含类似 `macd-5-34-5-v2`
+的参数键，旧参数结果可以保留用于排查，但不会被新查询命中。
+
+### 11.9 首次强制刷新与快速缓存验证
 
 新部署的结果缓存可能为空。先执行一次强制刷新，超时设置为 10 分钟：
 
@@ -973,7 +1017,7 @@ time curl --fail \
 前端为静态文件，无需 npm 构建。浏览器使用 `Ctrl+F5` 强制刷新，确认页面
 同时出现“快速查看”和“强制刷新”按钮。
 
-### 11.9 生成并验证自由复盘快照
+### 11.10 生成并验证自由复盘快照
 
 先确认行情缓存至少有 100 个完整交易日：
 
@@ -1031,7 +1075,7 @@ ORDER BY updated_at DESC
 LIMIT 5;"
 ```
 
-### 11.10 发布失败回滚
+### 11.11 发布失败回滚
 
 将下面的 `ROLLBACK_DIR` 替换为第 11.4 节输出的实际目录：
 

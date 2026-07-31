@@ -145,7 +145,7 @@ class FreeReviewScoringTests(unittest.TestCase):
         self.assertLessEqual(row["risk_penalty"], 20)
         self.assertEqual(
             row["score_version"],
-            free_review_scoring.SCORE_VERSION,
+            free_review_scoring.current_score_version(),
         )
 
     def test_loss_stock_remains_eligible_but_gets_zero_valuation_score(self):
