@@ -401,6 +401,35 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertEqual(len(result), 20)
         self.assertIn("600123.SH", set(result["ts_code"]))
 
+    def test_raw_prefilter_excludes_star_market_candidates(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "688766.SH",
+                "pct_chg": 9.0,
+                "volume_ratio": 5.0,
+                "turnover_rate": 12.0,
+                "amount": 900_000_000,
+            },
+            {
+                "ts_code": "689001.SH",
+                "pct_chg": 8.5,
+                "volume_ratio": 4.5,
+                "turnover_rate": 10.0,
+                "amount": 800_000_000,
+            },
+            {
+                "ts_code": "600667.SH",
+                "pct_chg": 4.0,
+                "volume_ratio": 1.5,
+                "turnover_rate": 5.0,
+                "amount": 300_000_000,
+            },
+        ])
+
+        result = _raw_tail_prefilter_market(market, max_fetch=20)
+
+        self.assertEqual(result["ts_code"].tolist(), ["600667.SH"])
+
 
 if __name__ == "__main__":
     unittest.main()

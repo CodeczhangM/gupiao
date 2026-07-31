@@ -175,6 +175,11 @@ def _raw_tail_prefilter_market(
     if market is None or market.empty or "ts_code" not in market:
         return pd.DataFrame()
     data = market.copy()
+    data = data[
+        ~data["ts_code"].astype(str).str.startswith(("688", "689"))
+    ].copy()
+    if data.empty:
+        return pd.DataFrame()
     for column in ("pct_chg", "volume_ratio", "turnover_rate", "amount"):
         data[column] = pd.to_numeric(
             data.get(column, 0),
