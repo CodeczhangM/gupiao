@@ -15,7 +15,6 @@ from overnight_monitor_service import (
 from realtime_market_source import MinuteLoadResult
 from strategy import (
     _tail_next_day_bias,
-    rank_sector_potential,
 )
 from tail_premium_scoring import (
     build_daily_factor_frame,
@@ -45,15 +44,43 @@ def _sector_map(
     override: pd.DataFrame | None,
 ) -> dict[str, dict[str, Any]]:
     if override is None:
-        try:
-            sectors = rank_sector_potential(
-                market,
-                history,
-                limit=50,
-                leaders_per_sector=5,
-            )
-        except Exception:
+        if market is None or market.empty:
             sectors = pd.DataFrame()
+        else:
+            industry_column = (
+                "industry_name" if "industry_name" in market else "industry"
+            )
+            if industry_column not in market:
+                sectors = pd.DataFrame()
+            else:
+                data = market.copy()
+                data["pct_chg"] = pd.to_numeric(
+                    data.get("pct_chg", 0),
+                    errors="coerce",
+                ).fillna(0)
+                sectors = (
+                    data.groupby(industry_column, dropna=False)
+                    .agg(
+                        avg_pct_chg=("pct_chg", "mean"),
+                        stock_count=("ts_code", "count"),
+                    )
+                    .reset_index()
+                    .sort_values(
+                        ["avg_pct_chg", "stock_count"],
+                        ascending=[False, False],
+                        kind="mergesort",
+                    )
+                    .head(50)
+                    .reset_index(drop=True)
+                )
+                sectors["rank"] = sectors.index + 1
+                sectors["limit_up_count"] = 0
+                sectors["up_ratio"] = 0
+                sectors["strong_count"] = sectors["stock_count"]
+                sectors["potential_score"] = sectors["avg_pct_chg"].clip(
+                    lower=0,
+                    upper=10,
+                ) * 10
     else:
         sectors = override.copy()
     if sectors is None or sectors.empty:
@@ -139,6 +166,44 @@ def _prefilter(factors: pd.DataFrame, max_fetch: int) -> pd.DataFrame:
     )
 
 
+def _raw_tail_prefilter_market(
+    market: pd.DataFrame,
+    max_fetch: int,
+) -> pd.DataFrame:
+    if market is None or market.empty or "ts_code" not in market:
+        return pd.DataFrame()
+    data = market.copy()
+    for column in ("pct_chg", "volume_ratio", "turnover_rate", "amount"):
+        data[column] = pd.to_numeric(
+            data.get(column, 0),
+            errors="coerce",
+        ).fillna(0)
+    amount_unit = data.get("amount_unit")
+    if amount_unit is not None:
+        amount_yuan = data["amount"].where(
+            amount_unit.astype(str).eq("yuan"),
+            data["amount"] * 1000,
+        )
+    else:
+        amount_yuan = data["amount"]
+    data["_raw_tail_prefilter_score"] = (
+        data["pct_chg"].clip(-3, 10) * 3.0
+        + data["volume_ratio"].clip(0, 5) * 5.0
+        + data["turnover_rate"].clip(0, 25) * 0.35
+        + (amount_yuan / 100_000_000).clip(0, 12)
+    )
+    return (
+        data.sort_values(
+            ["_raw_tail_prefilter_score", "amount", "ts_code"],
+            ascending=[False, False, True],
+            kind="mergesort",
+        )
+        .head(max(20, min(int(max_fetch), len(data))))
+        .drop(columns=["_raw_tail_prefilter_score"])
+        .reset_index(drop=True)
+    )
+
+
 def _latest_bar_time(frame: pd.DataFrame) -> str | None:
     if frame is None or frame.empty or "trade_time" not in frame:
         return None
@@ -148,6 +213,73 @@ def _latest_bar_time(frame: pd.DataFrame) -> str | None:
     return times.max().isoformat(sep=" ", timespec="seconds")
 
 
+def _current_day_minute_window(trade_date: str, now: datetime) -> tuple[str, str]:
+    start, session_end = _datetime_window(trade_date, "09:30:00", "15:00:00")
+    end = min(
+        pd.Timestamp(session_end),
+        pd.Timestamp(now.replace(second=0, microsecond=0)),
+    )
+    if end < pd.Timestamp(start):
+        end = pd.Timestamp(start)
+    return start, end.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _minute_price_snapshot(
+    bars: pd.DataFrame,
+    trade_date: str,
+    previous_close: Any,
+) -> dict[str, Any]:
+    if bars is None or bars.empty or "trade_time" not in bars:
+        return {}
+    day_text = datetime.strptime(str(trade_date), "%Y%m%d").strftime(
+        "%Y-%m-%d"
+    )
+    data = bars[bars["trade_time"].astype(str).str.startswith(day_text)].copy()
+    if data.empty:
+        return {}
+    data["trade_time"] = pd.to_datetime(data["trade_time"], errors="coerce")
+    data = data.dropna(subset=["trade_time"]).sort_values("trade_time")
+    if data.empty:
+        return {}
+    for column in ("open", "high", "low", "close", "vol", "amount"):
+        data[column] = (
+            pd.to_numeric(data[column], errors="coerce")
+            if column in data
+            else None
+        )
+    closes = data["close"].dropna() if "close" in data else pd.Series(dtype=float)
+    if closes.empty:
+        return {}
+    latest_close = float(closes.iloc[-1])
+    snapshot: dict[str, Any] = {
+        "close": latest_close,
+        "high": (
+            float(data["high"].max())
+            if "high" in data and data["high"].notna().any()
+            else latest_close
+        ),
+        "low": (
+            float(data["low"].min())
+            if "low" in data and data["low"].notna().any()
+            else latest_close
+        ),
+        "amount": (
+            float(data["amount"].sum())
+            if "amount" in data and data["amount"].notna().any()
+            else None
+        ),
+        "vol": (
+            float(data["vol"].sum())
+            if "vol" in data and data["vol"].notna().any()
+            else None
+        ),
+    }
+    previous = _finite(previous_close)
+    if previous:
+        snapshot["pct_chg"] = round((latest_close / previous - 1) * 100, 6)
+    return snapshot
+
+
 def _load_and_score(
     stock: dict[str, Any],
     trade_date: str,
@@ -155,41 +287,83 @@ def _load_and_score(
     minute_loader: Callable[..., MinuteLoadResult] | None,
     sector: dict[str, Any],
     selection_state: str,
+    refresh_current_price: bool = False,
 ) -> tuple[dict[str, Any], str | None, list[str]]:
     warnings: list[str] = []
     tail_bars = pd.DataFrame()
+    price_bars = pd.DataFrame()
     minute_source = "unavailable"
     if minute_loader is not None:
-        tail_start, tail_end = _datetime_window(
-            trade_date,
-            "14:25:00",
-            "15:00:00",
-        )
-        try:
-            loaded_tail = minute_loader(
-                str(stock.get("ts_code") or ""),
-                tail_start,
-                min(
-                    pd.Timestamp(tail_end),
-                    pd.Timestamp(now.replace(second=0, microsecond=0)),
-                ).strftime("%Y-%m-%d %H:%M:%S"),
-                "1min",
+        if refresh_current_price and selection_state == "waiting_tail_window":
+            price_start, price_end = _current_day_minute_window(
                 trade_date,
+                now,
             )
-            tail_bars = loaded_tail.bars
-            minute_source = (
-                loaded_tail.source if not tail_bars.empty else minute_source
+            try:
+                loaded_price = minute_loader(
+                    str(stock.get("ts_code") or ""),
+                    price_start,
+                    price_end,
+                    "1min",
+                    trade_date,
+                )
+                price_bars = loaded_price.bars
+                minute_source = (
+                    loaded_price.source
+                    if not price_bars.empty
+                    else minute_source
+                )
+                warnings.extend(loaded_price.warnings)
+            except Exception as exc:
+                warnings.append(f"实时1分钟数据失败: {str(exc)[:120]}")
+        if selection_state != "waiting_tail_window":
+            tail_start, tail_end = _datetime_window(
+                trade_date,
+                "14:25:00",
+                "15:00:00",
             )
-            warnings.extend(loaded_tail.warnings)
-        except Exception as exc:
-            warnings.append(f"尾盘1分钟数据失败: {str(exc)[:120]}")
+            try:
+                loaded_tail = minute_loader(
+                    str(stock.get("ts_code") or ""),
+                    tail_start,
+                    min(
+                        pd.Timestamp(tail_end),
+                        pd.Timestamp(now.replace(second=0, microsecond=0)),
+                    ).strftime("%Y-%m-%d %H:%M:%S"),
+                    "1min",
+                    trade_date,
+                )
+                tail_bars = loaded_tail.bars
+                minute_source = (
+                    loaded_tail.source
+                    if not tail_bars.empty
+                    else minute_source
+                )
+                warnings.extend(loaded_tail.warnings)
+            except Exception as exc:
+                warnings.append(f"尾盘1分钟数据失败: {str(exc)[:120]}")
 
+    snapshot_bars = (
+        price_bars
+        if selection_state == "waiting_tail_window"
+        else tail_bars
+    )
+    price_snapshot = (
+        _minute_price_snapshot(
+            snapshot_bars,
+            trade_date,
+            stock.get("pre_close"),
+        )
+        if refresh_current_price or selection_state != "waiting_tail_window"
+        else {}
+    )
+    scored_input = {**stock, **price_snapshot}
     tail_signal = _tail_next_day_bias(
-        tail_bars,
-        _finite(stock.get("pct_chg"), 0),
+        tail_bars if selection_state != "waiting_tail_window" else pd.DataFrame(),
+        _finite(scored_input.get("pct_chg"), 0),
     )
     scored = score_tail_premium_row({
-        **stock,
+        **scored_input,
         **sector,
         **tail_signal,
     })
@@ -223,7 +397,10 @@ def _load_and_score(
             scored.get("opening_auction_return") is not None
         ),
     }
-    return result, latest, warnings
+    price_latest = _latest_bar_time(price_bars)
+    data_as_of = max([value for value in (latest, price_latest) if value], default=None)
+    result["data_as_of"] = data_as_of
+    return result, data_as_of, warnings
 
 
 def build_realtime_tail_premium_monitor(
@@ -265,7 +442,20 @@ def build_realtime_tail_premium_monitor(
             else "thousand_yuan"
         )
     state, state_label = _selection_state(current)
-    factors = build_daily_factor_frame(market, history, trade_date)
+    raw_fetch = max(
+        max_fetch * 4,
+        max(1, int(limit)) * 4,
+        120,
+    )
+    factor_market = _raw_tail_prefilter_market(market, raw_fetch)
+    if not factor_market.empty and not history.empty and "ts_code" in history:
+        factor_codes = set(factor_market["ts_code"].astype(str))
+        factor_history = history[
+            history["ts_code"].astype(str).isin(factor_codes)
+        ].copy()
+    else:
+        factor_history = history
+    factors = build_daily_factor_frame(factor_market, factor_history, trade_date)
     eligible = _prefilter(
         eligible_tail_universe(factors),
         max_fetch=max_fetch,
@@ -284,9 +474,16 @@ def build_realtime_tail_premium_monitor(
             minute_loader,
             sectors.get(str(record.get("industry") or ""), {}),
             state,
+            refresh_current_price=not bool(metadata.get("data_current", True)),
         )
 
-    records = eligible.to_dict("records")
+    if state == "waiting_tail_window" and not bool(
+        metadata.get("data_current", True)
+    ):
+        records_frame = eligible.head(max(1, min(int(limit), len(eligible))))
+    else:
+        records_frame = eligible
+    records = records_frame.to_dict("records")
     if len(records) <= 1:
         loaded = [worker(record) for record in records]
     else:

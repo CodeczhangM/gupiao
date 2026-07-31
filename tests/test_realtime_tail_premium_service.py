@@ -6,6 +6,7 @@ import pandas as pd
 from realtime_market_source import MinuteLoadResult
 from realtime_tail_premium_service import (
     build_realtime_tail_premium_monitor,
+    _raw_tail_prefilter_market,
 )
 
 
@@ -58,6 +59,27 @@ def _tail_bars(ts_code):
             "amount": close * volume,
         }
         for clock, close, volume in zip(times, closes, volumes)
+    ])
+
+
+def _morning_bars(ts_code):
+    rows = [
+        ("09:30:00", 11.05, 11.12, 10.98, 11.10, 1000),
+        ("10:30:00", 11.10, 11.42, 11.08, 11.40, 1500),
+        ("14:45:00", 11.40, 11.60, 11.35, 11.55, 1800),
+    ]
+    return pd.DataFrame([
+        {
+            "ts_code": ts_code,
+            "trade_time": f"2026-07-31 {clock}",
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "vol": volume,
+            "amount": close * volume,
+        }
+        for clock, open_, high, low, close, volume in rows
     ])
 
 
@@ -145,13 +167,19 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertEqual(set(frequencies), {"1min"})
 
     def test_before_1450_is_observation_only(self):
+        calls = []
+
+        def loader(ts_code, start, end, freq, trade_date):
+            calls.append((start, end, freq))
+            return self._loader(ts_code, start, end, freq, trade_date)
+
         result = build_realtime_tail_premium_monitor(
             limit=20,
             now=datetime(2026, 7, 31, 14, 45),
             market_override=self.market,
             history_override=self.history,
             trade_date_override="20260731",
-            minute_loader=self._loader,
+            minute_loader=loader,
             sector_potential_override=pd.DataFrame(),
         )
 
@@ -161,6 +189,95 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
             result["stocks"][0]["buyable_tail_signal"],
             "等待14:50",
         )
+        self.assertEqual(calls, [])
+
+    def test_before_1450_uses_current_day_minutes_for_display_price(self):
+        requested = []
+
+        def loader(ts_code, start, end, freq, trade_date):
+            requested.append((start, end, freq))
+            return MinuteLoadResult(_morning_bars(ts_code), "fixture", [])
+
+        result = build_realtime_tail_premium_monitor(
+            limit=20,
+            now=datetime(2026, 7, 31, 14, 45),
+            market_override=self.market,
+            history_override=self.history,
+            trade_date_override="20260731",
+            minute_loader=loader,
+            source_metadata={
+                "data_current": False,
+                "data_source": "previous_snapshot",
+            },
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        row = result["stocks"][0]
+        self.assertEqual(row["ts_code"], "600001.SH")
+        self.assertEqual(row["buyable_tail_signal"], "等待14:50")
+        self.assertAlmostEqual(row["close"], 11.55)
+        self.assertAlmostEqual(row["pct_chg"], 5.0)
+        self.assertEqual(row["data_as_of"], "2026-07-31 14:45:00")
+        self.assertEqual(result["data_as_of"], "2026-07-31 14:45:00")
+        self.assertIn(
+            ("2026-07-31 09:30:00", "2026-07-31 14:45:00", "1min"),
+            requested,
+        )
+
+    def test_stale_waiting_refreshes_only_displayed_candidates(self):
+        requested_codes = []
+        extra = self.market.iloc[[0]].copy()
+        extra["ts_code"] = "600003.SH"
+        extra["name"] = "备选股份"
+        market = pd.concat([self.market, extra], ignore_index=True)
+        history = pd.concat([
+            self.history,
+            _history("600003.SH", "备选股份", "食品"),
+        ], ignore_index=True)
+
+        def loader(ts_code, start, end, freq, trade_date):
+            requested_codes.append(ts_code)
+            return MinuteLoadResult(_morning_bars(ts_code), "fixture", [])
+
+        result = build_realtime_tail_premium_monitor(
+            limit=1,
+            now=datetime(2026, 7, 31, 14, 45),
+            market_override=market,
+            history_override=history,
+            trade_date_override="20260731",
+            minute_loader=loader,
+            source_metadata={
+                "data_current": False,
+                "data_source": "previous_snapshot",
+            },
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        self.assertEqual(result["candidate_count"], 1)
+        self.assertEqual(len(requested_codes), 1)
+
+    def test_raw_prefilter_limits_factor_universe_to_strong_liquid_stocks(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": f"600{index:03d}.SH",
+                "pct_chg": 0.1,
+                "volume_ratio": 1.0,
+                "turnover_rate": 1.0,
+                "amount": 10_000_000,
+            }
+            for index in range(200)
+        ])
+        market.loc[123, ["pct_chg", "volume_ratio", "turnover_rate", "amount"]] = [
+            8.5,
+            4.0,
+            9.0,
+            900_000_000,
+        ]
+
+        result = _raw_tail_prefilter_market(market, max_fetch=20)
+
+        self.assertEqual(len(result), 20)
+        self.assertIn("600123.SH", set(result["ts_code"]))
 
 
 if __name__ == "__main__":
