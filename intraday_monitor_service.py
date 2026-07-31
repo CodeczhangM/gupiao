@@ -7,6 +7,7 @@ import pandas as pd
 
 from data_service import get_trade_dates
 from database import get_latest_report
+from indicator_settings import macd_parameter_key, macd_provenance
 from market_cache import get_complete_dates
 from overnight_monitor_service import (
     _cached_minute_bars,
@@ -195,7 +196,10 @@ def _monitor_row(stock: dict[str, Any], trade_date: str, fetch_realtime: bool, n
 
 def _load_database_intraday_result() -> dict[str, Any] | None:
     try:
-        cached = load_result_cache("intraday_monitor", "default")
+        cached = load_result_cache(
+            "intraday_monitor",
+            f"default|{macd_parameter_key()}",
+        )
     except Exception:
         return None
     if not cached or not isinstance(cached.get("payload"), dict):
@@ -292,12 +296,13 @@ def build_intraday_monitor(
             sep=" ", timespec="seconds"
         ),
         "result_cache_hit": False,
+        **macd_provenance(),
     }
     if rows:
         try:
             save_result_cache(
                 "intraday_monitor",
-                "default",
+                f"default|{macd_parameter_key()}",
                 _json_safe(result),
             )
             keep_dates = list(dict.fromkeys(

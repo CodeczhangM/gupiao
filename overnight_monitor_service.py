@@ -12,6 +12,7 @@ from data_service import get_cached_scan_inputs, get_market_data, get_stock_minu
 from indicator_settings import (
     calculate_macd,
     load_macd_settings,
+    macd_parameter_key,
     macd_provenance,
 )
 from market_cache import load_market_snapshot, load_recent_daily
@@ -21,7 +22,7 @@ from strategy import _macd_kdj_60m_signal, rank_sector_potential
 
 _MINUTE_BAR_CACHE: dict[tuple[str, str, str, str], tuple[float, pd.DataFrame]] = {}
 _FAILED_MINUTE_BAR_CACHE: dict[tuple[str, str, str, str], tuple[float, Exception]] = {}
-_OVERNIGHT_RESULT_CACHE: dict[tuple[int, int, str], tuple[float, dict[str, Any]]] = {}
+_OVERNIGHT_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SECONDS = {"60min": 600, "1min": 25}
 _FAILED_CACHE_TTL_SECONDS = 90
 _RESULT_CACHE_TTL_SECONDS = 25
@@ -71,11 +72,16 @@ def _cached_minute_bars(ts_code: str, start_datetime: str, end_datetime: str, fr
     return frame
 
 
-def _result_cache_key(limit: int, max_fetch: int, trade_date: str, now: datetime | None = None) -> tuple[int, int, str]:
-    return (int(limit), int(max_fetch), _realtime_end_datetime(trade_date, now=now))
+def _result_cache_key(limit: int, max_fetch: int, trade_date: str, now: datetime | None = None) -> tuple:
+    return (
+        int(limit),
+        int(max_fetch),
+        _realtime_end_datetime(trade_date, now=now),
+        macd_parameter_key(),
+    )
 
 
-def _get_cached_result(key: tuple[int, int, str]) -> dict[str, Any] | None:
+def _get_cached_result(key: tuple) -> dict[str, Any] | None:
     cached = _OVERNIGHT_RESULT_CACHE.get(key)
     if not cached:
         return None
@@ -88,13 +94,18 @@ def _get_cached_result(key: tuple[int, int, str]) -> dict[str, Any] | None:
     return result
 
 
-def _store_result_cache(key: tuple[int, int, str], result: dict[str, Any]) -> None:
+def _store_result_cache(key: tuple, result: dict[str, Any]) -> None:
     _OVERNIGHT_RESULT_CACHE[key] = (time.monotonic(), _json_safe(result))
 
 
-def _preload_result_cache_key(limit: int, max_fetch: int, now: datetime | None = None) -> tuple[int, int, str]:
+def _preload_result_cache_key(limit: int, max_fetch: int, now: datetime | None = None) -> tuple:
     current = now or datetime.now()
-    return (int(limit), int(max_fetch), current.strftime("%Y-%m-%d %H:%M"))
+    return (
+        int(limit),
+        int(max_fetch),
+        current.strftime("%Y-%m-%d %H:%M"),
+        macd_parameter_key(),
+    )
 
 
 def _market_phase(now: datetime | None = None) -> tuple[str, bool]:
@@ -717,6 +728,7 @@ def build_overnight_monitor(
         "latest_trade_date": metadata.get("latest_trade_date", trade_date),
         "data_current": metadata.get("data_current", True),
         "data_source": metadata.get("data_source"),
+        **macd_provenance(),
         "market_phase": phase,
         "auto_refresh_enabled": should_refresh,
         "updated_at": (now or datetime.now()).isoformat(sep=" ", timespec="seconds"),

@@ -14,7 +14,8 @@ from free_review_models import (
     ALLOWED_SORT_FIELDS,
     FreeReviewQuery,
 )
-from free_review_scoring import SCORE_VERSION
+from free_review_scoring import current_score_version
+from indicator_settings import macd_provenance
 
 
 TEXT_COLUMNS = [
@@ -84,7 +85,7 @@ def init_free_review_schema() -> None:
         f"""CREATE TABLE IF NOT EXISTS review_stock_snapshot (
             trade_date VARCHAR(8) NOT NULL,
             ts_code VARCHAR(16) NOT NULL,
-            score_version VARCHAR(32) NOT NULL,
+            score_version VARCHAR(128) NOT NULL,
             {text_sql},
             {integer_sql},
             {numeric_sql},
@@ -102,7 +103,7 @@ def init_free_review_schema() -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS review_snapshot_build (
             trade_date VARCHAR(8) NOT NULL,
-            score_version VARCHAR(32) NOT NULL,
+            score_version VARCHAR(128) NOT NULL,
             status VARCHAR(16) NOT NULL,
             stage VARCHAR(32) NOT NULL,
             total_count INT NOT NULL DEFAULT 0,
@@ -117,6 +118,10 @@ def init_free_review_schema() -> None:
             PRIMARY KEY (trade_date, score_version),
             INDEX idx_review_build_updated (updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE review_stock_snapshot
+            MODIFY COLUMN score_version VARCHAR(128) NOT NULL""",
+        """ALTER TABLE review_snapshot_build
+            MODIFY COLUMN score_version VARCHAR(128) NOT NULL""",
     ]
     with _schema_lock:
         if _schema_ready:
@@ -225,7 +230,10 @@ def save_build_status(payload: dict[str, Any]) -> None:
                     warnings_json=VALUES(warnings_json)""",
                 (
                     str(payload["trade_date"]),
-                    str(payload.get("score_version") or SCORE_VERSION),
+                    str(
+                        payload.get("score_version")
+                        or current_score_version()
+                    ),
                     status,
                     str(payload.get("stage") or "queued"),
                     int(payload.get("total_count") or 0),
@@ -260,9 +268,10 @@ def _serialize_status(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def load_build_status(
     trade_date: str | None = None,
-    score_version: str = SCORE_VERSION,
+    score_version: str | None = None,
 ) -> dict[str, Any] | None:
     init_free_review_schema()
+    score_version = score_version or current_score_version()
     conditions = ["score_version=%s"]
     params: list[Any] = [str(score_version)]
     if trade_date:
@@ -280,9 +289,10 @@ def load_build_status(
 
 
 def latest_review_trade_date(
-    score_version: str = SCORE_VERSION,
+    score_version: str | None = None,
 ) -> str | None:
     init_free_review_schema()
+    score_version = score_version or current_score_version()
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -313,7 +323,7 @@ def compile_review_where(
     trade_date: str,
 ) -> tuple[str, tuple[Any, ...]]:
     conditions = ["trade_date=%s", "score_version=%s"]
-    params: list[Any] = [str(trade_date), SCORE_VERSION]
+    params: list[Any] = [str(trade_date), current_score_version()]
     if request.keyword:
         keyword = f"%{request.keyword}%"
         conditions.append(
@@ -391,7 +401,7 @@ def query_review_snapshot(request: FreeReviewQuery) -> dict[str, Any]:
             rows = cursor.fetchall()
     return {
         "trade_date": str(trade_date),
-        "score_version": SCORE_VERSION,
+        "score_version": current_score_version(),
         "page": request.page,
         "page_size": request.page_size,
         "total": total,
@@ -466,7 +476,7 @@ def load_review_sectors(
                     AVG(total_score) AS avg_total_score
                 FROM ranked GROUP BY industry
                 ORDER BY avg_total_score DESC, stock_count DESC""",
-                (str(current), SCORE_VERSION),
+                (str(current), current_score_version()),
             )
             return [dict(row) for row in cursor.fetchall()]
 
@@ -475,9 +485,53 @@ def load_review_meta(
     trade_date: str | None = None,
 ) -> dict[str, Any]:
     init_free_review_schema()
+    score_version = current_score_version()
     current = trade_date or latest_review_trade_date()
     if not current:
-        raise LookupError("自由复盘选股快照尚未生成")
+        conditions = ""
+        params: tuple[Any, ...] = ()
+        if trade_date:
+            conditions = "WHERE trade_date=%s"
+            params = (str(trade_date),)
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""SELECT trade_date, score_version,
+                        MAX(generated_at) AS generated_at,
+                        COUNT(*) AS stock_count
+                    FROM review_stock_snapshot
+                    {conditions}
+                    GROUP BY trade_date, score_version
+                    ORDER BY generated_at DESC
+                    LIMIT 1""",
+                    params,
+                )
+                stale = cursor.fetchone()
+        if not stale:
+            raise LookupError("自由复盘选股快照尚未生成")
+        generated_at = stale.get("generated_at")
+        return {
+            "ready": False,
+            "trade_date": str(trade_date or ""),
+            "score_version": score_version,
+            "generated_at": None,
+            "stock_count": 0,
+            "sector_count": 0,
+            "financial_coverage": 0.0,
+            "available_filters": sorted(ALLOWED_RANGE_FIELDS),
+            "data_warnings": [],
+            "stale_trade_date": str(stale.get("trade_date") or ""),
+            "stale_score_version": str(
+                stale.get("score_version") or ""
+            ),
+            "stale_generated_at": (
+                generated_at.isoformat(sep=" ")
+                if isinstance(generated_at, (datetime, date))
+                else generated_at
+            ),
+            "stale_stock_count": int(stale.get("stock_count") or 0),
+            **macd_provenance(),
+        }
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -488,14 +542,15 @@ def load_review_meta(
                         THEN 1 ELSE 0 END) AS financial_coverage
                 FROM review_stock_snapshot
                 WHERE trade_date=%s AND score_version=%s""",
-                (str(current), SCORE_VERSION),
+                (str(current), current_score_version()),
             )
             row = cursor.fetchone() or {}
     generated_at = row.get("generated_at")
-    build_status = load_build_status(str(current), SCORE_VERSION) or {}
+    build_status = load_build_status(str(current), score_version) or {}
     return {
+        "ready": bool(int(row.get("stock_count") or 0)),
         "trade_date": str(current),
-        "score_version": SCORE_VERSION,
+        "score_version": score_version,
         "generated_at": (
             generated_at.isoformat(sep=" ")
             if isinstance(generated_at, (datetime, date))
@@ -506,4 +561,5 @@ def load_review_meta(
         "financial_coverage": float(row.get("financial_coverage") or 0),
         "available_filters": sorted(ALLOWED_RANGE_FIELDS),
         "data_warnings": build_status.get("warnings", []),
+        **macd_provenance(),
     }

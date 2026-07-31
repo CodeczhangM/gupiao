@@ -48,6 +48,26 @@ class MorningFollowServiceTests(unittest.TestCase):
         _MORNING_FOLLOW_RESULT_CACHE.clear()
         _SINA_MORNING_CACHE.clear()
 
+    def test_result_cache_key_changes_with_macd_configuration(self):
+        import morning_follow_service
+
+        metadata = {
+            "candidate_trade_date": "20260729",
+            "confirmation_trade_date": "20260730",
+        }
+        with patch(
+            "morning_follow_service.macd_parameter_key",
+            side_effect=["macd-5-34-5-v1", "macd-6-35-6-v2"],
+        ):
+            first = morning_follow_service._morning_result_cache_key(
+                10, 30, metadata, "早盘确认"
+            )
+            second = morning_follow_service._morning_result_cache_key(
+                10, 30, metadata, "早盘确认"
+            )
+
+        self.assertNotEqual(first, second)
+
     def test_eastmoney_secid_supports_sh_and_sz_only(self):
         self.assertEqual(_eastmoney_secid("600298.SH"), "1.600298")
         self.assertEqual(_eastmoney_secid("300910.SZ"), "0.300910")

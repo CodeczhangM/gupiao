@@ -94,6 +94,24 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             0.5,
         )
 
+    def test_derived_cache_keys_include_current_macd_parameter_key(self):
+        import realtime_info_service
+
+        with patch(
+            "realtime_info_service.macd_parameter_key",
+            return_value="macd-5-34-5-v8",
+        ):
+            memory_key = realtime_info_service._realtime_result_key(
+                10,
+                datetime(2026, 7, 30, 10, 0, 1),
+            )
+            database_key = (
+                realtime_info_service._database_realtime_result_key(10)
+            )
+
+        self.assertIn("macd-5-34-5-v8", memory_key)
+        self.assertIn("macd-5-34-5-v8", database_key)
+
     def test_screening_date_uses_base_snapshot_without_actual_minutes(self):
         import realtime_info_service
 

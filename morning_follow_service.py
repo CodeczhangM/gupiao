@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 import pandas as pd
 
 from data_service import get_trade_dates, sync_cached_market_data
+from indicator_settings import macd_parameter_key, macd_provenance
 from market_cache import load_market_snapshot, load_recent_daily
 from realtime_market_source import load_eastmoney_market_snapshot
 from overnight_monitor_service import (
@@ -26,7 +27,7 @@ from strategy import _macd_kdj_60m_signal
 
 
 _MORNING_FOLLOW_RESULT_CACHE: dict[
-    tuple[int, int, str, str, str],
+    tuple,
     tuple[float, dict[str, Any]],
 ] = {}
 _LIVE_RESULT_CACHE_TTL_SECONDS = 25
@@ -1071,13 +1072,14 @@ def _morning_result_cache_key(
     max_fetch: int,
     metadata: dict[str, Any],
     phase: str,
-) -> tuple[int, int, str, str, str]:
+) -> tuple:
     return (
         int(limit),
         int(max_fetch),
         str(metadata.get("candidate_trade_date") or ""),
         str(metadata.get("confirmation_trade_date") or ""),
         phase,
+        macd_parameter_key(),
     )
 
 
@@ -1202,6 +1204,7 @@ def build_morning_follow_monitor(
     stocks = [_json_safe(row) for row in setups[:max(1, int(limit))]]
     result = {
         **metadata,
+        **macd_provenance(),
         "market_phase": phase,
         "auto_refresh": should_refresh,
         "daily_rows": len(market),

@@ -9,11 +9,17 @@ import pandas as pd
 from indicator_settings import (
     calculate_macd,
     load_macd_settings,
+    macd_parameter_key,
     macd_provenance,
 )
 
 
-SCORE_VERSION = "free-review-v1"
+BASE_SCORE_VERSION = "free-review-v1"
+SCORE_VERSION = BASE_SCORE_VERSION
+
+
+def current_score_version(macd_settings=None) -> str:
+    return f"{BASE_SCORE_VERSION}-{macd_parameter_key(macd_settings)}"
 FINANCIAL_COLUMNS = [
     "eps", "dt_eps", "cfps",
     "roe", "roe_dt", "roa", "roic", "grossprofit_margin",
@@ -227,6 +233,7 @@ def build_review_snapshot(
         return universe
     macd_settings = load_macd_settings()
     macd_basis = macd_provenance(macd_settings)
+    score_version = current_score_version(macd_settings)
     metric_rows = []
     history_groups = (
         {str(code): group for code, group in history.groupby("ts_code")}
@@ -388,7 +395,7 @@ def build_review_snapshot(
             "score_reasons": reasons,
             "risk_flags": risks,
             "missing_fields": missing,
-            "score_version": SCORE_VERSION,
+            "score_version": score_version,
             "trade_date": str(trade_date),
             **macd_basis,
         })

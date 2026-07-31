@@ -9,6 +9,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from data_service import get_trade_dates, sync_cached_market_data
+from indicator_settings import macd_parameter_key, macd_provenance
 from intraday_monitor_service import _main_force_status, _market_phase
 from market_cache import get_complete_dates, load_market_snapshot, load_recent_daily
 from realtime_market_source import (
@@ -44,9 +45,9 @@ _REALTIME_TAIL_CANDIDATE_LIMIT = 15
 _REALTIME_OVERNIGHT_MAX_FETCH = 15
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
-_REALTIME_INTRADAY_RESULT_CACHE: dict[tuple[str, str, int, str], tuple[float, dict[str, Any]]] = {}
-_REALTIME_RESULT_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
-_LAST_SUCCESSFUL_REALTIME_RESULTS: dict[int, dict[str, Any]] = {}
+_REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_REALTIME_RESULT_CACHE: dict[tuple, dict[str, Any]] = {}
+_LAST_SUCCESSFUL_REALTIME_RESULTS: dict[tuple, dict[str, Any]] = {}
 _REALTIME_RESULT_LOCK = threading.Lock()
 
 
@@ -56,9 +57,13 @@ def _clear_realtime_result_caches() -> None:
         _LAST_SUCCESSFUL_REALTIME_RESULTS.clear()
 
 
-def _realtime_result_key(limit: int, now: datetime) -> tuple[int, str]:
+def _realtime_result_key(limit: int, now: datetime) -> tuple:
     bucket = "0" if now.second < 30 else "1"
-    return int(limit), f"{now.strftime('%Y%m%d%H%M')}{bucket}"
+    return (
+        int(limit),
+        f"{now.strftime('%Y%m%d%H%M')}{bucket}",
+        macd_parameter_key(),
+    )
 
 
 def _request_minute_loader(
@@ -703,6 +708,7 @@ def _build_realtime_intraday_section(
         str(base_trade_date or trade_date),
         int(limit),
         _realtime_end_datetime(trade_date, now=now),
+        macd_parameter_key(),
     )
     cached = _REALTIME_INTRADAY_RESULT_CACHE.get(cache_key)
     if cached and time.monotonic() - cached[0] <= _REALTIME_INTRADAY_CACHE_TTL_SECONDS:
@@ -1079,7 +1085,10 @@ def _has_realtime_stocks(result: dict[str, Any]) -> bool:
 
 
 def _database_realtime_result_key(limit: int) -> str:
-    return f"limit={max(1, min(int(limit), 100))}"
+    return (
+        f"limit={max(1, min(int(limit), 100))}"
+        f"|{macd_parameter_key()}"
+    )
 
 
 def _load_database_realtime_result(limit: int) -> dict[str, Any] | None:
@@ -1133,6 +1142,7 @@ def build_realtime_info(
     force_refresh: bool = False,
 ) -> dict[str, Any]:
     current = now or datetime.now()
+    successful_key = (int(limit), macd_parameter_key())
     cache_key = _realtime_result_key(limit, current)
     if not force_refresh:
         with _REALTIME_RESULT_LOCK:
@@ -1198,10 +1208,10 @@ def build_realtime_info(
                 + cache_warnings
             ))[:20]
         with _REALTIME_RESULT_LOCK:
-            _LAST_SUCCESSFUL_REALTIME_RESULTS[int(limit)] = _json_safe(result)
+            _LAST_SUCCESSFUL_REALTIME_RESULTS[successful_key] = _json_safe(result)
     else:
         with _REALTIME_RESULT_LOCK:
-            previous = _LAST_SUCCESSFUL_REALTIME_RESULTS.get(int(limit))
+            previous = _LAST_SUCCESSFUL_REALTIME_RESULTS.get(successful_key)
         if previous is None:
             previous = _load_database_realtime_result(limit)
         if previous is not None:
@@ -1240,7 +1250,10 @@ def build_realtime_info(
                 "result_cache_hit": False,
             }
 
-    safe_result = _json_safe(result)
+    safe_result = _json_safe({
+        **result,
+        **macd_provenance(),
+    })
     with _REALTIME_RESULT_LOCK:
         _REALTIME_RESULT_CACHE[cache_key] = safe_result
         if len(_REALTIME_RESULT_CACHE) > 20:

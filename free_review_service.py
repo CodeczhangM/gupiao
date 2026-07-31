@@ -23,7 +23,10 @@ from free_review_repository import (
     save_build_status,
 )
 from free_review_models import FreeReviewQuery
-from free_review_scoring import SCORE_VERSION, build_review_snapshot
+from free_review_scoring import (
+    build_review_snapshot,
+    current_score_version,
+)
 from market_cache import (
     get_complete_dates,
     load_market_snapshot,
@@ -42,7 +45,7 @@ def _status(
 ) -> dict[str, Any]:
     return {
         "trade_date": str(trade_date),
-        "score_version": SCORE_VERSION,
+        "score_version": current_score_version(),
         "status": status,
         "stage": stage,
         **values,
@@ -71,7 +74,9 @@ def build_free_review_snapshot(
             raise LookupError("行情缓存中没有完整交易日")
         current = str(dates[0])
     started_at = datetime.now()
+    score_version = current_score_version()
     common = {
+        "score_version": score_version,
         "started_at": started_at,
         "total_count": 0,
         "processed_count": 0,
@@ -132,7 +137,7 @@ def build_free_review_snapshot(
         ))
         replace_review_snapshot(
             current,
-            SCORE_VERSION,
+            score_version,
             snapshot if snapshot is not None else pd.DataFrame(),
         )
         result = _status(
@@ -166,8 +171,9 @@ def start_free_review_build(force: bool = False) -> dict[str, Any]:
     if not dates:
         raise LookupError("行情缓存中没有完整交易日")
     trade_date = str(dates[0])
+    score_version = current_score_version()
     with _build_lock:
-        existing = load_build_status(trade_date, SCORE_VERSION)
+        existing = load_build_status(trade_date, score_version)
         if existing and existing.get("status") in {"pending", "running"}:
             return existing
         if existing and existing.get("status") == "success" and not force:
@@ -196,7 +202,7 @@ def free_review_sectors(
     rows = load_review_sectors(current)
     return {
         "trade_date": current,
-        "score_version": SCORE_VERSION,
+        "score_version": current_score_version(),
         "items": rows,
     }
 

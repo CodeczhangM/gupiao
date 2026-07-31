@@ -58,6 +58,23 @@ class OvernightMonitorServiceTests(unittest.TestCase):
         _FAILED_MINUTE_BAR_CACHE.clear()
         _OVERNIGHT_RESULT_CACHE.clear()
 
+    def test_result_cache_key_changes_with_macd_configuration(self):
+        import overnight_monitor_service
+
+        now = datetime(2026, 7, 30, 14, 30)
+        with patch(
+            "overnight_monitor_service.macd_parameter_key",
+            side_effect=["macd-5-34-5-v1", "macd-6-35-6-v2"],
+        ):
+            first = overnight_monitor_service._result_cache_key(
+                10, 30, "20260730", now
+            )
+            second = overnight_monitor_service._result_cache_key(
+                10, 30, "20260730", now
+            )
+
+        self.assertNotEqual(first, second)
+
     @patch("overnight_monitor_service.time.sleep", return_value=None)
     @patch("overnight_monitor_service.get_stock_minute_bars", side_effect=RuntimeError("您请求速度过快"))
     def test_failed_minute_request_is_throttled_briefly(self, get_stock_minute_bars, _sleep):

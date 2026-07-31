@@ -157,6 +157,69 @@ class FreeReviewRepositoryTests(unittest.TestCase):
         self.assertNotIn("制造", sql)
         self.assertIn("%制造%", params)
 
+    def test_query_compiler_uses_current_macd_score_version(self):
+        import free_review_repository
+        from free_review_models import FreeReviewQuery
+
+        with patch(
+            "free_review_repository.current_score_version",
+            return_value="free-review-v1-macd-5-34-5-v9",
+        ):
+            _sql, params = free_review_repository.compile_review_where(
+                FreeReviewQuery(trade_date="20260730"),
+                "20260730",
+            )
+
+        self.assertEqual(
+            params[:2],
+            ("20260730", "free-review-v1-macd-5-34-5-v9"),
+        )
+
+    def test_meta_reports_old_snapshot_as_stale_after_macd_change(self):
+        import free_review_repository
+
+        cursor, connection = fake_connection()
+        cursor.fetchone.side_effect = [
+            {"trade_date": None},
+            {
+                "trade_date": "20260730",
+                "score_version": "free-review-v1-macd-5-34-5-v1",
+                "generated_at": datetime(2026, 7, 30, 18, 0),
+                "stock_count": 321,
+            },
+        ]
+        with (
+            patch(
+                "free_review_repository.init_free_review_schema"
+            ),
+            patch(
+                "free_review_repository.get_connection",
+                return_value=connection,
+            ),
+            patch(
+                "free_review_repository.current_score_version",
+                return_value="free-review-v1-macd-6-35-6-v2",
+            ),
+            patch(
+                "free_review_repository.macd_provenance",
+                return_value={
+                    "macd_fast_period": 6,
+                    "macd_slow_period": 35,
+                    "macd_signal_period": 6,
+                    "macd_parameter_key": "macd-6-35-6-v2",
+                },
+            ),
+        ):
+            result = free_review_repository.load_review_meta()
+
+        self.assertFalse(result["ready"])
+        self.assertEqual(result["stock_count"], 0)
+        self.assertEqual(result["stale_stock_count"], 321)
+        self.assertEqual(
+            result["stale_score_version"],
+            "free-review-v1-macd-5-34-5-v1",
+        )
+
     def test_query_model_rejects_unknown_filter_sort_and_page_size(self):
         from pydantic import ValidationError
 
