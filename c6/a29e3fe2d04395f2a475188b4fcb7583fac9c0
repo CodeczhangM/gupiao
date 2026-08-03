@@ -1,0 +1,169 @@
+realtime_tail_premium_service.py
+  b3a767ca1952d720 142-158,399,524-528,533
+tests/test_realtime_tail_premium_service.py
+  b3a767ca1952d720 293-344
+docs/superpowers/plans/2026-07-29-realtime-tail-volume-display.md
+  47ee1ab46e0253fd 1-226
+docs/superpowers/plans/2026-07-29-realtime-confluence-volume-ratio-fallback.md
+  47ee1ab46e0253fd 1-400
+docs/superpowers/plans/2026-07-30-morning-follow-minute-fallback.md
+  47ee1ab46e0253fd 1-654
+docs/superpowers/plans/2026-07-29-next-morning-follow.md
+  47ee1ab46e0253fd 1-916
+tests/test_morning_follow_api.py
+  47ee1ab46e0253fd 1-32
+docs/superpowers/plans/2026-07-30-morning-follow-table-layout.md
+  47ee1ab46e0253fd 1-309
+docs/superpowers/plans/2026-07-30-realtime-info-multi-source-fallback.md
+  47ee1ab46e0253fd 1-1119
+docs/superpowers/plans/2026-07-29-morning-follow-relaxed-tier.md
+  47ee1ab46e0253fd 1-636
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "c6a29e3fe2d04395f2a475188b4fcb7583fac9c0",
+  "prompts": {
+    "47ee1ab46e0253fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019facf5-f091-7582-88cc-b9b53f2ae69b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4347,
+      "overriden_lines": 0
+    },
+    "b3a767ca1952d720": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "b76e1f57-b1ae-49ea-be6d-155ed4612bf6",
+        "model": "unknown"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 76,
+      "total_deletions": 12,
+      "accepted_lines": 76,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 4903,
+    "git_diff_deleted_lines": 12,
+    "ai_additions": 4368,
+    "ai_accepted": 4368,
+    "BYMC": 535,
+    "mixed_additions": 0,
+    "BYAC": 4368,
+    "BYRC": 0,
+    "per_file": {
+      "docs/superpowers/plans/2026-07-29-morning-follow-relaxed-tier.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-636"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-29-next-morning-follow.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-916"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-29-realtime-confluence-volume-ratio-fallback.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-400"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-29-realtime-tail-volume-display.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-226"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-30-morning-follow-minute-fallback.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-654"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-30-morning-follow-table-layout.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-309"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-30-realtime-info-multi-source-fallback.md": {
+        "BYMC": [],
+        "BYAC": [
+          "1-1119"
+        ],
+        "BYRC": []
+      },
+      "docs/superpowers/plans/2026-07-31-realtime-info-force-refresh-performance.md": {
+        "BYMC": [
+          "1-114"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/specs/2026-07-31-realtime-info-force-refresh-performance-design.md": {
+        "BYMC": [
+          "1-25"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "qmt_realtime_demo.py": {
+        "BYMC": [
+          "1-320"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_tail_premium_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "142-158",
+          "399",
+          "524-528",
+          "533"
+        ],
+        "BYRC": []
+      },
+      "tests/test_morning_follow_api.py": {
+        "BYMC": [],
+        "BYAC": [
+          "1-32"
+        ],
+        "BYRC": []
+      },
+      "tests/test_qmt_realtime_demo.py": {
+        "BYMC": [
+          "1-76"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_tail_premium_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "293-344"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785744587,
+  "requirement_id": ""
+}
