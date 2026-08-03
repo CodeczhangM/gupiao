@@ -139,17 +139,23 @@ def _finite(*values: Any) -> float | None:
     return None
 
 
-def _resolve_previous_close_for_pct(stock: dict[str, Any]) -> Any:
+def _resolve_previous_close_for_pct(
+    stock: dict[str, Any],
+    trade_date: str | None = None,
+) -> Any:
     """Resolve previous close for realtime pct calculation.
 
     When pre_close/previous_close are missing, fall back to deriving from
     close and pct_chg instead of using the current close directly (which
     would zero out the computed pct_chg).
     """
+    close = _finite(stock.get("close"))
+    stock_trade_date = str(stock.get("trade_date") or "")
+    if trade_date and stock_trade_date and stock_trade_date != str(trade_date):
+        return close
     direct = _finite(stock.get("pre_close"), stock.get("previous_close"))
     if direct is not None:
         return direct
-    close = _finite(stock.get("close"))
     pct_chg = _finite(stock.get("pct_chg"))
     if close and pct_chg is not None and pct_chg > -99:
         return close / (1 + pct_chg / 100)
@@ -193,7 +199,7 @@ def _raw_tail_prefilter_market(
         return pd.DataFrame()
     data = market.copy()
     data = data[
-        ~data["ts_code"].astype(str).str.startswith(("688", "689"))
+        ~data["ts_code"].astype(str).str.startswith(("3", "8", "9", "688", "689"))
     ].copy()
     if data.empty:
         return pd.DataFrame()
@@ -216,6 +222,9 @@ def _raw_tail_prefilter_market(
             + data["turnover_rate"].clip(0, 25) * 0.35
         )
     else:
+        data = data[data["pct_chg"].between(2, 7, inclusive="both")].copy()
+        if data.empty:
+            return pd.DataFrame()
         data["_raw_tail_prefilter_score"] = (
             data["pct_chg"].clip(-3, 10) * 3.0
             + data["volume_ratio"].clip(0, 5) * 5.0
@@ -396,7 +405,7 @@ def _refresh_waiting_market_with_current_minutes(
         snapshot = _minute_price_snapshot(
             bars,
             trade_date,
-            _resolve_previous_close_for_pct(record),
+            _resolve_previous_close_for_pct(record, trade_date),
             record.get("vol"),
             record.get("amount"),
             record.get("amount_unit"),
@@ -522,7 +531,7 @@ def _load_and_score(
         else tail_bars
     )
     previous_close = (
-        _resolve_previous_close_for_pct(stock)
+        _resolve_previous_close_for_pct(stock, trade_date)
         if refresh_current_price
         else stock.get("pre_close")
     )

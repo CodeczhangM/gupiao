@@ -17,7 +17,7 @@ def _history(ts_code, name, industry, *, falling=False):
         (20 - index * 0.1) if falling else (10 + index * 0.03)
         for index in range(70)
     ]
-    return pd.DataFrame([
+    frame = pd.DataFrame([
         {
             "ts_code": ts_code,
             "name": name,
@@ -39,6 +39,8 @@ def _history(ts_code, name, industry, *, falling=False):
         }
         for index, close in enumerate(closes)
     ])
+    frame.loc[frame.index[-10], "pct_chg"] = 9.8
+    return frame
 
 
 def _tail_bars(ts_code):
@@ -120,7 +122,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
                 "vol": 2_000_000,
                 "amount": 120_000_000,
                 "amount_unit": "yuan",
-                "pct_chg": 0.91,
+                "pct_chg": 3.0,
                 "turnover_rate": 8,
                 "volume_ratio": 1.8,
             },
@@ -342,6 +344,28 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         # 涨幅应基于反推的昨收 5.96 计算，而不是被零化为接近 0
         self.assertAlmostEqual(row["pct_chg"], 1.006711, places=4)
 
+    def test_stale_snapshot_uses_snapshot_close_as_current_day_previous_close(self):
+        from realtime_tail_premium_service import _resolve_previous_close_for_pct
+
+        record = {
+            "trade_date": "20260731",
+            "ts_code": "300364.SZ",
+            "close": 24.83,
+            "pre_close": 20.69,
+            "pct_chg": 20.0097,
+        }
+
+        self.assertAlmostEqual(
+            _resolve_previous_close_for_pct(record, trade_date="20260803"),
+            24.83,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _resolve_previous_close_for_pct(record, trade_date="20260731"),
+            20.69,
+            places=5,
+        )
+
     def test_stale_waiting_refreshes_candidate_pool_before_final_screening(self):
         requested_codes = []
         extra = self.market.iloc[[0]].copy()
@@ -502,41 +526,66 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         self.assertEqual(result["ts_code"].tolist(), ["600030.SH"])
 
-    def test_raw_prefilter_limits_factor_universe_to_strong_liquid_stocks(self):
+    def test_raw_prefilter_uses_tail_arbitrage_pct_band_before_scoring(self):
         market = pd.DataFrame([
             {
                 "ts_code": f"600{index:03d}.SH",
-                "pct_chg": 0.1,
+                "pct_chg": 1.9,
                 "volume_ratio": 1.0,
                 "turnover_rate": 1.0,
                 "amount": 10_000_000,
             }
             for index in range(200)
         ])
+        market.loc[10, ["pct_chg", "volume_ratio", "turnover_rate", "amount"]] = [
+            2.0,
+            1.0,
+            1.0,
+            20_000_000,
+        ]
         market.loc[123, ["pct_chg", "volume_ratio", "turnover_rate", "amount"]] = [
-            8.5,
+            6.8,
             4.0,
             9.0,
             900_000_000,
         ]
+        market.loc[150, ["pct_chg", "volume_ratio", "turnover_rate", "amount"]] = [
+            7.1,
+            5.0,
+            12.0,
+            1_000_000_000,
+        ]
 
         result = _raw_tail_prefilter_market(market, max_fetch=20)
 
-        self.assertEqual(len(result), 20)
-        self.assertIn("600123.SH", set(result["ts_code"]))
+        self.assertEqual(result["ts_code"].tolist(), ["600123.SH", "600010.SH"])
 
-    def test_raw_prefilter_excludes_star_market_candidates(self):
+    def test_raw_prefilter_excludes_unbuyable_output_markets_early(self):
         market = pd.DataFrame([
             {
+                "ts_code": "301082.SZ",
+                "pct_chg": 5.0,
+                "volume_ratio": 5.0,
+                "turnover_rate": 12.0,
+                "amount": 900_000_000,
+            },
+            {
+                "ts_code": "920510.BJ",
+                "pct_chg": 6.0,
+                "volume_ratio": 4.0,
+                "turnover_rate": 10.0,
+                "amount": 500_000_000,
+            },
+            {
                 "ts_code": "688766.SH",
-                "pct_chg": 9.0,
+                "pct_chg": 4.0,
                 "volume_ratio": 5.0,
                 "turnover_rate": 12.0,
                 "amount": 900_000_000,
             },
             {
                 "ts_code": "689001.SH",
-                "pct_chg": 8.5,
+                "pct_chg": 5.0,
                 "volume_ratio": 4.5,
                 "turnover_rate": 10.0,
                 "amount": 800_000_000,

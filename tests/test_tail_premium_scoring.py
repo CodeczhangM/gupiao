@@ -75,10 +75,14 @@ class TailPremiumScoringTests(unittest.TestCase):
 
     def test_eligibility_excludes_risk_liquidity_and_confirmed_downtrend(self):
         rising = _history()
+        rising.loc[rising.index[-10], "pct_chg"] = 9.8
         illiquid = _history("600002.SH", amount=20_000)
+        illiquid.loc[illiquid.index[-10], "pct_chg"] = 9.8
         falling_values = [20 - index * 0.1 for index in range(65)]
         falling = _history("600003.SH", closes=falling_values)
+        falling.loc[falling.index[-10], "pct_chg"] = 9.8
         st_history = _history("600004.SH")
+        st_history.loc[st_history.index[-10], "pct_chg"] = 9.8
         market = pd.DataFrame([
             _market_row(),
             _market_row("600002.SH", name="低流动"),
@@ -112,11 +116,60 @@ class TailPremiumScoringTests(unittest.TestCase):
         self.assertIn("MA60下降且股价位于MA60下方", reasons["600003.SH"])
         self.assertIn("风险股票", reasons["600004.SH"])
 
-    def test_short_history_remains_but_cannot_receive_complete_trend_score(self):
-        market = pd.DataFrame([_market_row()])
+    def test_tail_arbitrage_requires_recent_limit_but_rejects_hot_or_locked_boards(self):
+        valid_history = _history("600010.SH")
+        valid_history.loc[valid_history.index[-8], "pct_chg"] = 9.8
+        no_limit_history = _history("600011.SH")
+        hot_history = _history("600012.SH")
+        hot_history.loc[hot_history.index[-8], "pct_chg"] = 9.8
+        sealed_history = _history("600013.SH")
+        sealed_history.loc[sealed_history.index[-8], "pct_chg"] = 9.8
+        continuous_history = _history("600014.SH")
+        continuous_history.loc[continuous_history.index[-8], "pct_chg"] = 9.8
+        market = pd.DataFrame([
+            _market_row("600010.SH", pct_chg=5.2),
+            _market_row("600011.SH", pct_chg=5.2),
+            _market_row("600012.SH", pct_chg=7.01),
+            _market_row("600013.SH", pct_chg=6.5, limit_flag="涨停"),
+            _market_row("600014.SH", pct_chg=6.5, continuous_limit_days=2),
+        ])
+
         factors = build_daily_factor_frame(
             market,
-            _history().tail(30),
+            pd.concat(
+                [
+                    valid_history,
+                    no_limit_history,
+                    hot_history,
+                    sealed_history,
+                    continuous_history,
+                ],
+                ignore_index=True,
+            ),
+            "20260731",
+            macd_settings={
+                "fast_period": 5,
+                "slow_period": 34,
+                "signal_period": 5,
+                "version": 1,
+            },
+        )
+        eligible = eligible_tail_universe(factors)
+
+        self.assertEqual(eligible["ts_code"].tolist(), ["600010.SH"])
+        reasons = factors.set_index("ts_code")["exclusion_reasons"].to_dict()
+        self.assertIn("近20日无涨停基因", reasons["600011.SH"])
+        self.assertIn("当日涨幅超过7%", reasons["600012.SH"])
+        self.assertIn("当日封板买入受限", reasons["600013.SH"])
+        self.assertIn("连续涨停后隔日兑现风险高", reasons["600014.SH"])
+
+    def test_short_history_remains_but_cannot_receive_complete_trend_score(self):
+        market = pd.DataFrame([_market_row()])
+        short_history = _history().tail(30).copy()
+        short_history.loc[short_history.index[-8], "pct_chg"] = 9.8
+        factors = build_daily_factor_frame(
+            market,
+            short_history,
             "20260731",
             macd_settings={
                 "fast_period": 5,

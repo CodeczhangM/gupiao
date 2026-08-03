@@ -11,7 +11,9 @@ from realtime_info_service import (
     MinuteLoadResult,
     build_realtime_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
+    _enrich_rows_with_market,
     _fill_missing_realtime_volume_ratio,
+    _market_price_map,
     _apply_minute_snapshots_to_market,
     _load_realtime_market_inputs,
     _load_realtime_intraday_signal_bars,
@@ -181,6 +183,31 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(result.iloc[0]["volume_ratio"], 2.8)
+
+    def test_market_enrichment_updates_pct_with_current_snapshot(self):
+        market = pd.DataFrame([{
+            "ts_code": "300364.SZ",
+            "close": 24.34,
+            "high": 25.60,
+            "pct_chg": -1.97,
+        }])
+        stale_candidate = {
+            "ts_code": "300364.SZ",
+            "name": "中文在线",
+            "close": 24.34,
+            "current_price": 24.34,
+            "pct_chg": 17.64,
+        }
+
+        [row] = _enrich_rows_with_market(
+            [stale_candidate],
+            _market_price_map(market),
+            datetime(2026, 8, 3, 16, 31),
+        )
+
+        self.assertEqual(row["current_price"], 24.34)
+        self.assertEqual(row["day_high"], 25.60)
+        self.assertEqual(row["pct_chg"], -1.97)
 
     def test_missing_realtime_volume_ratio_stays_missing_without_history(self):
         market = pd.DataFrame([{
@@ -1185,7 +1212,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         }
         build_realtime_tail_premium_monitor.return_value = {
             "trade_date": "20260729",
-            "stocks": [{"ts_code": "600102.SH", "name": "隔夜候选"}],
+            "stocks": [{"ts_code": "600102.SH", "name": "隔夜候选", "pct_chg": 4.0}],
         }
 
         result = build_realtime_info(now=datetime(2026, 7, 29, 14, 36))
@@ -1210,6 +1237,62 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(
             kwargs["market_override"].iloc[0]["close"], 12.34
         )
+
+    def test_realtime_info_filters_unbuyable_overnight_output_after_enrichment(self):
+        with (
+            patch("realtime_info_service.get_trade_dates", return_value=["20260731"]),
+            patch(
+                "realtime_info_service._load_realtime_market_inputs",
+                return_value=(
+                    pd.DataFrame([
+                        {"ts_code": "301082.SZ", "close": 10.62, "high": 10.62, "pct_chg": 20.0},
+                        {"ts_code": "920510.BJ", "close": 22.48, "high": 23.0, "pct_chg": 6.18},
+                        {"ts_code": "600396.SH", "close": 15.51, "high": 15.51, "pct_chg": 10.0},
+                        {"ts_code": "600988.SH", "close": 28.0, "high": 28.5, "pct_chg": 6.2},
+                    ]),
+                    pd.DataFrame(),
+                    "20260731",
+                    "current_snapshot",
+                    True,
+                    [],
+                ),
+            ),
+            patch(
+                "realtime_info_service._build_realtime_intraday_section",
+                return_value={
+                    "trade_date": "20260731",
+                    "candidate_count": 0,
+                    "stocks": [],
+                },
+            ),
+            patch(
+                "realtime_info_service.build_realtime_tail_premium_monitor",
+                return_value={
+                    "trade_date": "20260731",
+                    "candidate_count": 4,
+                    "failed_count": 1,
+                    "stocks": [
+                        {"ts_code": "301082.SZ", "name": "久盛电气", "pct_chg": 5.0},
+                        {"ts_code": "920510.BJ", "name": "丰光精密", "pct_chg": 6.18},
+                        {"ts_code": "600396.SH", "name": "华电辽能", "pct_chg": 6.0, "minute_data_warnings": ["x"]},
+                        {"ts_code": "600988.SH", "name": "赤峰黄金", "pct_chg": 6.2},
+                    ],
+                },
+            ),
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 7, 31, 15, 1),
+                limit=20,
+                force_refresh=True,
+            )
+
+        overnight = result["overnight"]
+        self.assertEqual(
+            [row["ts_code"] for row in overnight["stocks"]],
+            ["600988.SH"],
+        )
+        self.assertEqual(overnight["candidate_count"], 1)
+        self.assertEqual(overnight["failed_count"], 0)
 
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._build_realtime_intraday_section")
@@ -1247,6 +1330,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "ts_code": "600102.SH",
                 "close": 8.6,
                 "high": 8.9,
+                "pct_chg": 4.0,
                 "tail_return_after_1430": 0.4,
                 "tail_strength_score": 78,
                 "tail_auction_return": 0.15,

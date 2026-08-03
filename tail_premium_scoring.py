@@ -315,6 +315,15 @@ def build_daily_factor_frame(
             reasons.append("风险股票")
         if (_number(record.get("vol"), 0) or 0) <= 0:
             reasons.append("停牌或无成交")
+        pct_chg = _number(record.get("pct_chg"), 0) or 0
+        if pct_chg > 7:
+            reasons.append("当日涨幅超过7%")
+        if int(metrics.get("limit_count_20d") or 0) < 1:
+            reasons.append("近20日无涨停基因")
+        if metrics.get("limit_sealed"):
+            reasons.append("当日封板买入受限")
+        if int(metrics.get("continuous_limit_days") or 0) >= 2:
+            reasons.append("连续涨停后隔日兑现风险高")
         average_amount = metrics.get("average_amount_5d_yuan")
         if (
             average_amount is not None
@@ -408,25 +417,13 @@ def _opening_auction_return(row: dict[str, Any]) -> float:
 
 def _limit_score(row: dict[str, Any]) -> float:
     count = int(_number(row.get("limit_count_20d"), 0) or 0)
-    continuous = int(
-        _number(row.get("continuous_limit_days"), 0) or 0
-    )
-    if continuous >= 2:
-        base = 18
-    elif bool(row.get("limit_in_5d")):
-        base = 15
+    if bool(row.get("limit_in_5d")):
+        base = 5
     elif count >= 1:
-        base = 10
+        base = 3
     else:
         base = 0
-    if row.get("limit_sealed"):
-        base += 2
-    if (
-        (_number(row.get("limit_open_count"), 0) or 0) > 0
-        and (_number(row.get("tail_return_after_1430"), 0) or 0) < 0
-    ):
-        base -= 5
-    return min(20.0, max(0.0, float(base)))
+    return min(5.0, max(0.0, float(base)))
 
 
 def _sector_score(row: dict[str, Any]) -> float:
@@ -647,4 +644,3 @@ def rank_tail_premium_candidates(
         .head(max(1, min(int(limit), 100)))
         .reset_index(drop=True)
     )
-

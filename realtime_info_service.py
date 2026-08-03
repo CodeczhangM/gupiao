@@ -54,6 +54,7 @@ _REALTIME_TAIL_CANDIDATE_LIMIT = 15
 _REALTIME_OVERNIGHT_MAX_FETCH = 30
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
+_REALTIME_OUTPUT_EXCLUDE_PREFIXES = ("3", "8", "9", "688", "689")
 _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _REALTIME_RESULT_CACHE: dict[tuple, dict[str, Any]] = {}
 _LAST_SUCCESSFUL_REALTIME_RESULTS: dict[tuple, dict[str, Any]] = {}
@@ -69,6 +70,51 @@ def clear_realtime_derived_caches() -> None:
 
 def _clear_realtime_result_caches() -> None:
     clear_realtime_derived_caches()
+
+
+def _realtime_output_allowed(ts_code: Any) -> bool:
+    code = str(ts_code or "")
+    return bool(code) and not code.startswith(_REALTIME_OUTPUT_EXCLUDE_PREFIXES)
+
+
+def _overnight_pct_allowed(value: Any) -> bool:
+    try:
+        pct = float(value)
+    except (TypeError, ValueError):
+        return False
+    return 2 <= pct <= 7
+
+
+def _filter_realtime_output(result: dict[str, Any]) -> dict[str, Any]:
+    filtered = _json_safe(result)
+    for section_name in ("intraday", "overnight"):
+        section = filtered.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        stocks = section.get("stocks")
+        if not isinstance(stocks, list):
+            continue
+        filtered_stocks = []
+        for row in stocks:
+            if not isinstance(row, dict):
+                continue
+            if not _realtime_output_allowed(row.get("ts_code")):
+                continue
+            if section_name == "overnight" and not _overnight_pct_allowed(
+                row.get("pct_chg")
+            ):
+                continue
+            filtered_stocks.append(row)
+        section["stocks"] = filtered_stocks
+        if "candidate_count" in section:
+            section["candidate_count"] = len(filtered_stocks)
+        if "failed_count" in section:
+            section["failed_count"] = sum(
+                1
+                for row in filtered_stocks
+                if row.get("minute_data_warnings")
+            )
+    return filtered
 
 
 def _realtime_result_key(limit: int, now: datetime) -> tuple:
@@ -235,6 +281,7 @@ def _market_price_map(market: pd.DataFrame) -> dict[str, dict[str, Any]]:
         result[ts_code] = {
             "current_price": row.get("close"),
             "day_high": row.get("high"),
+            "pct_chg": row.get("pct_chg"),
         }
     return result
 
@@ -276,6 +323,7 @@ def _enrich_rows_with_market(
             **row,
             "current_price": _first_present(row.get("current_price"), row.get("close"), price.get("current_price")),
             "day_high": _first_present(row.get("day_high"), row.get("high"), price.get("day_high")),
+            "pct_chg": _first_present(price.get("pct_chg"), row.get("pct_chg")),
         }
         enriched.append(_with_realtime_display_flags(merged, now))
     return enriched
@@ -1418,7 +1466,7 @@ def build_realtime_info(
         with _REALTIME_RESULT_LOCK:
             cached = _REALTIME_RESULT_CACHE.get(cache_key)
         if cached is not None:
-            result = _json_safe(cached)
+            result = _filter_realtime_output(cached)
             result["result_cache_hit"] = True
             result["cache_source"] = "memory"
             return result
@@ -1427,7 +1475,7 @@ def build_realtime_info(
             now=current,
         )
         if database_cached is not None:
-            return database_cached
+            return _filter_realtime_output(database_cached)
 
     build_error = None
     try:
@@ -1464,6 +1512,7 @@ def build_realtime_info(
         }
 
     if _has_realtime_stocks(fresh):
+        fresh = _filter_realtime_output(fresh)
         result = {
             **fresh,
             "data_status": "live",
@@ -1496,6 +1545,7 @@ def build_realtime_info(
                 require_fresh=False,
             )
         if previous is not None:
+            previous = _filter_realtime_output(previous)
             warnings = list(previous.get("fallback_warnings") or [])
             stale_performance = dict(previous.get("performance") or {})
             stale_performance["used_stale_fallback"] = True
@@ -1531,7 +1581,7 @@ def build_realtime_info(
                 "result_cache_hit": False,
             }
 
-    safe_result = _json_safe({
+    safe_result = _filter_realtime_output({
         **result,
         **macd_provenance(),
     })

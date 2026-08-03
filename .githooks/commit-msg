@@ -1,0 +1,100 @@
+#!/bin/sh
+#
+# Add a Gerrit-style Change-Id trailer to commit messages.
+# Install with:
+#   install -m 755 .githooks/commit-msg .git/hooks/commit-msg
+
+set -eu
+
+MSG_FILE="$1"
+GIT_BIN="${GIT_AI_GIT:-/root/.git-ai/bin/git}"
+
+if [ ! -f "$MSG_FILE" ]; then
+  exit 0
+fi
+
+if grep -qi '^Change-Id:[[:space:]]*I[0-9a-f]\{40\}[[:space:]]*$' "$MSG_FILE"; then
+  exit 0
+fi
+
+if grep -qi '^Link:[[:space:]].*/id/I[0-9a-f]\{40\}[[:space:]]*$' "$MSG_FILE"; then
+  exit 0
+fi
+
+tree="$("$GIT_BIN" write-tree 2>/dev/null || true)"
+parent="$("$GIT_BIN" rev-parse HEAD 2>/dev/null || true)"
+author="$("$GIT_BIN" var GIT_AUTHOR_IDENT 2>/dev/null || true)"
+committer="$("$GIT_BIN" var GIT_COMMITTER_IDENT 2>/dev/null || true)"
+
+message_without_comments="$(
+  sed -e '/^#/d' "$MSG_FILE"
+)"
+
+change_id="$(
+  {
+    printf 'tree %s\n' "$tree"
+    if [ -n "$parent" ]; then
+      printf 'parent %s\n' "$parent"
+    fi
+    printf 'author %s\n' "$author"
+    printf 'committer %s\n\n' "$committer"
+    printf '%s\n' "$message_without_comments"
+  } | "$GIT_BIN" hash-object --stdin
+)"
+
+tmp_file="$(mktemp "${MSG_FILE}.change-id.XXXXXX")"
+trap 'rm -f "$tmp_file"' EXIT
+
+awk -v change_id="Change-Id: I${change_id}" '
+  BEGIN {
+    inserted = 0
+    in_trailers = 0
+  }
+
+  /^#/ {
+    if (!inserted) {
+      if (last_blank == 0) {
+        print ""
+      }
+      print change_id
+      inserted = 1
+    }
+    print
+    next
+  }
+
+  /^[A-Za-z0-9-]+:[[:space:]]/ {
+    if (!inserted && !in_trailers) {
+      print change_id
+      inserted = 1
+    }
+    in_trailers = 1
+    print
+    last_blank = 0
+    next
+  }
+
+  /^[[:space:]]*$/ {
+    print
+    last_blank = 1
+    next
+  }
+
+  {
+    in_trailers = 0
+    print
+    last_blank = 0
+  }
+
+  END {
+    if (!inserted) {
+      if (last_blank == 0) {
+        print ""
+      }
+      print change_id
+    }
+  }
+' "$MSG_FILE" > "$tmp_file"
+
+mv "$tmp_file" "$MSG_FILE"
+trap - EXIT
