@@ -139,6 +139,23 @@ def _finite(*values: Any) -> float | None:
     return None
 
 
+def _resolve_previous_close_for_pct(stock: dict[str, Any]) -> Any:
+    """Resolve previous close for realtime pct calculation.
+
+    When pre_close/previous_close are missing, fall back to deriving from
+    close and pct_chg instead of using the current close directly (which
+    would zero out the computed pct_chg).
+    """
+    direct = _finite(stock.get("pre_close"), stock.get("previous_close"))
+    if direct is not None:
+        return direct
+    close = _finite(stock.get("close"))
+    pct_chg = _finite(stock.get("pct_chg"))
+    if close and pct_chg is not None and pct_chg > -99:
+        return close / (1 + pct_chg / 100)
+    return close
+
+
 def _prefilter(factors: pd.DataFrame, max_fetch: int) -> pd.DataFrame:
     if factors.empty:
         return factors
@@ -379,11 +396,7 @@ def _refresh_waiting_market_with_current_minutes(
         snapshot = _minute_price_snapshot(
             bars,
             trade_date,
-            _finite(
-                record.get("pre_close"),
-                record.get("previous_close"),
-                record.get("close"),
-            ),
+            _resolve_previous_close_for_pct(record),
             record.get("vol"),
             record.get("amount"),
             record.get("amount_unit"),
@@ -508,17 +521,16 @@ def _load_and_score(
         if selection_state == "waiting_tail_window"
         else tail_bars
     )
+    previous_close = (
+        _resolve_previous_close_for_pct(stock)
+        if refresh_current_price
+        else stock.get("pre_close")
+    )
     price_snapshot = (
         _minute_price_snapshot(
             snapshot_bars,
             trade_date,
-            _finite(
-                stock.get("pre_close"),
-                stock.get("previous_close"),
-                stock.get("close"),
-            )
-            if refresh_current_price
-            else stock.get("pre_close"),
+            previous_close,
             stock.get("vol"),
             stock.get("amount"),
             stock.get("amount_unit"),

@@ -290,6 +290,58 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertAlmostEqual(row["close"], 6.02)
         self.assertAlmostEqual(row["pct_chg"], 1.006711, places=5)
 
+    def test_before_1450_pct_derives_previous_close_when_pre_close_missing(self):
+        from realtime_tail_premium_service import _resolve_previous_close_for_pct
+
+        # pre_close/previous_close 缺失时，应用 close 和 pct_chg 反推昨收，
+        # 而不是直接回退到当日 close（会导致 pct_chg 被错误计算为 0）。
+        market = pd.DataFrame([{
+            "ts_code": "600733.SH",
+            "name": "北汽蓝谷",
+            "close": 6.02,
+            "pre_close": None,
+            "previous_close": None,
+            "pct_chg": 1.006711,
+            "vol": 100_000,
+            "amount": 50_000_000,
+            "amount_unit": "yuan",
+        }])
+
+        def loader(ts_code, start, end, freq, trade_date):
+            return MinuteLoadResult(
+                pd.DataFrame([{
+                    "ts_code": ts_code,
+                    "trade_time": "2026-07-31 14:45:00",
+                    "open": 6.00,
+                    "high": 6.08,
+                    "low": 5.90,
+                    "close": 6.02,
+                    "vol": 6_000_000,
+                    "amount": 36_120_000,
+                }]),
+                "fixture",
+                [],
+            )
+
+        # 反推得到的昨收应接近 5.96，而不是当日 close 6.02
+        self.assertAlmostEqual(
+            _resolve_previous_close_for_pct(market.iloc[0].to_dict()),
+            5.96,
+            places=4,
+        )
+
+        result, _latest_times, _warnings = _refresh_waiting_market_with_current_minutes(
+            market,
+            "20260731",
+            datetime(2026, 7, 31, 14, 45),
+            loader,
+        )
+
+        row = result.iloc[0]
+        self.assertAlmostEqual(row["close"], 6.02)
+        # 涨幅应基于反推的昨收 5.96 计算，而不是被零化为接近 0
+        self.assertAlmostEqual(row["pct_chg"], 1.006711, places=4)
+
     def test_stale_waiting_refreshes_candidate_pool_before_final_screening(self):
         requested_codes = []
         extra = self.market.iloc[[0]].copy()
