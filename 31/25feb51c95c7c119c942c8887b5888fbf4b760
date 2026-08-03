@@ -1,0 +1,137 @@
+realtime_info_service.py
+  2b7746e4368c6cf6 57,75-117,284,326,1469,1478,1515,1548,1584
+tests/test_realtime_tail_premium_service.py
+  2b7746e4368c6cf6 20,42-43,125,347-368,529,533,540-545,547,552-557,561,563,566-578,581,588
+tests/test_realtime_info_service.py
+  2b7746e4368c6cf6 14,16,187-210,1215,1241-1295,1333
+realtime_tail_premium_service.py
+  2b7746e4368c6cf6 142-145,152-155,202,225-227,408,534
+tail_premium_scoring.py
+  2b7746e4368c6cf6 318-326,420-421,423,426
+tests/test_tail_premium_scoring.py
+  2b7746e4368c6cf6 78,80,83,85,119-136,139-165,168-169,172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "3125feb51c95c7c119c942c8887b5888fbf4b760",
+  "prompts": {
+    "2b7746e4368c6cf6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb769-69e9-7733-9893-d989e4851c2e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 281,
+      "total_deletions": 40,
+      "accepted_lines": 281,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 378,
+    "git_diff_deleted_lines": 37,
+    "ai_additions": 271,
+    "ai_accepted": 271,
+    "BYMC": 100,
+    "mixed_additions": 0,
+    "BYAC": 271,
+    "BYRC": 0,
+    "per_file": {
+      ".githooks/commit-msg": {
+        "BYMC": [
+          "1-100"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "57",
+          "75-117",
+          "284",
+          "326",
+          "1469",
+          "1478",
+          "1515",
+          "1548",
+          "1584"
+        ],
+        "BYRC": []
+      },
+      "realtime_tail_premium_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "142-145",
+          "152-155",
+          "202",
+          "225-227",
+          "408",
+          "534"
+        ],
+        "BYRC": []
+      },
+      "tail_premium_scoring.py": {
+        "BYMC": [],
+        "BYAC": [
+          "318-326",
+          "420-421",
+          "423",
+          "426"
+        ],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "14",
+          "16",
+          "187-210",
+          "1215",
+          "1241-1295",
+          "1333"
+        ],
+        "BYRC": []
+      },
+      "tests/test_realtime_tail_premium_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "20",
+          "42-43",
+          "125",
+          "347-368",
+          "529",
+          "533",
+          "540-545",
+          "547",
+          "552-557",
+          "561",
+          "563",
+          "566-578",
+          "581",
+          "588"
+        ],
+        "BYRC": []
+      },
+      "tests/test_tail_premium_scoring.py": {
+        "BYMC": [],
+        "BYAC": [
+          "78",
+          "80",
+          "83",
+          "85",
+          "119-136",
+          "139-165",
+          "168-169",
+          "172"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1785747550,
+  "requirement_id": ""
+}
