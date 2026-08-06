@@ -1,0 +1,218 @@
+tail_premium_scoring.py
+  2b7746e4368c6cf6 27-34,329-362,408,410,412-417,446-450,452,555-557,585-603,608-609,611-617,657
+tests/test_tail_premium_scoring.py
+  2b7746e4368c6cf6 166-233,310-340,342-374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "5fd91808e681f483af9071d8b6a49b7f083e210d",
+  "prompts": {
+    "2b7746e4368c6cf6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb769-69e9-7733-9893-d989e4851c2e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 221,
+      "total_deletions": 9,
+      "accepted_lines": 221,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 1436,
+    "git_diff_deleted_lines": 36,
+    "ai_additions": 220,
+    "ai_accepted": 220,
+    "BYMC": 1202,
+    "mixed_additions": 0,
+    "BYAC": 220,
+    "BYRC": 0,
+    "per_file": {
+      "app.py": {
+        "BYMC": [
+          "20",
+          "253-268"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/specs/2026-07-31-realtime-tail-premium-design.md": {
+        "BYMC": [
+          "55-57",
+          "66-72",
+          "76-86",
+          "110-114",
+          "127-130",
+          "140-141",
+          "179-182",
+          "189-190",
+          "193-203",
+          "208-228"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "docs/superpowers/specs/2026-08-05-market-news-summary-design.md": {
+        "BYMC": [
+          "1-61"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "market_news_summary_service.py": {
+        "BYMC": [
+          "1-409"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [
+          "28",
+          "814-888"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "529-530",
+          "608",
+          "933",
+          "1354-1365"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/news-summary-view.test.js": {
+        "BYMC": [
+          "1-39"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [
+          "1627-1732"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/controller/QuantController.java": {
+        "BYMC": [
+          "149-158"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/main/java/com/codec/quantserver/service/QuantPythonClient.java": {
+        "BYMC": [
+          "179-197"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java": {
+        "BYMC": [
+          "173-189"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [
+          "748-751"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "realtime_tail_premium_service.py": {
+        "BYMC": [
+          "456-458"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "strategy.py": {
+        "BYMC": [
+          "510-511",
+          "522",
+          "525",
+          "528-531",
+          "544-545",
+          "585",
+          "603-606"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tail_premium_scoring.py": {
+        "BYMC": [],
+        "BYAC": [
+          "27-34",
+          "329-362",
+          "408",
+          "410",
+          "412-417",
+          "446-450",
+          "452",
+          "555-557",
+          "585-603",
+          "608-609",
+          "611-617",
+          "657"
+        ],
+        "BYRC": []
+      },
+      "tests/test_market_news_summary_api.py": {
+        "BYMC": [
+          "1-35"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_market_news_summary_service.py": {
+        "BYMC": [
+          "1-179"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_service.py": {
+        "BYMC": [
+          "25",
+          "535-601"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_realtime_tail_premium_service.py": {
+        "BYMC": [
+          "3",
+          "452-495",
+          "556-559",
+          "563-570"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_tail_premium_scoring.py": {
+        "BYMC": [
+          "341"
+        ],
+        "BYAC": [
+          "166-233",
+          "310-340",
+          "342-374"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1786004389,
+  "requirement_id": ""
+}
