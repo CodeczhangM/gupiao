@@ -146,6 +146,16 @@ public class QuantController {
         return quantPythonClient.realtimeInfo(limit, forceRefresh);
     }
 
+    @GetMapping("/market-news-summary")
+    public Map<String, Object> marketNewsSummary(
+            @RequestParam(defaultValue = "all") String market,
+            @RequestParam(defaultValue = "8") int limit,
+            @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh,
+            @RequestParam(name = "use_ai", defaultValue = "true") boolean useAi) {
+        return quantPythonClient.marketNewsSummary(
+                market, limit, forceRefresh, useAi);
+    }
+
     @PostMapping("/free-review/build")
     public Map<String, Object> freeReviewBuild(
             @RequestParam(defaultValue = "false") boolean force) {

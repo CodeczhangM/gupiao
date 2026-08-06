@@ -170,6 +170,24 @@ class QuantControllerTest {
     }
 
     @Test
+    void marketNewsSummaryForwardsQueryToPythonClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.marketNewsSummary("all", 6, true, false))
+                .thenReturn(Map.of("summary_text", "ok"));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/market-news-summary")
+                        .param("market", "all")
+                        .param("limit", "6")
+                        .param("force_refresh", "true")
+                        .param("use_ai", "false"))
+                .andExpect(status().isOk());
+
+        verify(client).marketNewsSummary("all", 6, true, false);
+    }
+
+    @Test
     void freeReviewBuildForwardsForce() throws Exception {
         QuantPythonClient client = mock(QuantPythonClient.class);
         when(client.startFreeReviewBuild(true))

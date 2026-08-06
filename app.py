@@ -17,6 +17,7 @@ from data_service import get_trade_dates, sync_cached_market_data
 from intraday_monitor_service import build_intraday_monitor
 from market_cache import get_cache_status
 from morning_follow_service import build_morning_follow_monitor
+from market_news_summary_service import build_market_news_summary
 from overnight_monitor_service import build_overnight_monitor
 from free_review_models import FreeReviewQuery
 from indicator_settings import (
@@ -246,6 +247,25 @@ def realtime_info(
         )
     except Exception as exc:
         logger.exception("获取实时信息失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/market-news-summary")
+def market_news_summary(
+    market: str = Query("all", pattern=r"^(all|a_share|us)$"),
+    limit: int = Query(8, ge=1, le=20),
+    force_refresh: bool = False,
+    use_ai: bool = True,
+):
+    try:
+        return build_market_news_summary(
+            market=market,
+            limit=limit,
+            force_refresh=force_refresh,
+            use_ai=use_ai,
+        )
+    except Exception as exc:
+        logger.exception("获取消息面简报失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

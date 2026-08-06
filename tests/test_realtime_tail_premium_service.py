@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -448,6 +449,50 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertNotIn("600010.SH", codes)
         self.assertGreater(result["stocks"][0]["pct_chg"], 0)
 
+    @patch("realtime_tail_premium_service.current_score_version", return_value="test-score")
+    @patch("realtime_tail_premium_service.macd_provenance", return_value={})
+    @patch(
+        "tail_premium_scoring.load_macd_settings",
+        return_value={
+            "fast_period": 5,
+            "slow_period": 34,
+            "signal_period": 5,
+            "version": 1,
+        },
+    )
+    def test_stale_waiting_keeps_snapshot_candidates_when_minute_refresh_fails(
+        self,
+        _load_macd_settings,
+        _macd_provenance,
+        _current_score_version,
+    ):
+        market = self.market.iloc[[0]].copy()
+        market["pct_chg"] = 3.2
+        market["volume_ratio"] = 0.85
+        market["amount"] = 25_000_000
+
+        def loader(_ts_code, _start, _end, _freq, _trade_date):
+            raise RuntimeError("minute timeout")
+
+        result = build_realtime_tail_premium_monitor(
+            limit=20,
+            now=datetime(2026, 7, 31, 14, 20),
+            market_override=market,
+            history_override=self.history,
+            trade_date_override="20260731",
+            minute_loader=loader,
+            source_metadata={
+                "data_current": False,
+                "data_source": "previous_snapshot",
+            },
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        self.assertEqual(result["selection_state"], "waiting_tail_window")
+        self.assertEqual([row["ts_code"] for row in result["stocks"]], ["600001.SH"])
+        self.assertEqual(result["stocks"][0]["buyable_tail_signal"], "等待14:50")
+        self.assertIn("实时1分钟数据失败", result["warnings"][0])
+
     def test_stale_waiting_candidates_start_from_current_performance_not_prior_strength(self):
         prior_strong = self.market.iloc[[0]].copy()
         prior_strong["ts_code"] = "600020.SH"
@@ -508,14 +553,21 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         factors = pd.DataFrame([
             {
                 "ts_code": "600030.SH",
-                "pct_chg": 0.0,
-                "volume_ratio": 1.0,
-                "amount": 30_000_000,
-                "data_as_of": "2026-07-31 14:18:00",
+                "pct_chg": 2.0,
+                "volume_ratio": 0.8,
+                "amount": 20_000_000,
+                "data_as_of": "",
             },
             {
                 "ts_code": "600031.SH",
-                "pct_chg": -0.01,
+                "pct_chg": 1.99,
+                "volume_ratio": 3.0,
+                "amount": 90_000_000,
+                "data_as_of": "2026-07-31 14:18:00",
+            },
+            {
+                "ts_code": "600032.SH",
+                "pct_chg": 7.01,
                 "volume_ratio": 3.0,
                 "amount": 90_000_000,
                 "data_as_of": "2026-07-31 14:18:00",

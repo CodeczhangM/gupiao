@@ -745,6 +745,10 @@ def _load_realtime_intraday_signal_bars(
     industries = set(sector_potential["industry_name"].dropna().astype(str))
     candidates = market[market["industry"].astype(str).isin(industries)].copy()
     candidates = candidates[_is_mainboard_a_stock(candidates["ts_code"])].copy()
+    if "name" in candidates:
+        candidates = candidates[
+            ~candidates["name"].astype(str).str.upper().str.contains("ST")
+        ].copy()
     if candidates.empty:
         return {}
     for column in ("turnover_rate", "volume_ratio", "amount", "pct_chg"):

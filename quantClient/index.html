@@ -25,6 +25,7 @@
         <button :class="{ active: activeTab === 'intraday_monitor' }" @click="activeTab = 'intraday_monitor'; loadIntradayMonitor(false)">实时共振</button>
         <button :class="{ active: activeTab === 'overnight_monitor' }" @click="activeTab = 'overnight_monitor'; loadOvernightMonitor(false)">次日早盘跟进</button>
         <button :class="{ active: activeTab === 'realtime_info' }" @click="activeTab = 'realtime_info'">实时信息</button>
+        <button :class="{ active: activeTab === 'market_news' }" @click="activeTab = 'market_news'; loadMarketNewsSummary(false)">消息面</button>
         <button :class="{ active: activeTab === 'backtest' }" @click="activeTab = 'backtest'">回测</button>
         <button :class="{ active: activeTab === 'evaluation' }" @click="activeTab = 'evaluation'">AI评估</button>
         <button :class="{ active: activeTab === 'review' }" @click="activeTab = 'review'">交易复盘</button>
@@ -803,6 +804,88 @@
                 </tr>
                 <tr v-if="realtimeOvernightRows.length === 0">
                   <td colspan="10" class="empty">点击拉取实时信息后展示；14:50前仅提供预观察</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'market_news'" class="market-news-page">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>当日消息面简报</h3>
+              <span>
+                更新 {{ marketNewsSummary.updated_at || '--' }}
+                · {{ marketNewsSummary.ai_provider || 'rules' }}
+                · 情绪 {{ marketNewsSummary.sentiment || '--' }}
+              </span>
+            </div>
+            <button class="secondary" @click="loadMarketNewsSummary(true, true)" :disabled="marketNewsLoading">
+              {{ marketNewsLoading ? '刷新中' : '刷新消息' }}
+            </button>
+          </div>
+
+          <section v-if="marketNewsSummary.warnings && marketNewsSummary.warnings.length" class="cache-warning">
+            <strong>消息源提示</strong>
+            <span v-for="warning in marketNewsSummary.warnings" :key="warning">{{ warning }}</span>
+          </section>
+
+          <div class="market-news-summary">
+            <pre>{{ marketNewsSummary.summary_text || '暂无消息面简报，点击刷新消息。' }}</pre>
+            <div class="market-news-tags">
+              <span v-for="sector in (marketNewsSummary.focus_sectors || [])" :key="sector">{{ sector }}</span>
+              <em v-if="!marketNewsSummary.focus_sectors || !marketNewsSummary.focus_sectors.length">暂无集中板块</em>
+            </div>
+          </div>
+
+          <div class="grid three market-news-sections">
+            <article v-for="section in (marketNewsSummary.sections || [])" :key="section.name" class="mini-card">
+              <h4>{{ section.name }}</h4>
+              <ol>
+                <li
+                  v-for="bullet in (section.bullets || [])"
+                  :key="(bullet.text || bullet) + (bullet.sentiment_tag || '')"
+                  :class="'sentiment-' + (bullet.sentiment_tag || 'neutral')"
+                >
+                  <span class="news-sentiment-badge">
+                    {{ bullet.sentiment_label || '中性' }}
+                  </span>
+                  <span>{{ bullet.text || bullet }}</span>
+                </li>
+              </ol>
+            </article>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>市场</th>
+                  <th>影响</th>
+                  <th>标题</th>
+                  <th>来源</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in (marketNewsSummary.news || [])" :key="item.title + item.published_at">
+                  <td>{{ item.market === 'us' ? '美股' : 'A股' }}</td>
+                  <td>
+                    <span
+                      class="news-sentiment-badge"
+                      :class="'sentiment-' + (item.sentiment_tag || 'neutral')"
+                    >
+                      {{ item.sentiment_label || '中性' }}
+                    </span>
+                  </td>
+                  <td>{{ item.title || '--' }}</td>
+                  <td>{{ item.source || '--' }}</td>
+                  <td>{{ item.published_at || '--' }}</td>
+                </tr>
+                <tr v-if="!marketNewsSummary.news || marketNewsSummary.news.length === 0">
+                  <td colspan="5" class="empty">暂无新闻列表</td>
                 </tr>
               </tbody>
             </table>

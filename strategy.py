@@ -507,7 +507,8 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         or (macd_bullish and macd_recent_golden_cross)
         or (macd_bullish and macd_above_zero and macd_histogram_up)
     )
-    if not macd_signal_ok:
+    weak_macd_signal = bool(macd_bullish and macd_above_zero)
+    if not macd_signal_ok and not weak_macd_signal:
         return None
 
     kdj_golden_series = (k > d) & (k.shift(1) <= d.shift(1))
@@ -518,12 +519,16 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
     pct_chg = row.get("pct_chg_num", row.get("pct_chg", 0))
     amount = row.get("amount_num", row.get("amount", 0))
     tail_bias = _tail_next_day_bias(tail_1m, pct_chg=pct_chg)
-    score = (
+    macd_tier_base = (
         (70 if macd_above_zero and macd_golden_cross else 0)
         + (55 if macd_above_zero and macd_recent_golden_cross and not macd_golden_cross else 0)
-        + (45 if macd_above_zero and not macd_recent_golden_cross else 0)
+        + (45 if macd_above_zero and not macd_recent_golden_cross and macd_signal_ok else 0)
         + (35 if not macd_above_zero and macd_golden_cross else 0)
         + (25 if not macd_above_zero and macd_recent_golden_cross and not macd_golden_cross else 0)
+        + (28 if weak_macd_signal and not macd_signal_ok else 0)
+    )
+    score = (
+        macd_tier_base
         + (15 if macd_histogram_up else 0)
         + (20 if kdj_golden_cross else 12 if kdj_recent_golden_cross else 8 if kdj_bullish else 0)
         + (12 if bullish_stack_60m else 0)
@@ -536,6 +541,8 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         reason_parts = ["60分MACD水上金叉" if macd_above_zero else "60分MACD金叉"]
     elif macd_recent_golden_cross:
         reason_parts = ["60分MACD水上金叉延续" if macd_above_zero else "60分MACD金叉延续"]
+    elif weak_macd_signal and not macd_signal_ok:
+        reason_parts = ["60分MACD水上多头观察"]
     else:
         reason_parts = ["60分MACD水上多头走强" if macd_above_zero else "60分MACD多头走强"]
     if kdj_golden_cross:
@@ -575,6 +582,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         "kdj_golden_cross_60m": kdj_golden_cross,
         "kdj_recent_golden_cross_60m": kdj_recent_golden_cross,
         "kdj_bullish_60m": kdj_bullish,
+        "intraday_signal_tier": "strong" if macd_signal_ok else "weak",
         "intraday_signal_score": round(score, 2),
         "intraday_signal_reason": "、".join(reason_parts),
         **macd_provenance(macd_settings),
@@ -592,6 +600,10 @@ def _select_intraday_signal_stocks(
 
     candidates = sector_market.copy()
     candidates = candidates[_is_mainboard_a_stock(candidates["ts_code"])].copy()
+    if "name" in candidates:
+        candidates = candidates[
+            ~candidates["name"].astype(str).str.upper().str.contains("ST")
+        ].copy()
     if candidates.empty:
         return []
     candidates["turnover_num"] = _numeric_series(candidates, "turnover_rate")

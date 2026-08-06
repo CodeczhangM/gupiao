@@ -163,6 +163,74 @@ class TailPremiumScoringTests(unittest.TestCase):
         self.assertIn("当日封板买入受限", reasons["600013.SH"])
         self.assertIn("连续涨停后隔日兑现风险高", reasons["600014.SH"])
 
+    def test_tail_arbitrage_rejects_overheated_tail_turnover_and_position(self):
+        normal_history = _history("600020.SH")
+        normal_history.loc[normal_history.index[-8], "pct_chg"] = 9.8
+        hot_tail_history = _history("600021.SH")
+        hot_tail_history.loc[hot_tail_history.index[-8], "pct_chg"] = 9.8
+        high_turnover_history = _history("600022.SH")
+        high_turnover_history.loc[high_turnover_history.index[-8], "pct_chg"] = 9.8
+        huge_return_history = _history(
+            "600023.SH",
+            closes=[10.0] * 65,
+        )
+        huge_return_history.loc[huge_return_history.index[-8], "pct_chg"] = 9.8
+        high_position_history = _history(
+            "600024.SH",
+            closes=[10.0] * 65,
+        )
+        high_position_history.loc[high_position_history.index[-8], "pct_chg"] = 9.8
+        market = pd.DataFrame([
+            _market_row("600020.SH", tail_volume_ratio=2.2, turnover_rate=8),
+            _market_row("600021.SH", tail_volume_ratio=5.2, turnover_rate=8),
+            _market_row("600022.SH", tail_volume_ratio=2.2, turnover_rate=18.5),
+            _market_row(
+                "600023.SH",
+                close=16.0,
+                high=16.3,
+                pre_close=15.1,
+                tail_volume_ratio=2.2,
+                turnover_rate=8,
+            ),
+            _market_row(
+                "600024.SH",
+                close=14.0,
+                high=14.1,
+                pre_close=13.2,
+                tail_volume_ratio=2.2,
+                turnover_rate=13,
+            ),
+        ])
+
+        factors = build_daily_factor_frame(
+            market,
+            pd.concat(
+                [
+                    normal_history,
+                    hot_tail_history,
+                    high_turnover_history,
+                    huge_return_history,
+                    high_position_history,
+                ],
+                ignore_index=True,
+            ),
+            "20260731",
+            macd_settings={
+                "fast_period": 5,
+                "slow_period": 34,
+                "signal_period": 5,
+                "version": 1,
+            },
+        )
+        eligible = eligible_tail_universe(factors)
+
+        self.assertEqual(eligible["ts_code"].tolist(), ["600020.SH"])
+        reasons = factors.set_index("ts_code")["exclusion_reasons"].to_dict()
+        self.assertIn("尾盘量能过热", reasons["600021.SH"])
+        self.assertIn("换手过高隔日兑现风险", reasons["600022.SH"])
+        self.assertIn("近20日涨幅过热", reasons["600023.SH"])
+        self.assertIn("接近60日高位兑现风险", reasons["600024.SH"])
+
     def test_short_history_remains_but_cannot_receive_complete_trend_score(self):
         market = pd.DataFrame([_market_row()])
         short_history = _history().tail(30).copy()
@@ -238,6 +306,71 @@ class TailPremiumScoringTests(unittest.TestCase):
         self.assertIn("高位放量滞涨", scored["risk_items"])
         self.assertIn("长上影线", scored["risk_items"])
         self.assertIn("高位高换手", scored["risk_items"])
+
+    def test_overheated_tail_volume_is_penalized_more_than_orderly_tail(self):
+        orderly = {
+            "tail_return_after_1430": 0.8,
+            "opening_auction_return": 0.1,
+            "tail_close_position": 0.85,
+            "tail_volume_ratio": 2.2,
+            "pct_chg": 5.0,
+            "open": 10.1,
+            "close": 10.5,
+            "high": 10.6,
+            "low": 10.0,
+            "pre_close": 10.0,
+            "turnover_rate": 8,
+            "volume_ratio": 2,
+            "return20": 20,
+            "high_position_60": 0.75,
+        }
+        overheated = {
+            **orderly,
+            "tail_volume_ratio": 5.5,
+            "tail_return_after_1430": 1.4,
+        }
+
+        orderly_scored = score_tail_premium_row(orderly)
+        overheated_scored = score_tail_premium_row(overheated)
+
+        self.assertIn("尾盘或量能过热", overheated_scored["risk_items"])
+        self.assertLess(
+            overheated_scored["premium_score"],
+            orderly_scored["premium_score"],
+        )
+
+    def test_weak_sector_shrunken_tail_without_push_is_penalized(self):
+        weak = {
+            "tail_return_after_1430": 0.0,
+            "opening_auction_return": 0.0,
+            "tail_close_position": 0.7,
+            "tail_volume_ratio": 0.7,
+            "pct_chg": 3.5,
+            "open": 10.1,
+            "close": 10.4,
+            "high": 10.5,
+            "low": 10.0,
+            "pre_close": 10.0,
+            "turnover_rate": 8,
+            "volume_ratio": 1.0,
+            "return20": 20,
+            "high_position_60": 0.75,
+            "sector_score": 6,
+        }
+        strong_sector = {**weak, "sector_score": 12}
+
+        weak_scored = score_tail_premium_row(weak)
+        strong_scored = score_tail_premium_row(strong_sector)
+
+        self.assertIn("弱板块尾盘缩量无推动", weak_scored["risk_items"])
+        self.assertNotIn(
+            "弱板块尾盘缩量无推动",
+            strong_scored["risk_items"],
+        )
+        self.assertLess(
+            weak_scored["premium_score"],
+            strong_scored["premium_score"],
+        )
 
     def test_ranking_is_deterministic_and_defaults_to_top20(self):
         rows = []

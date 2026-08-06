@@ -24,6 +24,14 @@ MODULE_WEIGHTS = {
     "position": 10.0,
 }
 MIN_AVERAGE_AMOUNT_YUAN = 50_000_000.0
+TAIL_VOLUME_HARD_REJECT = 5.0
+TAIL_VOLUME_SOFT_RISK = 3.0
+TURNOVER_HARD_REJECT = 18.0
+TURNOVER_SOFT_RISK = 12.0
+RETURN20_HARD_REJECT = 50.0
+RETURN20_SOFT_RISK = 35.0
+HIGH_POSITION_HARD_REJECT = 0.98
+HIGH_POSITION_SOFT_RISK = 0.95
 
 
 def current_score_version(settings: dict[str, Any] | None = None) -> str:
@@ -318,6 +326,40 @@ def build_daily_factor_frame(
         pct_chg = _number(record.get("pct_chg"), 0) or 0
         if pct_chg > 7:
             reasons.append("当日涨幅超过7%")
+        tail_volume = _number(record.get("tail_volume_ratio"))
+        if (
+            tail_volume is not None
+            and tail_volume > TAIL_VOLUME_HARD_REJECT
+        ):
+            reasons.append("尾盘量能过热")
+        turnover = _number(record.get("turnover_rate"))
+        if (
+            turnover is not None
+            and turnover > TURNOVER_HARD_REJECT
+        ):
+            reasons.append("换手过高隔日兑现风险")
+        return20 = _number(metrics.get("return20"))
+        if (
+            return20 is not None
+            and return20 > RETURN20_HARD_REJECT
+        ):
+            reasons.append("近20日涨幅过热")
+        high_position = _number(metrics.get("high_position_60"))
+        if (
+            high_position is not None
+            and high_position > HIGH_POSITION_HARD_REJECT
+            and (
+                (
+                    return20 is not None
+                    and return20 > RETURN20_SOFT_RISK
+                )
+                or (
+                    turnover is not None
+                    and turnover > TURNOVER_SOFT_RISK
+                )
+            )
+        ):
+            reasons.append("接近60日高位兑现风险")
         if int(metrics.get("limit_count_20d") or 0) < 1:
             reasons.append("近20日无涨停基因")
         if metrics.get("limit_sealed"):
@@ -363,10 +405,16 @@ def eligible_tail_universe(factors: pd.DataFrame) -> pd.DataFrame:
 
 
 def _tail_return_points(value: float) -> float:
-    if value >= 1:
+    if 0.5 < value <= 1.1:
         return 20
-    if value >= 0.5:
+    if value == 0.5 or 1.1 < value <= 1.3:
         return 15
+    if value > 1.3:
+        return 3
+    if value >= 0.3:
+        return 15
+    if value >= 0.1:
+        return 10
     if value >= 0:
         return 5
     return -10
@@ -395,9 +443,13 @@ def _close_position_points(value: float) -> float:
 def _tail_volume_points(ratio: float, tail_return: float) -> float:
     if ratio > 3 and tail_return < 0:
         return -10
-    if 1.2 <= ratio <= 2:
+    if ratio > TAIL_VOLUME_HARD_REJECT:
+        return -15
+    if TAIL_VOLUME_SOFT_RISK < ratio <= TAIL_VOLUME_HARD_REJECT:
+        return -5
+    if 1.2 <= ratio <= TAIL_VOLUME_SOFT_RISK:
         return 10
-    if 1 <= ratio < 1.2 or 2 < ratio <= 3:
+    if 1 <= ratio < 1.2:
         return 5
     return 0
 
@@ -500,7 +552,9 @@ def _position_score(row: dict[str, Any]) -> float:
     else:
         points = 3.0
     if high_position is not None:
-        if high_position >= 0.98:
+        if high_position >= HIGH_POSITION_HARD_REJECT:
+            points -= 6
+        elif high_position >= HIGH_POSITION_SOFT_RISK:
             points -= 3
         elif 0.6 <= high_position <= 0.9:
             points += 2
@@ -528,14 +582,39 @@ def _risk(row: dict[str, Any]) -> tuple[float, list[str]]:
     if shadow >= 0.45:
         risks.append("长上影线")
         score += 8
-    if position >= 0.9 and turnover > 25:
+    if return20 > RETURN20_HARD_REJECT:
+        risks.append("近20日涨幅过热")
+        score += 12
+    elif return20 > RETURN20_SOFT_RISK:
+        risks.append("短线涨幅偏高")
+        score += 6
+    if position > HIGH_POSITION_HARD_REJECT:
+        risks.append("接近60日高位兑现风险")
+        score += 12
+    elif position >= HIGH_POSITION_SOFT_RISK:
+        risks.append("60日高位附近")
+        score += 6
+    if turnover > TURNOVER_HARD_REJECT:
+        risks.append("换手过高隔日兑现风险")
+        score += 12
+    elif turnover > TURNOVER_SOFT_RISK:
+        risks.append("换手偏高")
+        score += 6
+    if position >= 0.9 and turnover > 15:
         risks.append("高位高换手")
         score += 8
     tail_return = _number(row.get("tail_return_after_1430"), 0) or 0
     tail_volume = _number(row.get("tail_volume_ratio"), 0) or 0
-    if tail_return > 1.5 or tail_volume > 3.8:
+    sector_score = _sector_score(row)
+    if tail_return > 1.8 or tail_volume > TAIL_VOLUME_HARD_REJECT:
         risks.append("尾盘或量能过热")
-        score += 6
+        score += 15
+    elif tail_return > 1.3 or tail_volume > TAIL_VOLUME_SOFT_RISK:
+        risks.append("尾盘或量能过热")
+        score += 8
+    if sector_score < 9 and tail_return <= 0.1 and 0 < tail_volume < 1.0:
+        risks.append("弱板块尾盘缩量无推动")
+        score += 10
     return min(40.0, score), list(dict.fromkeys(risks))
 
 
@@ -575,7 +654,7 @@ def score_tail_premium_row(row: dict[str, Any] | pd.Series) -> dict[str, Any]:
         reasons.append("尾盘承接与强度较好")
     if sector_score >= 9:
         reasons.append("所属板块强势")
-    if limit_score >= 10:
+    if limit_score >= 3:
         reasons.append("具备近期涨停基因")
     if trend_score >= 7:
         reasons.append("均线与MACD趋势占优")

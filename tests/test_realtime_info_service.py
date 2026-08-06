@@ -22,6 +22,7 @@ from realtime_info_service import (
     _snapshot_supports_realtime_filters,
     _trading_session_progress,
 )
+from strategy import _macd_kdj_60m_signal
 from tests.test_advantage_stock_scoring import build_60min_bars, build_tail_1min_bars, water_macd_kdj_cross_closes
 
 
@@ -530,6 +531,74 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertEqual(requested_codes, ["600202.SH"])
         self.assertEqual(list(result), ["600202.SH"])
+
+    def test_signal_minutes_skip_st_named_candidates(self):
+        requested_codes = []
+        market = pd.DataFrame([{
+            "ts_code": "600203.SH",
+            "name": "ST风险",
+            "industry": "机器人",
+            "turnover_rate": 3.0,
+            "volume_ratio": 1.4,
+            "amount": 300_000,
+            "pct_chg": 3.0,
+        }])
+        sectors = pd.DataFrame([{"industry_name": "机器人"}])
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            requested_codes.append(ts_code)
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        result = _load_realtime_intraday_signal_bars(
+            market,
+            sectors,
+            "20260729",
+            datetime(2026, 7, 29, 14, 50),
+            minute_loader=minute_loader,
+        )
+
+        self.assertEqual(requested_codes, [])
+        self.assertEqual(result, {})
+
+    def test_60m_water_bullish_without_recent_cross_is_weak_intraday_signal(self):
+        closes = [
+            10.0, 10.0358, 10.0717, 10.1075, 10.1434, 10.1792,
+            10.2151, 10.2509, 10.2867, 10.3226, 10.3584, 10.3943,
+            10.4301, 10.4659, 10.5018, 10.5376, 10.5735, 10.6093,
+            10.6452, 10.681, 10.7168, 10.7527, 10.7885, 10.8244,
+            10.8602, 10.896, 10.9319, 10.9677, 11.0036, 11.0394,
+            11.0753, 11.1111, 11.1469, 11.1828, 11.2186, 11.2545,
+            11.2903, 11.3261, 11.362, 11.3978, 11.4337, 11.4695,
+            11.3509, 11.2277, 11.2064, 11.2415, 11.2761, 11.1785,
+            11.201, 11.1253, 11.1561, 11.1914, 11.1546, 11.0982,
+            11.0827, 11.0018, 11.0787, 11.1499, 11.1911, 11.2468,
+            11.3263, 11.3883, 11.3801, 11.3343, 11.3571, 11.3624,
+            11.3531,
+        ]
+        row = pd.Series({
+            "ts_code": "600777.SH",
+            "name": "弱共振",
+            "pct_chg": 3.2,
+            "turnover_rate": 5.0,
+            "volume_ratio": 1.4,
+            "amount": 300_000_000,
+        })
+
+        signal = _macd_kdj_60m_signal(
+            row,
+            build_60min_bars("600777.SH", closes),
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["intraday_signal_tier"], "weak")
+        self.assertTrue(signal["macd_bullish_60m"])
+        self.assertTrue(signal["macd_above_zero_60m"])
+        self.assertFalse(signal["macd_histogram_up_60m"])
+        self.assertIn("60分MACD水上多头观察", signal["intraday_signal_reason"])
 
     def test_snapshot_supports_relaxed_realtime_filter_candidates(self):
         market = pd.DataFrame([{

@@ -526,6 +526,8 @@ createApp({
       realtimeInfo: {},
       realtimeInfoAutoRefresh: false,
       realtimeInfoTimer: null,
+      marketNewsLoading: false,
+      marketNewsSummary: {},
       sectorPotentialRefreshing: false,
       sectorPotentialTimer: null,
       freeReviewMeta: {},
@@ -603,6 +605,7 @@ createApp({
         intraday_monitor: '实时共振监控',
         overnight_monitor: '次日早盘跟进',
         realtime_info: '实时信息',
+        market_news: '消息面',
         reports: '历史报告',
         backtest: '策略回测',
         evaluation: 'AI 推荐评估',
@@ -927,6 +930,7 @@ createApp({
         if (this.activeTab === 'intraday_monitor') await this.loadIntradayMonitor(false, false);
         if (this.activeTab === 'overnight_monitor') await this.loadOvernightMonitor(false);
         if (this.activeTab === 'realtime_info') await this.loadRealtimeInfo(false);
+        if (this.activeTab === 'market_news') await this.loadMarketNewsSummary(false);
       } catch (error) {
         this.error = error.message;
       } finally {
@@ -1346,6 +1350,19 @@ createApp({
     toggleRealtimeInfoMonitor() {
       if (this.realtimeInfoAutoRefresh) this.startRealtimeInfoMonitor();
       else this.stopRealtimeInfoMonitor();
+    },
+    async loadMarketNewsSummary(showError = true, forceRefresh = false) {
+      this.marketNewsLoading = true;
+      try {
+        const forceQuery = forceRefresh ? '&force_refresh=true' : '';
+        this.marketNewsSummary = (
+          await this.request(`/market-news-summary?market=all&limit=8${forceQuery}`)
+        ) || {};
+      } catch (error) {
+        if (showError) this.error = error.message;
+      } finally {
+        this.marketNewsLoading = false;
+      }
     },
     async refreshSectorPotential() {
       this.sectorPotentialRefreshing = true;

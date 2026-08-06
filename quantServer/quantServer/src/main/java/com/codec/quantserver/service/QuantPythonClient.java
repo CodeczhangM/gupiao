@@ -176,6 +176,25 @@ public class QuantPythonClient {
                 .body(mapType());
     }
 
+    public Map<String, Object> marketNewsSummary(
+            String market, int limit, boolean forceRefresh, boolean useAi) {
+        String safeMarket = switch (market == null ? "all" : market) {
+            case "a_share", "us" -> market;
+            default -> "all";
+        };
+        int safeLimit = Math.max(1, Math.min(limit, 20));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/market-news-summary")
+                        .queryParam("market", safeMarket)
+                        .queryParam("limit", safeLimit)
+                        .queryParam("force_refresh", forceRefresh)
+                        .queryParam("use_ai", useAi)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
     public Map<String, Object> startFreeReviewBuild(boolean force) {
         return restClient.post()
                 .uri(uriBuilder -> uriBuilder
