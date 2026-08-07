@@ -1,0 +1,37 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "ffee7954c2b105fb60ad53d7b83758fe3f5bd0c2",
+  "prompts": {},
+  "commit_stats": {
+    "git_diff_added_lines": 43,
+    "git_diff_deleted_lines": 1,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 43,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "financial_cache.py": {
+        "BYMC": [
+          "20",
+          "91-92",
+          "100-113"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_financial_cache.py": {
+        "BYMC": [
+          "68-93"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1786073498,
+  "requirement_id": ""
+}
