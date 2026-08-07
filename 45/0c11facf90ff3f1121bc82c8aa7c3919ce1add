@@ -1,0 +1,64 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "450c11facf90ff3f1121bc82c8aa7c3919ce1add",
+  "prompts": {},
+  "commit_stats": {
+    "git_diff_added_lines": 52,
+    "git_diff_deleted_lines": 0,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 52,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "quantClient/free-review-layout.test.js": {
+        "BYMC": [
+          "42-45"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/free-review-utils.js": {
+        "BYMC": [
+          "103-119"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/free-review-utils.test.js": {
+        "BYMC": [
+          "37-50"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [
+          "215"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [
+          "750-751",
+          "1143-1152"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [
+          "1512-1515"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1786074098,
+  "requirement_id": ""
+}
