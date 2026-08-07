@@ -87,6 +87,35 @@ def financial_fixture():
     return pd.DataFrame(rows)
 
 
+def financial_event_fixture():
+    return pd.DataFrame([
+        {
+            "ts_code": "600001.SH",
+            "end_date": "20251231",
+            "ann_date": "20260401",
+            "update_flag": "1",
+            "profit_dedt": 80_000_000,
+            "roe": 10,
+        },
+        {
+            "ts_code": "600001.SH",
+            "end_date": "20260331",
+            "ann_date": "20260420",
+            "update_flag": "1",
+            "profit_dedt": 100_000_000,
+            "roe": 11,
+        },
+        {
+            "ts_code": "600001.SH",
+            "end_date": "20260630",
+            "ann_date": "20260715",
+            "update_flag": "1",
+            "profit_dedt": 260_000_000,
+            "roe": 12,
+        },
+    ])
+
+
 class FreeReviewScoringTests(unittest.TestCase):
     def test_eligible_universe_excludes_risk_suspended_and_new_rows(self):
         import free_review_scoring
@@ -162,6 +191,59 @@ class FreeReviewScoringTests(unittest.TestCase):
 
         self.assertEqual(result.iloc[0]["profit_state"], "loss")
         self.assertEqual(result.iloc[0]["valuation_score"], 0)
+
+    def test_build_snapshot_derives_financial_event_fields(self):
+        import free_review_scoring
+
+        result = free_review_scoring.build_review_snapshot(
+            market_fixture(),
+            history_fixture(),
+            financial_event_fixture(),
+            "20260730",
+        )
+
+        row = result.iloc[0]
+        self.assertEqual(row["deducted_netprofit"], 160_000_000)
+        self.assertEqual(row["financial_growth_basis"], "single_quarter_qoq")
+        self.assertAlmostEqual(row["deducted_netprofit_growth"], 60.0)
+        self.assertEqual(row["deducted_netprofit_threshold_hit"], 1)
+        self.assertEqual(row["financial_growth_threshold_hit"], 1)
+        self.assertEqual(row["financial_event_hit"], 1)
+        self.assertEqual(row["financial_statement_end_date"], "20260630")
+        self.assertEqual(row["financial_statement_ann_date"], "20260715")
+        self.assertGreater(row["financial_event_score"], 50)
+        self.assertGreaterEqual(row["sector_financial_event_score"], 0)
+
+    def test_financial_event_handles_non_positive_previous_profit_conservatively(self):
+        import free_review_scoring
+
+        financial = pd.DataFrame([
+            {
+                "ts_code": "600001.SH",
+                "end_date": "20260331",
+                "ann_date": "20260420",
+                "update_flag": "1",
+                "profit_dedt": -10_000_000,
+            },
+            {
+                "ts_code": "600001.SH",
+                "end_date": "20260630",
+                "ann_date": "20260715",
+                "update_flag": "1",
+                "profit_dedt": 80_000_000,
+            },
+        ])
+        result = free_review_scoring.build_review_snapshot(
+            market_fixture(),
+            history_fixture(),
+            financial,
+            "20260730",
+        )
+
+        row = result.iloc[0]
+        self.assertTrue(pd.isna(row["deducted_netprofit_growth"]))
+        self.assertEqual(row["financial_growth_threshold_hit"], 0)
+        self.assertEqual(row["financial_event_hit"], 0)
 
 
 if __name__ == "__main__":

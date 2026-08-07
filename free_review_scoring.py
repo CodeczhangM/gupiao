@@ -29,6 +29,16 @@ FINANCIAL_COLUMNS = [
     "q_sales_yoy", "q_netprofit_yoy", "ocf_yoy",
     "basic_eps_yoy", "rd_exp",
 ]
+FINANCIAL_EVENT_COLUMNS = [
+    "deducted_netprofit", "deducted_netprofit_growth",
+    "financial_growth_basis",
+    "deducted_netprofit_threshold_hit",
+    "financial_growth_threshold_hit", "financial_event_hit",
+    "financial_statement_end_date", "financial_statement_ann_date",
+    "announcement_return_3d", "announcement_return_5d",
+    "announcement_return_10d", "announcement_max_return_10d",
+    "financial_event_score", "sector_financial_event_score",
+]
 
 
 def _numeric(data: pd.DataFrame, column: str) -> pd.Series:
@@ -218,6 +228,200 @@ def _financial_latest(
     return latest, improvements
 
 
+def _single_quarter_profit(group: pd.DataFrame) -> pd.DataFrame:
+    data = group.sort_values(["end_date", "ann_date"]).copy()
+    data["profit_dedt_num"] = _numeric(data, "profit_dedt")
+    data["year"] = data["end_date"].astype(str).str[:4]
+    data["month"] = pd.to_numeric(
+        data["end_date"].astype(str).str[4:6],
+        errors="coerce",
+    )
+    data["single_quarter_profit"] = data["profit_dedt_num"]
+    for _year, year_group in data.groupby("year"):
+        ordered = year_group.sort_values("month")
+        prev_cumulative = ordered["profit_dedt_num"].shift(1)
+        mask = ordered["month"].isin([6, 9, 12]) & prev_cumulative.notna()
+        data.loc[ordered.index[mask], "single_quarter_profit"] = (
+            ordered.loc[mask, "profit_dedt_num"] - prev_cumulative.loc[mask]
+        )
+    return data
+
+
+def _growth_pct(current: float | None, previous: float | None) -> float | None:
+    if current is None or previous is None:
+        return None
+    if pd.isna(current) or pd.isna(previous) or previous <= 0:
+        return None
+    return float((current / previous - 1) * 100)
+
+
+def _announcement_reaction(
+    history_group: pd.DataFrame,
+    ann_date: str,
+) -> dict[str, float | None]:
+    empty = {
+        "announcement_return_3d": None,
+        "announcement_return_5d": None,
+        "announcement_return_10d": None,
+        "announcement_max_return_10d": None,
+    }
+    if history_group is None or history_group.empty or not ann_date:
+        return empty
+    data = history_group.sort_values("trade_date").copy()
+    data["trade_date"] = data["trade_date"].astype(str)
+    data["close_num"] = _numeric(data, "close")
+    data["high_num"] = _numeric(data, "high").fillna(data["close_num"])
+    after = data[data["trade_date"] >= str(ann_date)]
+    if after.empty:
+        return empty
+    start_index = after.index[0]
+    position = data.index.get_loc(start_index)
+    baseline = (
+        data["close_num"].iloc[position - 1]
+        if position > 0 else data["close_num"].iloc[position]
+    )
+    if pd.isna(baseline) or baseline == 0:
+        return empty
+    window = data.iloc[position:position + 10].copy()
+    result = dict(empty)
+    for days in (3, 5, 10):
+        if len(window) >= days and pd.notna(window["close_num"].iloc[days - 1]):
+            result[f"announcement_return_{days}d"] = round(
+                float((window["close_num"].iloc[days - 1] / baseline - 1) * 100),
+                4,
+            )
+    highs = window["high_num"].dropna()
+    if not highs.empty:
+        result["announcement_max_return_10d"] = round(
+            float((highs.max() / baseline - 1) * 100),
+            4,
+        )
+    return result
+
+
+def _scale_score(
+    value: float | None,
+    lower: float,
+    upper: float,
+    points: float,
+) -> float:
+    if value is None or pd.isna(value) or upper <= lower:
+        return 0.0
+    return max(0.0, min((float(value) - lower) / (upper - lower), 1.0)) * points
+
+
+def _financial_event_score(
+    profit: float | None,
+    growth: float | None,
+    basis: str,
+    reaction: dict[str, float | None],
+    end_date: str | None,
+) -> float:
+    score = 0.0
+    if profit is not None and pd.notna(profit) and profit >= 50_000_000:
+        score += 20
+        score += _scale_score(profit, 50_000_000, 500_000_000, 15)
+    if growth is not None and pd.notna(growth) and growth >= 50:
+        score += 20
+        score += _scale_score(growth, 50, 200, 15)
+    returns = [
+        reaction.get("announcement_return_3d"),
+        reaction.get("announcement_return_5d"),
+        reaction.get("announcement_return_10d"),
+        reaction.get("announcement_max_return_10d"),
+    ]
+    best_return = max(
+        [float(value) for value in returns if value is not None and pd.notna(value)],
+        default=None,
+    )
+    score += _scale_score(best_return, 0, 20, 15)
+    if basis == "single_quarter_qoq":
+        score += 10
+    elif basis == "cumulative_period":
+        score += 6
+    if end_date and str(end_date)[4:8] in {"0331", "0630", "0930", "1231"}:
+        score += 5
+    return round(max(0, min(score, 100)), 2)
+
+
+def _build_financial_events(
+    financial: pd.DataFrame,
+    history_groups: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    if (
+        financial is None or financial.empty
+        or "profit_dedt" not in financial.columns
+    ):
+        return pd.DataFrame(columns=["ts_code", *FINANCIAL_EVENT_COLUMNS[:-1]])
+    data = financial.copy()
+    data["ann_date"] = data.get("ann_date", "").astype(str)
+    data["end_date"] = data.get("end_date", "").astype(str)
+    data["_updated"] = (
+        data.get("update_flag", pd.Series("", index=data.index))
+        .astype(str)
+        .eq("1")
+        .astype(int)
+    )
+    data = data.sort_values(["ts_code", "end_date", "ann_date", "_updated"])
+    data = data.groupby(["ts_code", "end_date"], as_index=False).tail(1)
+    rows: list[dict[str, Any]] = []
+    for code, group in data.groupby("ts_code"):
+        ordered = _single_quarter_profit(group).sort_values("end_date").reset_index(drop=True)
+        valid = ordered.dropna(subset=["profit_dedt_num"])
+        if valid.empty:
+            continue
+        latest = valid.iloc[-1]
+        latest_position = int(latest.name)
+        profit = latest.get("single_quarter_profit")
+        previous_single = (
+            ordered.iloc[latest_position - 1].get("single_quarter_profit")
+            if latest_position > 0 else None
+        )
+        growth = _growth_pct(profit, previous_single)
+        basis = "single_quarter_qoq" if growth is not None else "unavailable"
+        if growth is None and latest_position > 0:
+            previous_cumulative = ordered.iloc[latest_position - 1].get("profit_dedt_num")
+            growth = _growth_pct(latest.get("profit_dedt_num"), previous_cumulative)
+            if growth is not None:
+                basis = "cumulative_period"
+                profit = latest.get("profit_dedt_num")
+        reaction = _announcement_reaction(
+            history_groups.get(str(code), pd.DataFrame()),
+            str(latest.get("ann_date") or ""),
+        )
+        profit_hit = int(
+            profit is not None and pd.notna(profit) and float(profit) >= 50_000_000
+        )
+        growth_hit = int(
+            growth is not None and pd.notna(growth) and float(growth) >= 50
+        )
+        rows.append({
+            "ts_code": str(code),
+            "deducted_netprofit": (
+                float(profit) if profit is not None and pd.notna(profit) else None
+            ),
+            "deducted_netprofit_growth": (
+                round(float(growth), 4)
+                if growth is not None and pd.notna(growth) else None
+            ),
+            "financial_growth_basis": basis,
+            "deducted_netprofit_threshold_hit": profit_hit,
+            "financial_growth_threshold_hit": growth_hit,
+            "financial_event_hit": int(profit_hit == 1 and growth_hit == 1),
+            "financial_statement_end_date": str(latest.get("end_date") or ""),
+            "financial_statement_ann_date": str(latest.get("ann_date") or ""),
+            **reaction,
+            "financial_event_score": _financial_event_score(
+                profit,
+                growth,
+                basis,
+                reaction,
+                str(latest.get("end_date") or ""),
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
 def _clip_score(value: float, maximum: float) -> float:
     return round(float(max(0, min(value, maximum))), 2)
 
@@ -267,6 +471,40 @@ def build_review_snapshot(
     result["financial_improvement_count"] = (
         result["ts_code"].astype(str).map(improvements).fillna(0).astype(int)
     )
+    financial_events = _build_financial_events(financial, history_groups)
+    if not financial_events.empty:
+        result = result.merge(financial_events, on="ts_code", how="left")
+    else:
+        for column in FINANCIAL_EVENT_COLUMNS:
+            result[column] = None
+    for column in (
+        "deducted_netprofit_threshold_hit",
+        "financial_growth_threshold_hit",
+        "financial_event_hit",
+    ):
+        result[column] = pd.to_numeric(
+            result.get(column, pd.Series(0, index=result.index)),
+            errors="coerce",
+        ).fillna(0).astype(int)
+    result["financial_event_score"] = pd.to_numeric(
+        result.get("financial_event_score", pd.Series(0, index=result.index)),
+        errors="coerce",
+    ).fillna(0)
+    sector_event = (
+        result.dropna(subset=["industry"])
+        .groupby("industry")
+        .agg(
+            avg_event=("financial_event_score", "mean"),
+            hit_ratio=("financial_event_hit", "mean"),
+        )
+    )
+    sector_event["sector_financial_event_score"] = (
+        sector_event["avg_event"].fillna(0) * 0.7
+        + sector_event["hit_ratio"].fillna(0) * 100 * 0.3
+    ).clip(0, 100).round(2)
+    result["sector_financial_event_score"] = result["industry"].map(
+        sector_event["sector_financial_event_score"].to_dict()
+    ).fillna(0)
 
     score_inputs = [
         "ma20_slope", "ma60_slope", "ret_20", "position_60",
@@ -356,6 +594,8 @@ def build_review_snapshot(
             reasons.append("量价活跃")
         if scores["financial_quality_score"] >= 12:
             reasons.append("财务质量较好")
+        if int(row.get("financial_event_hit") or 0) == 1:
+            reasons.append("财报扣非增长")
         missing = sorted(
             field for field in score_inputs
             if row.get(field) is None or pd.isna(row.get(field))
@@ -370,6 +610,8 @@ def build_review_snapshot(
                 "financial_growth_score",
             )
         ) - scores["risk_penalty"]
+        total += float(row.get("financial_event_score") or 0) * 0.12
+        total += float(row.get("sector_financial_event_score") or 0) * 0.06
         rows.append({
             **row,
             **scores,
