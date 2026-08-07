@@ -122,14 +122,23 @@ def _complete_periods(periods: list[str]) -> set[str]:
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                f"""SELECT end_date FROM financial_cache_sync
-                WHERE source_name='fina_indicator_vip'
-                  AND status='complete'
-                  AND end_date IN ({placeholders})""",
+                f"""SELECT sync.end_date,
+                    SUM(CASE
+                        WHEN cache.profit_dedt IS NOT NULL THEN 1 ELSE 0
+                    END) AS profit_dedt_count
+                FROM financial_cache_sync sync
+                LEFT JOIN financial_indicator_cache cache
+                    ON cache.end_date = sync.end_date
+                   AND cache.source_name = sync.source_name
+                WHERE sync.source_name='fina_indicator_vip'
+                  AND sync.status='complete'
+                  AND sync.end_date IN ({placeholders})
+                GROUP BY sync.end_date""",
                 tuple(periods),
             )
             return {
                 str(row["end_date"]) for row in cursor.fetchall()
+                if int(row.get("profit_dedt_count") or 0) > 0
             }
 
 

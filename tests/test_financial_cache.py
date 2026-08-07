@@ -135,6 +135,28 @@ class FinancialCacheTests(unittest.TestCase):
         self.assertEqual(result["synced_periods"], 1)
         self.assertEqual(result["cached_periods"], 1)
 
+    def test_complete_periods_requires_profit_dedt_coverage(self):
+        import financial_cache
+
+        cursor, connection = fake_connection()
+        cursor.fetchall.return_value = [
+            {"end_date": "20260630", "profit_dedt_count": 0},
+            {"end_date": "20260331", "profit_dedt_count": 12},
+        ]
+        with (
+            patch.object(financial_cache, "_schema_ready", True),
+            patch(
+                "financial_cache.get_connection",
+                return_value=connection,
+            ),
+        ):
+            result = financial_cache._complete_periods([
+                "20260630",
+                "20260331",
+            ])
+
+        self.assertEqual(result, {"20260331"})
+
     def test_point_in_time_selection_excludes_future_announcements(self):
         import financial_cache
 
