@@ -17,6 +17,7 @@ FINANCIAL_NUMERIC_FIELDS = [
     "ocf_to_or", "q_ocf_to_sales",
     "tr_yoy", "or_yoy", "netprofit_yoy", "dt_netprofit_yoy",
     "q_sales_yoy", "q_netprofit_yoy", "ocf_yoy",
+    "profit_dedt",
     "basic_eps_yoy", "rd_exp",
 ]
 FINANCIAL_FIELDS = ",".join(
@@ -87,6 +88,8 @@ def init_financial_cache() -> None:
             error_message TEXT NULL,
             PRIMARY KEY (source_name, end_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE financial_indicator_cache
+            ADD COLUMN profit_dedt DOUBLE NULL""",
     ]
     with _schema_lock:
         if _schema_ready:
@@ -94,7 +97,20 @@ def init_financial_cache() -> None:
         with get_connection() as conn:
             with conn.cursor() as cursor:
                 for statement in statements:
-                    cursor.execute(statement)
+                    try:
+                        cursor.execute(statement)
+                    except Exception as exc:
+                        message = str(exc).lower()
+                        duplicate_column = (
+                            "duplicate column" in message
+                            or "1060" in message
+                        )
+                        migration = (
+                            "add column profit_dedt" in statement.lower()
+                        )
+                        if migration and duplicate_column:
+                            continue
+                        raise
         _schema_ready = True
 
 

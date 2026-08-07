@@ -65,6 +65,32 @@ class FinancialCacheTests(unittest.TestCase):
         )
         self.assertIn("PRIMARY KEY (source_name, end_date)", sql)
 
+    def test_financial_fields_include_profit_dedt(self):
+        import financial_cache
+
+        self.assertIn("profit_dedt", financial_cache.FINANCIAL_NUMERIC_FIELDS)
+        self.assertIn("profit_dedt", financial_cache.FINANCIAL_FIELDS)
+
+    def test_init_migrates_profit_dedt_column(self):
+        import financial_cache
+
+        cursor, connection = fake_connection()
+        with (
+            patch.object(financial_cache, "_schema_ready", False),
+            patch(
+                "financial_cache.get_connection",
+                return_value=connection,
+            ),
+        ):
+            financial_cache.init_financial_cache()
+
+        sql = "\n".join(
+            call.args[0] for call in cursor.execute.call_args_list
+        )
+        self.assertIn("profit_dedt DOUBLE", sql)
+        self.assertIn("ALTER TABLE financial_indicator_cache", sql)
+        self.assertIn("ADD COLUMN profit_dedt DOUBLE NULL", sql)
+
     def test_sync_fetches_only_missing_periods(self):
         import financial_cache
 
