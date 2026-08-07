@@ -107,6 +107,13 @@ def build_free_review_snapshot(
             for item in sync_result.get("failed_periods", [])
         ]
         financial = load_financial_as_of(current, periods=8)
+        if financial is None or financial.empty:
+            warnings.append("财务指标为空，财报事件分按 0 处理")
+        elif (
+            "profit_dedt" not in financial.columns
+            or financial["profit_dedt"].notna().mean() == 0
+        ):
+            warnings.append("profit_dedt 扣非净利润字段无可用覆盖，财报事件分按 0 处理")
 
         save_build_status(_status(
             current,
@@ -229,6 +236,13 @@ def export_free_review_csv(
         "grossprofit_margin", "netprofit_margin",
         "current_ratio", "debt_to_assets", "ocf_to_or",
         "tr_yoy", "netprofit_yoy", "dt_netprofit_yoy", "ocf_yoy",
+        "deducted_netprofit", "deducted_netprofit_growth",
+        "financial_growth_basis", "deducted_netprofit_threshold_hit",
+        "financial_growth_threshold_hit", "financial_event_hit",
+        "financial_statement_end_date", "financial_statement_ann_date",
+        "announcement_return_3d", "announcement_return_5d",
+        "announcement_return_10d", "announcement_max_return_10d",
+        "financial_event_score", "sector_financial_event_score",
         "trend_score", "volume_price_score", "momentum_score",
         "valuation_score", "financial_quality_score",
         "financial_growth_score", "risk_penalty", "total_score",

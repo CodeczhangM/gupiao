@@ -20,9 +20,20 @@ ALLOWED_RANGE_FIELDS = {
     "netprofit_margin", "current_ratio", "debt_to_assets",
     "ocf_to_or", "tr_yoy", "netprofit_yoy", "dt_netprofit_yoy",
     "ocf_yoy",
+    "deducted_netprofit", "deducted_netprofit_growth",
+    "deducted_netprofit_threshold_hit",
+    "financial_growth_threshold_hit", "financial_event_hit",
+    "announcement_return_3d", "announcement_return_5d",
+    "announcement_return_10d", "announcement_max_return_10d",
+    "financial_event_score", "sector_financial_event_score",
 }
 ALLOWED_SORT_FIELDS = ALLOWED_RANGE_FIELDS | {
     "ts_code", "name", "industry", "financial_improvement_count",
+    "deducted_netprofit", "deducted_netprofit_growth",
+    "financial_event_hit", "announcement_return_3d",
+    "announcement_return_5d", "announcement_return_10d",
+    "announcement_max_return_10d", "financial_event_score",
+    "sector_financial_event_score",
 }
 
 

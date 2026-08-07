@@ -22,9 +22,13 @@ TEXT_COLUMNS = [
     "name", "industry", "area", "market", "list_status", "list_date",
     "profit_state", "volume_state", "growth_state",
     "financial_end_date", "financial_ann_date",
+    "financial_growth_basis",
+    "financial_statement_end_date", "financial_statement_ann_date",
 ]
 INTEGER_COLUMNS = [
     "listed_days", "financial_improvement_count",
+    "deducted_netprofit_threshold_hit",
+    "financial_growth_threshold_hit", "financial_event_hit",
 ]
 NUMERIC_COLUMNS = [
     "open", "high", "low", "close", "pre_close", "change", "pct_chg",
@@ -50,6 +54,10 @@ NUMERIC_COLUMNS = [
     "valuation_score", "financial_quality_score",
     "financial_growth_score", "risk_penalty", "total_score",
     "data_completeness",
+    "deducted_netprofit", "deducted_netprofit_growth",
+    "announcement_return_3d", "announcement_return_5d",
+    "announcement_return_10d", "announcement_max_return_10d",
+    "financial_event_score", "sector_financial_event_score",
 ]
 JSON_COLUMNS = ["score_reasons", "risk_flags", "missing_fields"]
 SNAPSHOT_COLUMNS = (
@@ -99,7 +107,11 @@ def init_free_review_schema() -> None:
             INDEX idx_review_volume_ratio
                 (trade_date, score_version, volume_ratio),
             INDEX idx_review_pe_ttm
-                (trade_date, score_version, pe_ttm)
+                (trade_date, score_version, pe_ttm),
+            INDEX idx_review_financial_event
+                (trade_date, score_version, financial_event_hit, financial_event_score),
+            INDEX idx_review_financial_event_score
+                (trade_date, score_version, financial_event_score)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS review_snapshot_build (
             trade_date VARCHAR(8) NOT NULL,
@@ -123,13 +135,61 @@ def init_free_review_schema() -> None:
         """ALTER TABLE review_snapshot_build
             MODIFY COLUMN score_version VARCHAR(128) NOT NULL""",
     ]
+    for column in (
+        "financial_growth_basis",
+        "financial_statement_end_date",
+        "financial_statement_ann_date",
+    ):
+        statements.append(
+            f"""ALTER TABLE review_stock_snapshot
+            ADD COLUMN `{column}` VARCHAR(128) NULL"""
+        )
+    for column in (
+        "deducted_netprofit_threshold_hit",
+        "financial_growth_threshold_hit",
+        "financial_event_hit",
+    ):
+        statements.append(
+            f"""ALTER TABLE review_stock_snapshot
+            ADD COLUMN `{column}` INT NULL"""
+        )
+    for column in (
+        "deducted_netprofit", "deducted_netprofit_growth",
+        "announcement_return_3d", "announcement_return_5d",
+        "announcement_return_10d", "announcement_max_return_10d",
+        "financial_event_score", "sector_financial_event_score",
+    ):
+        statements.append(
+            f"""ALTER TABLE review_stock_snapshot
+            ADD COLUMN `{column}` DOUBLE NULL"""
+        )
+    statements.extend([
+        """ALTER TABLE review_stock_snapshot
+            ADD INDEX idx_review_financial_event
+                (trade_date, score_version, financial_event_hit, financial_event_score)""",
+        """ALTER TABLE review_stock_snapshot
+            ADD INDEX idx_review_financial_event_score
+                (trade_date, score_version, financial_event_score)""",
+    ])
     with _schema_lock:
         if _schema_ready:
             return
         with get_connection() as conn:
             with conn.cursor() as cursor:
                 for statement in statements:
-                    cursor.execute(statement)
+                    try:
+                        cursor.execute(statement)
+                    except Exception as exc:
+                        message = str(exc).lower()
+                        duplicate = (
+                            "duplicate column" in message
+                            or "duplicate key" in message
+                            or "1060" in message
+                            or "1061" in message
+                        )
+                        if statement.lstrip().lower().startswith("alter table") and duplicate:
+                            continue
+                        raise
         _schema_ready = True
 
 

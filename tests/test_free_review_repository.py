@@ -232,6 +232,65 @@ class FreeReviewRepositoryTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             FreeReviewQuery(page_size=5000)
 
+    def test_query_model_accepts_financial_event_ranges_and_sort(self):
+        from free_review_models import FreeReviewQuery
+
+        query = FreeReviewQuery(
+            ranges={
+                "financial_event_hit": {"min": 1},
+                "deducted_netprofit": {"min": 50_000_000},
+                "deducted_netprofit_growth": {"min": 50},
+                "announcement_return_5d": {"min": 0},
+            },
+            sort_by="financial_event_score",
+        )
+
+        self.assertEqual(query.sort_by, "financial_event_score")
+        self.assertEqual(query.ranges["financial_event_hit"].min, 1)
+
+    def test_replace_review_snapshot_persists_financial_event_columns(self):
+        import free_review_repository
+
+        cursor, connection = fake_connection()
+        frame = pd.DataFrame([{
+            "ts_code": "600001.SH",
+            "name": "财报强股",
+            "industry": "制造",
+            "deducted_netprofit": 80_000_000,
+            "deducted_netprofit_growth": 60.0,
+            "financial_growth_basis": "single_quarter_qoq",
+            "deducted_netprofit_threshold_hit": 1,
+            "financial_growth_threshold_hit": 1,
+            "financial_event_hit": 1,
+            "financial_statement_end_date": "20260630",
+            "financial_statement_ann_date": "20260715",
+            "announcement_return_3d": 6.0,
+            "announcement_return_5d": 8.0,
+            "announcement_return_10d": 12.0,
+            "announcement_max_return_10d": 16.0,
+            "financial_event_score": 82.0,
+            "sector_financial_event_score": 75.0,
+        }])
+        with (
+            patch.object(free_review_repository, "_schema_ready", False),
+            patch(
+                "free_review_repository.get_connection",
+                return_value=connection,
+            ),
+        ):
+            free_review_repository.replace_review_snapshot(
+                "20260730",
+                "free-review-v1-macd-5-34-5",
+                frame,
+            )
+
+        sql = "\n".join(
+            call.args[0] for call in cursor.execute.call_args_list
+        )
+        insert_sql = cursor.executemany.call_args.args[0]
+        self.assertIn("financial_event_score", sql)
+        self.assertIn("financial_event_hit", insert_sql)
+
     def test_paginated_query_decodes_json_and_returns_total(self):
         import free_review_repository
         from free_review_models import FreeReviewQuery

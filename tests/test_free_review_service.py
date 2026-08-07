@@ -65,6 +65,55 @@ class FreeReviewServiceTests(unittest.TestCase):
             ["cache", "financial", "scoring", "persisting", "complete"],
         )
 
+    def test_build_warns_when_profit_dedt_is_unavailable(self):
+        import free_review_service
+
+        snapshot = pd.DataFrame([{
+            "trade_date": "20260730",
+            "ts_code": "600001.SH",
+            "score_version": "free-review-v1",
+            "financial_end_date": "20260630",
+            "financial_event_score": 0,
+        }])
+        with (
+            patch(
+                "free_review_service.get_complete_dates",
+                return_value=["20260730"],
+            ),
+            patch(
+                "free_review_service.load_market_snapshot",
+                return_value=pd.DataFrame([{"ts_code": "600001.SH"}]),
+            ),
+            patch(
+                "free_review_service.load_recent_daily",
+                return_value=pd.DataFrame([{"ts_code": "600001.SH"}]),
+            ),
+            patch(
+                "free_review_service.sync_financial_indicators",
+                return_value={"failed_periods": []},
+            ),
+            patch(
+                "free_review_service.load_financial_as_of",
+                return_value=pd.DataFrame([{"ts_code": "600001.SH"}]),
+            ),
+            patch(
+                "free_review_service.build_review_snapshot",
+                return_value=snapshot,
+            ),
+            patch("free_review_service.replace_review_snapshot"),
+            patch(
+                "free_review_service.save_build_status"
+            ) as save_status,
+        ):
+            result = free_review_service.build_free_review_snapshot(
+                "20260730",
+                force=True,
+            )
+
+        self.assertIn("profit_dedt", result["warnings"][0])
+        persisted_status = save_status.call_args_list[-1].args[0]
+        self.assertIn("profit_dedt", persisted_status["warnings"][0])
+
     def test_start_returns_existing_running_build_without_new_thread(self):
         import free_review_service
 
