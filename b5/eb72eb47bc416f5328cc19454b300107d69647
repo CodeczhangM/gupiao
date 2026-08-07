@@ -1,0 +1,63 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "b5eb72eb47bc416f5328cc19454b300107d69647",
+  "prompts": {},
+  "commit_stats": {
+    "git_diff_added_lines": 195,
+    "git_diff_deleted_lines": 2,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 195,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "free_review_models.py": {
+        "BYMC": [
+          "23-28",
+          "32-36"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_repository.py": {
+        "BYMC": [
+          "25-26",
+          "30-31",
+          "57-60",
+          "110-114",
+          "138-173",
+          "180-192"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "free_review_service.py": {
+        "BYMC": [
+          "110-116",
+          "239-245"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_repository.py": {
+        "BYMC": [
+          "235-293"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      },
+      "tests/test_free_review_service.py": {
+        "BYMC": [
+          "68-116"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1786073950,
+  "requirement_id": ""
+}
