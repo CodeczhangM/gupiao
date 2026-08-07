@@ -34,6 +34,20 @@ assert.equal(query.sort_by, 'pe_ttm');
 assert.equal(query.sort_direction, 'asc');
 assert.equal(normalizeFreeReviewQuery({}, 1, 500, {}).page_size, 50);
 
+const financialQuery = normalizeFreeReviewQuery({
+  ranges: {
+    financial_event_hit: { min: 1, max: '' },
+    deducted_netprofit: { min: 50000000, max: '' },
+    deducted_netprofit_growth: { min: 50, max: '' },
+  },
+  visible_columns: ['financial_event_score', 'deducted_netprofit'],
+}, 1, 50, { by: 'financial_event_score', direction: 'desc' });
+
+assert.deepEqual(financialQuery.ranges.financial_event_hit, { min: 1 });
+assert.deepEqual(financialQuery.ranges.deducted_netprofit, { min: 50000000 });
+assert.equal(financialQuery.sort_by, 'financial_event_score');
+assert.ok(FREE_REVIEW_METRIC_GROUPS.some((group) => group.label === '财报事件'));
+
 const data = {};
 const storage = {
   getItem(key) { return data[key] || null; },

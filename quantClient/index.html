@@ -212,6 +212,7 @@
               <span>筛选方案（保存在本机）</span>
               <div><input v-model.trim="freeReviewPresetName" placeholder="方案名称"><button class="secondary" @click="saveCurrentFreeReviewPreset">保存</button></div>
               <div class="preset-buttons">
+                <button class="row-button" @click="applyFreeReviewFinancialEventPreset">财报事件命中</button>
                 <button v-for="preset in freeReviewPresets" :key="preset.name" class="row-button" @click="applyFreeReviewPreset(preset)">{{ preset.name }}</button>
                 <small v-if="!freeReviewPresets.length">暂无已保存方案</small>
               </div>

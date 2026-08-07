@@ -747,6 +747,8 @@ createApp({
     freeReviewMetricValue(row, metric) {
       const value = row ? row[metric.key] : null;
       if (value === null || value === undefined || value === '') return '--';
+      if (metric.format === 'flag') return Number(value) === 1 ? '是' : '否';
+      if (metric.format === 'text' || metric.format === 'date') return String(value);
       if (metric.format === 'percent') return `${formatNumber(value)}%`;
       if (metric.format === 'money') return displayMoney(value);
       if (metric.format === 'marketValue') {
@@ -1138,6 +1140,16 @@ createApp({
           .map((metric) => metric.key),
       };
       this.freeReviewSort = { by: 'total_score', direction: 'desc' };
+      this.loadFreeReview(true, true);
+    },
+    applyFreeReviewFinancialEventPreset() {
+      this.freeReviewFilters.ranges = {
+        ...this.freeReviewFilters.ranges,
+        financial_event_hit: { min: 1, max: '' },
+        deducted_netprofit: { min: 50000000, max: '' },
+        deducted_netprofit_growth: { min: 50, max: '' },
+      };
+      this.freeReviewSort = { by: 'financial_event_score', direction: 'desc' };
       this.loadFreeReview(true, true);
     },
     saveCurrentFreeReviewPreset() {

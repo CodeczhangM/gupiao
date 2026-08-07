@@ -100,6 +100,23 @@
         metric('ocf_yoy', '经营现金流同比', 'percent'),
       ],
     },
+    {
+      key: 'financial_event',
+      label: '财报事件',
+      metrics: [
+        metric('financial_event_score', '财报事件分', 'score', { defaultVisible: true }),
+        metric('sector_financial_event_score', '板块财报分', 'score'),
+        metric('deducted_netprofit', '扣非净利润', 'money', { defaultVisible: true }),
+        metric('deducted_netprofit_growth', '扣非增长%', 'percent', { defaultVisible: true }),
+        metric('financial_event_hit', '财报命中', 'flag'),
+        metric('financial_growth_basis', '增长口径', 'text', { filterable: false, sortable: false }),
+        metric('financial_statement_ann_date', '公告日', 'date', { filterable: false }),
+        metric('announcement_return_3d', '公告后3日%', 'percent'),
+        metric('announcement_return_5d', '公告后5日%', 'percent'),
+        metric('announcement_return_10d', '公告后10日%', 'percent'),
+        metric('announcement_max_return_10d', '10日最高%', 'percent'),
+      ],
+    },
   ];
 
   function cleanArray(value) {

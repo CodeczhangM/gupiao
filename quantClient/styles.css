@@ -1509,6 +1509,10 @@ tr:hover td {
   padding: 0 7px;
 }
 
+.free-review-range-grid input[placeholder="50000000"] {
+  min-width: 8rem;
+}
+
 .free-review-range-grid i {
   color: var(--muted);
   font-style: normal;
