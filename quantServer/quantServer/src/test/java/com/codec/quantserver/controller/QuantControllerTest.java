@@ -188,6 +188,23 @@ class QuantControllerTest {
     }
 
     @Test
+    void sectorRotationTomorrowForwardsParameters() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.sectorRotationTomorrow("20260812", 7, 4))
+                .thenReturn(Map.of("trade_date", "20260812"));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/sector-rotation/tomorrow")
+                        .param("trade_date", "20260812")
+                        .param("limit", "7")
+                        .param("stocks_per_sector", "4"))
+                .andExpect(status().isOk());
+
+        verify(client).sectorRotationTomorrow("20260812", 7, 4);
+    }
+
+    @Test
     void freeReviewBuildForwardsForce() throws Exception {
         QuantPythonClient client = mock(QuantPythonClient.class);
         when(client.startFreeReviewBuild(true))

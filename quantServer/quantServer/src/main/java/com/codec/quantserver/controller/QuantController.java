@@ -156,6 +156,17 @@ public class QuantController {
                 market, limit, forceRefresh, useAi);
     }
 
+    @GetMapping("/sector-rotation/tomorrow")
+    public Map<String, Object> sectorRotationTomorrow(
+            @RequestParam(name = "trade_date", required = false)
+            String tradeDate,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(name = "stocks_per_sector", defaultValue = "5")
+            int stocksPerSector) {
+        return quantPythonClient.sectorRotationTomorrow(
+                tradeDate, limit, stocksPerSector);
+    }
+
     @PostMapping("/free-review/build")
     public Map<String, Object> freeReviewBuild(
             @RequestParam(defaultValue = "false") boolean force) {

@@ -195,6 +195,27 @@ public class QuantPythonClient {
                 .body(mapType());
     }
 
+    public Map<String, Object> sectorRotationTomorrow(
+            String tradeDate, int limit, int stocksPerSector) {
+        int safeLimit = Math.max(1, Math.min(limit, 30));
+        int safeStocksPerSector = Math.max(1, Math.min(stocksPerSector, 10));
+        return restClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder
+                            .path("/api/sector-rotation/tomorrow")
+                            .queryParam("limit", safeLimit)
+                            .queryParam(
+                                    "stocks_per_sector",
+                                    safeStocksPerSector);
+                    if (tradeDate != null && !tradeDate.isBlank()) {
+                        builder.queryParam("trade_date", tradeDate);
+                    }
+                    return builder.build();
+                })
+                .retrieve()
+                .body(mapType());
+    }
+
     public Map<String, Object> startFreeReviewBuild(boolean force) {
         return restClient.post()
                 .uri(uriBuilder -> uriBuilder
