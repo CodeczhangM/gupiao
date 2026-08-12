@@ -1,0 +1,55 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "964536863af76444acd390af5b8446a98fd8d306",
+  "prompts": {
+    "14ddb90fc14b127b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fea4c-33b4-7553-b536-e6c496bd8dc9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 4,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    },
+    "5f7e929a67519684": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fda22-1d79-7b32-b714-fc7bc7282dd4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 500,
+      "total_deletions": 48,
+      "accepted_lines": 500,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 386,
+    "git_diff_deleted_lines": 0,
+    "ai_additions": 0,
+    "ai_accepted": 0,
+    "BYMC": 386,
+    "mixed_additions": 0,
+    "BYAC": 0,
+    "BYRC": 0,
+    "per_file": {
+      "docs/superpowers/specs/2026-08-12-sector-rotation-tomorrow-design.md": {
+        "BYMC": [
+          "1-386"
+        ],
+        "BYAC": [],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1786521094,
+  "requirement_id": ""
+}
