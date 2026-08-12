@@ -191,7 +191,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertEqual(result["data_as_of"], "2026-07-31 14:49:00")
         self.assertEqual(set(frequencies), {"1min"})
 
-    def test_before_1450_is_observation_only(self):
+    def test_before_1440_is_observation_only(self):
         calls = []
 
         def loader(ts_code, start, end, freq, trade_date):
@@ -200,7 +200,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         result = build_realtime_tail_premium_monitor(
             limit=20,
-            now=datetime(2026, 7, 31, 14, 45),
+            now=datetime(2026, 7, 31, 14, 39),
             market_override=self.market,
             history_override=self.history,
             trade_date_override="20260731",
@@ -212,11 +212,32 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertTrue(result["stocks"])
         self.assertEqual(
             result["stocks"][0]["buyable_tail_signal"],
-            "等待14:50",
+            "等待14:40",
         )
         self.assertEqual(calls, [])
 
-    def test_before_1450_uses_current_day_minutes_for_display_price(self):
+    def test_1440_starts_live_tail_window_for_more_order_time(self):
+        frequencies = []
+
+        def loader(ts_code, start, end, freq, trade_date):
+            frequencies.append((start, end, freq))
+            return self._loader(ts_code, start, end, freq, trade_date)
+
+        result = build_realtime_tail_premium_monitor(
+            limit=20,
+            now=datetime(2026, 7, 31, 14, 40),
+            market_override=self.market,
+            history_override=self.history,
+            trade_date_override="20260731",
+            minute_loader=loader,
+            sector_potential_override=pd.DataFrame(),
+        )
+
+        self.assertEqual(result["selection_state"], "live_tail_window")
+        self.assertTrue(result["stocks"])
+        self.assertEqual({item[2] for item in frequencies}, {"1min"})
+
+    def test_before_1440_uses_current_day_minutes_for_display_price(self):
         requested = []
 
         def loader(ts_code, start, end, freq, trade_date):
@@ -225,7 +246,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         result = build_realtime_tail_premium_monitor(
             limit=20,
-            now=datetime(2026, 7, 31, 14, 45),
+            now=datetime(2026, 7, 31, 14, 39),
             market_override=self.market,
             history_override=self.history,
             trade_date_override="20260731",
@@ -239,13 +260,13 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         row = result["stocks"][0]
         self.assertEqual(row["ts_code"], "600001.SH")
-        self.assertEqual(row["buyable_tail_signal"], "等待14:50")
+        self.assertEqual(row["buyable_tail_signal"], "等待14:40")
         self.assertAlmostEqual(row["close"], 11.55)
         self.assertAlmostEqual(row["pct_chg"], 5.0, places=5)
         self.assertEqual(row["data_as_of"], "2026-07-31 14:45:00")
         self.assertEqual(result["data_as_of"], "2026-07-31 14:45:00")
         self.assertIn(
-            ("2026-07-31 09:30:00", "2026-07-31 14:45:00", "1min"),
+            ("2026-07-31 09:30:00", "2026-07-31 14:39:00", "1min"),
             requested,
         )
 
@@ -384,7 +405,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         result = build_realtime_tail_premium_monitor(
             limit=1,
-            now=datetime(2026, 7, 31, 14, 45),
+            now=datetime(2026, 7, 31, 14, 39),
             market_override=market,
             history_override=history,
             trade_date_override="20260731",
@@ -432,7 +453,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         result = build_realtime_tail_premium_monitor(
             limit=2,
-            now=datetime(2026, 7, 31, 14, 45),
+            now=datetime(2026, 7, 31, 14, 39),
             market_override=market,
             history_override=history,
             trade_date_override="20260731",
@@ -490,7 +511,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
 
         self.assertEqual(result["selection_state"], "waiting_tail_window")
         self.assertEqual([row["ts_code"] for row in result["stocks"]], ["600001.SH"])
-        self.assertEqual(result["stocks"][0]["buyable_tail_signal"], "等待14:50")
+        self.assertEqual(result["stocks"][0]["buyable_tail_signal"], "等待14:40")
         self.assertIn("实时1分钟数据失败", result["warnings"][0])
 
     def test_stale_waiting_candidates_start_from_current_performance_not_prior_strength(self):
@@ -532,7 +553,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         result = build_realtime_tail_premium_monitor(
             limit=2,
             max_fetch=2,
-            now=datetime(2026, 7, 31, 14, 45),
+            now=datetime(2026, 7, 31, 14, 39),
             market_override=market,
             history_override=history,
             trade_date_override="20260731",
@@ -654,6 +675,70 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         result = _raw_tail_prefilter_market(market, max_fetch=20)
 
         self.assertEqual(result["ts_code"].tolist(), ["600667.SH"])
+
+    def test_monitor_debug_explains_filter_drop_reasons(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "600101.SH",
+                "name": "低涨幅",
+                "industry": "食品",
+                "open": 10,
+                "high": 10.1,
+                "low": 9.9,
+                "close": 10.1,
+                "pre_close": 10,
+                "vol": 1_000_000,
+                "amount": 80_000_000,
+                "amount_unit": "yuan",
+                "pct_chg": 1.0,
+                "turnover_rate": 5,
+                "volume_ratio": 1.2,
+            },
+            {
+                "ts_code": "600102.SH",
+                "name": "无涨停",
+                "industry": "食品",
+                "open": 10,
+                "high": 10.5,
+                "low": 9.9,
+                "close": 10.4,
+                "pre_close": 10,
+                "vol": 1_000_000,
+                "amount": 90_000_000,
+                "amount_unit": "yuan",
+                "pct_chg": 4.0,
+                "turnover_rate": 5,
+                "volume_ratio": 1.5,
+            },
+        ])
+        history = _history("600102.SH", "无涨停", "食品")
+        history["pct_chg"] = history["pct_chg"].clip(upper=5.0)
+
+        result = build_realtime_tail_premium_monitor(
+            limit=20,
+            now=datetime(2026, 7, 31, 14, 50),
+            market_override=market,
+            history_override=history,
+            trade_date_override="20260731",
+            minute_loader=self._loader,
+            sector_potential_override=pd.DataFrame(),
+            debug=True,
+        )
+
+        debug = result["filter_debug"]
+        self.assertTrue(debug["enabled"])
+        self.assertEqual(debug["raw_market_count"], 2)
+        self.assertEqual(debug["screened_count"], 1)
+        self.assertEqual(debug["eligible_count"], 0)
+        self.assertEqual(debug["candidate_count"], 0)
+        stage_names = [stage["name"] for stage in debug["stages"]]
+        self.assertIn("原始预筛", stage_names)
+        self.assertIn("财务/技术硬过滤", stage_names)
+        reasons = {item["reason"]: item["count"] for item in debug["top_reasons"]}
+        self.assertEqual(reasons["涨幅不在2%~7%"], 1)
+        self.assertEqual(reasons["近20日无涨停基因"], 1)
+        samples = [sample["ts_code"] for sample in debug["samples"]]
+        self.assertEqual(samples, ["600101.SH", "600102.SH"])
 
 
 if __name__ == "__main__":

@@ -23,6 +23,11 @@ assert.ok(html.includes('risk_items'));
 assert.ok(html.includes('buy_reasons'));
 assert.ok(html.includes('next_day_plan'));
 assert.ok(main.includes('/realtime-info?limit=20'));
+assert.ok(html.includes('过滤调试'));
+assert.ok(html.includes('tailPremiumDebugRows'));
+assert.ok(main.includes('realtimeTailPremiumDebug'));
+assert.ok(main.includes('top_reasons'));
+assert.ok(main.includes('debug=true'));
 
 // The separate next-morning module remains wired to its own endpoint.
 assert.ok(html.includes('次日早盘跟进'));

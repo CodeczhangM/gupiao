@@ -95,14 +95,33 @@ def _filter_realtime_output(result: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(stocks, list):
             continue
         filtered_stocks = []
+        output_reasons: dict[str, int] = {}
+        output_samples: list[dict[str, Any]] = []
         for row in stocks:
             if not isinstance(row, dict):
                 continue
             if not _realtime_output_allowed(row.get("ts_code")):
+                reason = "最终展示市场范围过滤"
+                output_reasons[reason] = output_reasons.get(reason, 0) + 1
+                if len(output_samples) < 20:
+                    output_samples.append({
+                        "ts_code": row.get("ts_code"),
+                        "name": row.get("name"),
+                        "reason": reason,
+                    })
                 continue
             if section_name == "overnight" and not _overnight_pct_allowed(
                 row.get("pct_chg")
             ):
+                reason = "最终展示涨幅不在2%~7%"
+                output_reasons[reason] = output_reasons.get(reason, 0) + 1
+                if len(output_samples) < 20:
+                    output_samples.append({
+                        "ts_code": row.get("ts_code"),
+                        "name": row.get("name"),
+                        "pct_chg": row.get("pct_chg"),
+                        "reason": reason,
+                    })
                 continue
             filtered_stocks.append(row)
         section["stocks"] = filtered_stocks
@@ -114,6 +133,23 @@ def _filter_realtime_output(result: dict[str, Any]) -> dict[str, Any]:
                 for row in filtered_stocks
                 if row.get("minute_data_warnings")
             )
+        debug = section.get("filter_debug")
+        if isinstance(debug, dict) and output_reasons:
+            debug["output_filtered_count"] = sum(output_reasons.values())
+            debug["candidate_count_after_output_filter"] = len(filtered_stocks)
+            top_reasons = list(debug.get("top_reasons") or [])
+            top_reasons.extend(
+                {"reason": reason, "count": count}
+                for reason, count in output_reasons.items()
+            )
+            debug["top_reasons"] = top_reasons[:12]
+            debug["samples"] = list(debug.get("samples") or []) + output_samples
+            for stage in debug.get("stages") or []:
+                if stage.get("name") == "最终展示":
+                    stage["count"] = len(filtered_stocks)
+                    stage["filtered"] = int(stage.get("filtered") or 0) + sum(
+                        output_reasons.values()
+                    )
     return filtered
 
 
@@ -1176,6 +1212,7 @@ def _build_realtime_info_uncached(
     now: datetime | None = None,
     limit: int = 10,
     force_refresh: bool = False,
+    debug: bool = False,
 ) -> dict[str, Any]:
     current = now or datetime.now()
     performance = {
@@ -1252,22 +1289,25 @@ def _build_realtime_info_uncached(
 
     overnight_started = time.perf_counter()
     try:
-        overnight = build_realtime_tail_premium_monitor(
-            limit=limit,
-            max_fetch=max(_REALTIME_OVERNIGHT_MAX_FETCH, limit),
-            max_leaders=_REALTIME_OVERNIGHT_MAX_LEADERS,
-            now=current,
-            market_override=market,
-            history_override=history,
-            trade_date_override=intraday_trade_date,
-            minute_loader=realtime_minute_loader,
-            source_metadata={
+        overnight_kwargs = {
+            "limit": limit,
+            "max_fetch": max(_REALTIME_OVERNIGHT_MAX_FETCH, limit),
+            "max_leaders": _REALTIME_OVERNIGHT_MAX_LEADERS,
+            "now": current,
+            "market_override": market,
+            "history_override": history,
+            "trade_date_override": intraday_trade_date,
+            "minute_loader": realtime_minute_loader,
+            "source_metadata": {
                 "latest_trade_date": latest_trade_date,
                 "data_current": snapshot_data_current,
                 "data_source": intraday_data_source,
             },
-            leader_codes_override=shared_context.get("leader_codes"),
-        )
+            "leader_codes_override": shared_context.get("leader_codes"),
+        }
+        if debug:
+            overnight_kwargs["debug"] = True
+        overnight = build_realtime_tail_premium_monitor(**overnight_kwargs)
     except Exception as exc:
         overnight = {
             "trade_date": latest_trade_date,
@@ -1462,11 +1502,12 @@ def build_realtime_info(
     now: datetime | None = None,
     limit: int = 20,
     force_refresh: bool = False,
+    debug: bool = False,
 ) -> dict[str, Any]:
     current = now or datetime.now()
     successful_key = (int(limit), macd_parameter_key())
     cache_key = _realtime_result_key(limit, current)
-    if not force_refresh:
+    if not force_refresh and not debug:
         with _REALTIME_RESULT_LOCK:
             cached = _REALTIME_RESULT_CACHE.get(cache_key)
         if cached is not None:
@@ -1483,11 +1524,14 @@ def build_realtime_info(
 
     build_error = None
     try:
-        fresh = _build_realtime_info_uncached(
-            now=current,
-            limit=limit,
-            force_refresh=force_refresh,
-        )
+        build_kwargs = {
+            "now": current,
+            "limit": limit,
+            "force_refresh": force_refresh,
+        }
+        if debug:
+            build_kwargs["debug"] = True
+        fresh = _build_realtime_info_uncached(**build_kwargs)
     except Exception as exc:
         build_error = str(exc)
         fresh = {
@@ -1514,6 +1558,23 @@ def build_realtime_info(
             "intraday": {"stocks": []},
             "overnight": {"stocks": []},
         }
+
+    if debug:
+        result = _filter_realtime_output(fresh)
+        result.update({
+            "data_status": "debug",
+            "data_status_label": "调试数据",
+            "data_updated_at": current.isoformat(
+                sep=" ", timespec="seconds"
+            ),
+            "stale_age_seconds": 0,
+            "result_cache_hit": False,
+            "cache_source": "debug",
+            "cache_updated_at": current.isoformat(
+                sep=" ", timespec="seconds"
+            ),
+        })
+        return result
 
     if _has_realtime_stocks(fresh):
         fresh = _filter_realtime_output(fresh)

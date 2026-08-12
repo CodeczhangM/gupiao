@@ -526,6 +526,7 @@ createApp({
       realtimeInfo: {},
       realtimeInfoAutoRefresh: false,
       realtimeInfoTimer: null,
+      realtimeTailPremiumDebug: false,
       marketNewsLoading: false,
       marketNewsSummary: {},
       sectorPotentialRefreshing: false,
@@ -670,6 +671,25 @@ createApp({
     },
     realtimeInfoCacheState() {
       return realtimeCacheState(this.realtimeInfo);
+    },
+    tailPremiumDebugPayload() {
+      const overnight = this.realtimeInfo && this.realtimeInfo.overnight;
+      return overnight && overnight.filter_debug ? overnight.filter_debug : {};
+    },
+    tailPremiumDebugStages() {
+      return Array.isArray(this.tailPremiumDebugPayload.stages)
+        ? this.tailPremiumDebugPayload.stages
+        : [];
+    },
+    tailPremiumDebugRows() {
+      return Array.isArray(this.tailPremiumDebugPayload.top_reasons)
+        ? this.tailPremiumDebugPayload.top_reasons
+        : [];
+    },
+    tailPremiumDebugSamples() {
+      return Array.isArray(this.tailPremiumDebugPayload.samples)
+        ? this.tailPremiumDebugPayload.samples.slice(0, 8)
+        : [];
     },
     topShortSector() {
       const rows = [...this.sectorPotentialRows].sort((a, b) => Number(b.short_score || 0) - Number(a.short_score || 0));
@@ -1336,8 +1356,9 @@ createApp({
       this.realtimeInfoRefreshMode = forceRefresh ? 'force' : 'quick';
       try {
         const forceQuery = forceRefresh ? '&force_refresh=true' : '';
+        const debugQuery = this.realtimeTailPremiumDebug ? '&debug=true' : '';
         this.realtimeInfo = (
-          await this.request(`/realtime-info?limit=20${forceQuery}`)
+          await this.request(`/realtime-info?limit=20${forceQuery}${debugQuery}`)
         ) || {};
       } catch (error) {
         if (showError) this.error = error.message;

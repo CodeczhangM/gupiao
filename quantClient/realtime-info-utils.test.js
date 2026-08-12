@@ -134,7 +134,7 @@ assert.equal(
 
 assert.deepEqual(
   tailPremiumSelectionState({ selection_state: 'waiting_tail_window' }),
-  { text: '14:50前预观察', state: 'muted' },
+  { text: '14:40前预观察', state: 'muted' },
 );
 assert.deepEqual(
   tailPremiumSelectionState({ selection_state: 'live_tail_window' }),

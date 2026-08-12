@@ -40,6 +40,9 @@ export MARKET_CACHE_REQUIRED_DAYS=100
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
+mvn clean package -DskipTests
+
+SERVER_PORT=8080 QUANT_PYTHON_BASE_URL=http://127.0.0.1:8000 java -jar target/quantServer-0.0.1-SNAPSHOT.jar
 
 ## 5. API
 

@@ -122,7 +122,7 @@
     if (state === 'closed_final') {
       return { text: '收盘最终结果', state: 'fresh' };
     }
-    return { text: '14:50前预观察', state: 'muted' };
+    return { text: '14:40前预观察', state: 'muted' };
   }
 
   function premiumRiskState(row) {

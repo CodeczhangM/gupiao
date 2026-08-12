@@ -239,12 +239,13 @@ def morning_follow_monitor(limit: int = Query(10, ge=1, le=100)):
 def realtime_info(
     limit: int = Query(20, ge=1, le=100),
     force_refresh: bool = False,
+    debug: bool = False,
 ):
     try:
-        return build_realtime_info(
-            limit=limit,
-            force_refresh=force_refresh,
-        )
+        kwargs = {"limit": limit, "force_refresh": force_refresh}
+        if debug:
+            kwargs["debug"] = True
+        return build_realtime_info(**kwargs)
     except Exception as exc:
         logger.exception("获取实时信息失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

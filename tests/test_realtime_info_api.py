@@ -40,6 +40,13 @@ class RealtimeInfoApiTests(unittest.TestCase):
         self.assertEqual(response["trade_date"], "20260730")
         service.assert_called_once_with(limit=10, force_refresh=True)
 
+    @patch("app.build_realtime_info", return_value={"trade_date": "20260730", "intraday": {"stocks": []}, "overnight": {"stocks": []}})
+    def test_realtime_info_endpoint_forwards_debug(self, service):
+        response = app.realtime_info(limit=10, debug=True)
+
+        self.assertEqual(response["trade_date"], "20260730")
+        service.assert_called_once_with(limit=10, force_refresh=False, debug=True)
+
     @patch("app.build_realtime_info", side_effect=RuntimeError("tushare unavailable"))
     def test_realtime_info_endpoint_maps_failure_to_502(self, _service):
         with self.assertRaises(HTTPException) as raised:

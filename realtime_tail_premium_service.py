@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import math
@@ -27,12 +28,14 @@ from tail_premium_scoring import (
 
 MAX_MINUTE_WORKERS = 4
 DEFAULT_MAX_FETCH = 60
+LIVE_TAIL_WINDOW_START = "14:40:00"
+LIVE_TAIL_WINDOW_LABEL = "14:40"
 
 
 def _selection_state(now: datetime) -> tuple[str, str]:
     clock = now.strftime("%H:%M:%S")
-    if clock < "14:50:00":
-        return "waiting_tail_window", "14:50前预观察"
+    if clock < LIVE_TAIL_WINDOW_START:
+        return "waiting_tail_window", f"{LIVE_TAIL_WINDOW_LABEL}前预观察"
     if clock < "15:00:00":
         return "live_tail_window", "盘末动态候选"
     return "closed_final", "收盘最终结果"
@@ -241,6 +244,195 @@ def _raw_tail_prefilter_market(
         .drop(columns=["_raw_tail_prefilter_score"])
         .reset_index(drop=True)
     )
+
+
+def _append_debug_reason(
+    counter: Counter,
+    samples: list[dict[str, Any]],
+    row: dict[str, Any],
+    reason: str,
+) -> None:
+    counter[reason] += 1
+    if len(samples) >= 30:
+        return
+    samples.append({
+        "ts_code": str(row.get("ts_code") or ""),
+        "name": str(row.get("name") or ""),
+        "industry": str(row.get("industry") or row.get("industry_name") or ""),
+        "pct_chg": _finite(row.get("pct_chg")),
+        "volume_ratio": _finite(row.get("volume_ratio")),
+        "turnover_rate": _finite(row.get("turnover_rate")),
+        "amount": _finite(row.get("amount")),
+        "reason": reason,
+    })
+
+
+def _debug_raw_prefilter_rejections(
+    market: pd.DataFrame,
+    factor_market: pd.DataFrame,
+    *,
+    current_first: bool,
+) -> tuple[Counter, list[dict[str, Any]]]:
+    counter: Counter = Counter()
+    samples: list[dict[str, Any]] = []
+    if market is None or market.empty or "ts_code" not in market:
+        return counter, samples
+    kept_codes = set()
+    if (
+        factor_market is not None
+        and not factor_market.empty
+        and "ts_code" in factor_market
+    ):
+        kept_codes = set(factor_market["ts_code"].astype(str))
+    for row in market.to_dict("records"):
+        code = str(row.get("ts_code") or "")
+        if code in kept_codes:
+            continue
+        if code.startswith(("3", "8", "9", "688", "689")):
+            reason = "创业板/科创/北交所暂不纳入"
+        elif not current_first:
+            pct = _finite(row.get("pct_chg"))
+            if pct is None or pct < 2 or pct > 7:
+                reason = "涨幅不在2%~7%"
+            else:
+                reason = "原始预筛排序截断"
+        else:
+            reason = "原始预筛排序截断"
+        _append_debug_reason(counter, samples, row, reason)
+    return counter, samples
+
+
+def _debug_factor_rejections(
+    factors: pd.DataFrame,
+    eligible: pd.DataFrame,
+) -> tuple[Counter, list[dict[str, Any]], int]:
+    counter: Counter = Counter()
+    samples: list[dict[str, Any]] = []
+    if factors is None or factors.empty or "ts_code" not in factors:
+        return counter, samples, 0
+    kept_codes = set()
+    if eligible is not None and not eligible.empty and "ts_code" in eligible:
+        kept_codes = set(eligible["ts_code"].astype(str))
+    filtered_count = 0
+    for row in factors.to_dict("records"):
+        if str(row.get("ts_code") or "") in kept_codes:
+            continue
+        filtered_count += 1
+        reasons = row.get("exclusion_reasons") or []
+        if not isinstance(reasons, list):
+            reasons = [str(reasons)] if str(reasons) else []
+        if not reasons:
+            reasons = ["财务/技术硬过滤未通过"]
+        for reason in reasons:
+            _append_debug_reason(counter, samples, row, str(reason))
+    return counter, samples, filtered_count
+
+
+def _debug_truncated_rejections(
+    before: pd.DataFrame,
+    after: pd.DataFrame,
+    reason: str,
+) -> tuple[Counter, list[dict[str, Any]]]:
+    counter: Counter = Counter()
+    samples: list[dict[str, Any]] = []
+    if before is None or before.empty or "ts_code" not in before:
+        return counter, samples
+    kept_codes = set()
+    if after is not None and not after.empty and "ts_code" in after:
+        kept_codes = set(after["ts_code"].astype(str))
+    for row in before.to_dict("records"):
+        if str(row.get("ts_code") or "") not in kept_codes:
+            _append_debug_reason(counter, samples, row, reason)
+    return counter, samples
+
+
+def _build_filter_debug(
+    *,
+    market: pd.DataFrame,
+    factor_market: pd.DataFrame,
+    factors: pd.DataFrame,
+    eligible_before_prefilter: pd.DataFrame,
+    eligible: pd.DataFrame,
+    rows: list[dict[str, Any]],
+    stocks: list[dict[str, Any]],
+    current_first: bool,
+) -> dict[str, Any]:
+    raw_counter, raw_samples = _debug_raw_prefilter_rejections(
+        market,
+        factor_market,
+        current_first=current_first,
+    )
+    factor_counter, factor_samples, factor_filtered_count = _debug_factor_rejections(
+        factors,
+        eligible_before_prefilter,
+    )
+    prefilter_counter, prefilter_samples = _debug_truncated_rejections(
+        eligible_before_prefilter,
+        eligible,
+        "二次预筛排序截断",
+    )
+    ranked = pd.DataFrame(stocks)
+    score_counter, score_samples = _debug_truncated_rejections(
+        pd.DataFrame(rows),
+        ranked,
+        "TOP排序截断",
+    )
+    counter = Counter()
+    for part in (raw_counter, factor_counter, prefilter_counter, score_counter):
+        counter.update(part)
+    stages = [
+        {
+            "name": "原始行情",
+            "count": int(0 if market is None else len(market)),
+            "filtered": 0,
+        },
+        {
+            "name": "原始预筛",
+            "count": int(0 if factor_market is None else len(factor_market)),
+            "filtered": int(sum(raw_counter.values())),
+        },
+        {
+            "name": "财务/技术硬过滤",
+            "count": int(
+                0 if eligible_before_prefilter is None else len(eligible_before_prefilter)
+            ),
+            "filtered": int(factor_filtered_count),
+        },
+        {
+            "name": "二次预筛",
+            "count": int(0 if eligible is None else len(eligible)),
+            "filtered": int(sum(prefilter_counter.values())),
+        },
+        {
+            "name": "分钟确认",
+            "count": int(len(rows)),
+            "filtered": 0,
+        },
+        {
+            "name": "最终展示",
+            "count": int(len(stocks)),
+            "filtered": int(sum(score_counter.values())),
+        },
+    ]
+    return {
+        "enabled": True,
+        "raw_market_count": stages[0]["count"],
+        "screened_count": int(0 if factors is None else len(factors)),
+        "eligible_count": stages[3]["count"],
+        "minute_scored_count": int(len(rows)),
+        "candidate_count": int(len(stocks)),
+        "stages": stages,
+        "top_reasons": [
+            {"reason": reason, "count": int(count)}
+            for reason, count in counter.most_common(12)
+        ],
+        "samples": (
+            raw_samples
+            + factor_samples
+            + prefilter_samples
+            + score_samples
+        )[:30],
+    }
 
 
 def _latest_bar_time(frame: pd.DataFrame) -> str | None:
@@ -558,7 +750,7 @@ def _load_and_score(
     })
     score = float(scored.get("premium_score") or 0)
     if selection_state == "waiting_tail_window":
-        action = "等待14:50"
+        action = f"等待{LIVE_TAIL_WINDOW_LABEL}"
         bias = "盘末窗口未到"
     elif score >= 80 and not scored.get("risk_items"):
         action = "尾盘可买"
@@ -613,6 +805,7 @@ def build_realtime_tail_premium_monitor(
     source_metadata: dict[str, Any] | None = None,
     leader_codes_override: dict[str, dict[str, Any]] | None = None,
     sector_potential_override: pd.DataFrame | None = None,
+    debug: bool = False,
 ) -> dict[str, Any]:
     del max_leaders, leader_codes_override
     current = now or datetime.now()
@@ -680,6 +873,7 @@ def build_realtime_tail_premium_monitor(
     eligible = eligible_tail_universe(factors)
     if stale_waiting_refresh:
         eligible = _filter_waiting_realtime_candidates(eligible)
+    eligible_before_prefilter = eligible.copy()
     eligible = _prefilter(eligible, max_fetch=max_fetch)
     sectors = _sector_map(
         market,
@@ -726,7 +920,7 @@ def build_realtime_tail_premium_monitor(
         limit=limit,
     )
     stocks = [_json_safe(row) for row in ranked.to_dict("records")]
-    return _json_safe({
+    result = {
         "trade_date": trade_date,
         "data_trade_date": trade_date,
         "latest_trade_date": metadata.get(
@@ -755,4 +949,16 @@ def build_realtime_tail_premium_monitor(
         "warnings": warnings[:20],
         "stocks": stocks,
         **macd_provenance(),
-    })
+    }
+    if debug:
+        result["filter_debug"] = _build_filter_debug(
+            market=market,
+            factor_market=factor_market,
+            factors=factors,
+            eligible_before_prefilter=eligible_before_prefilter,
+            eligible=eligible,
+            rows=rows,
+            stocks=stocks,
+            current_first=stale_waiting_refresh,
+        )
+    return _json_safe(result)

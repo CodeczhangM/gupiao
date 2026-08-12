@@ -699,14 +699,47 @@
         </div>
 
         <div class="panel wide-panel">
-          <div class="panel-head">
-            <h3>盘末隔夜溢价 TOP20</h3>
-            <span>
-              {{ realtimeOvernightRows.length }} 只
-              · {{ tailPremiumSelectionText().text }}
-              · 数据截至 {{ realtimeInfo.overnight?.data_as_of || realtimeInfo.data_as_of || '--' }}
-              · {{ macdBasisText(realtimeInfo.overnight || realtimeInfo) }}
-            </span>
+          <div class="panel-head monitor-head">
+            <div>
+              <h3>盘末隔夜溢价 TOP20</h3>
+              <span>
+                {{ realtimeOvernightRows.length }} 只
+                · {{ tailPremiumSelectionText().text }}
+                · 数据截至 {{ realtimeInfo.overnight?.data_as_of || realtimeInfo.data_as_of || '--' }}
+                · {{ macdBasisText(realtimeInfo.overnight || realtimeInfo) }}
+              </span>
+            </div>
+            <div class="monitor-actions">
+              <label class="switch">
+                <input type="checkbox" v-model="realtimeTailPremiumDebug" @change="loadRealtimeInfo(true, false)">
+                <span></span>
+                <b>过滤调试</b>
+              </label>
+            </div>
+          </div>
+          <div
+            v-if="realtimeTailPremiumDebug && tailPremiumDebugPayload.enabled"
+            class="tail-premium-debug"
+          >
+            <div class="tail-premium-debug-stages">
+              <span v-for="stage in tailPremiumDebugStages" :key="stage.name">
+                <b>{{ stage.name }}</b>
+                {{ stage.count }}只
+                <em v-if="stage.filtered">过滤{{ stage.filtered }}只</em>
+              </span>
+            </div>
+            <div class="tail-premium-debug-reasons" v-if="tailPremiumDebugRows.length">
+              <strong>过滤原因 TOP</strong>
+              <span v-for="row in tailPremiumDebugRows" :key="row.reason">
+                {{ row.reason }} {{ row.count }}只
+              </span>
+            </div>
+            <div class="tail-premium-debug-samples" v-if="tailPremiumDebugSamples.length">
+              <strong>样本</strong>
+              <span v-for="row in tailPremiumDebugSamples" :key="row.ts_code + row.reason">
+                {{ row.ts_code }} {{ row.name || '' }}：{{ row.reason }}
+              </span>
+            </div>
           </div>
           <div class="table-wrap intraday-monitor-table tail-premium-table">
             <table>
@@ -804,7 +837,7 @@
                   </td>
                 </tr>
                 <tr v-if="realtimeOvernightRows.length === 0">
-                  <td colspan="10" class="empty">点击拉取实时信息后展示；14:50前仅提供预观察</td>
+                  <td colspan="10" class="empty">点击拉取实时信息后展示；14:40前仅提供预观察</td>
                 </tr>
               </tbody>
             </table>

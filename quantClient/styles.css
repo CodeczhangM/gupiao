@@ -668,6 +668,39 @@ button {
   line-height: 1.55;
 }
 
+.tail-premium-debug {
+  padding: 10px 14px;
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfd;
+}
+
+.tail-premium-debug-stages,
+.tail-premium-debug-reasons,
+.tail-premium-debug-samples {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.tail-premium-debug strong,
+.tail-premium-debug b {
+  color: var(--ink);
+}
+
+.tail-premium-debug span {
+  color: var(--muted);
+}
+
+.tail-premium-debug em {
+  margin-left: 4px;
+  color: #b36a00;
+  font-style: normal;
+}
+
 @media (max-width: 900px) {
   .tail-premium-detail-grid {
     width: 82vw;
