@@ -22,6 +22,7 @@
         <button :class="{ active: activeTab === 'overview' }" @click="activeTab = 'overview'">总览</button>
         <button :class="{ active: activeTab === 'sectors' }" @click="activeTab = 'sectors'">板块</button>
         <button :class="{ active: activeTab === 'sector_potential' }" @click="activeTab = 'sector_potential'">板块潜力</button>
+        <button :class="{ active: activeTab === 'sector_rotation' }" @click="activeTab = 'sector_rotation'; loadSectorRotation(false)">明日轮动</button>
         <button :class="{ active: activeTab === 'intraday_monitor' }" @click="activeTab = 'intraday_monitor'; loadIntradayMonitor(false)">实时共振</button>
         <button :class="{ active: activeTab === 'overnight_monitor' }" @click="activeTab = 'overnight_monitor'; loadOvernightMonitor(false)">次日早盘跟进</button>
         <button :class="{ active: activeTab === 'realtime_info' }" @click="activeTab = 'realtime_info'">实时信息</button>
@@ -434,6 +435,115 @@
             </button>
           </div>
           <sector-potential-table :rows="sectorPotentialRows"></sector-potential-table>
+        </div>
+      </section>
+
+      <section v-show="activeTab === 'sector_rotation'" class="sector-rotation-page">
+        <div class="metrics sector-rotation-summary">
+          <article><span>交易日</span><strong>{{ sectorRotation.trade_date || '--' }}</strong></article>
+          <article><span>资金流日期</span><strong class="small-value">{{ (sectorRotation.moneyflow_trade_dates || []).join(' / ') || '--' }}</strong></article>
+          <article><span>延续最高分</span><strong>{{ sectorRotationTopScore('continuation_inflow', 'continuation_score') }}</strong></article>
+          <article><span>回流最高分</span><strong>{{ sectorRotationTopScore('rotation_rebound', 'rotation_score') }}</strong></article>
+        </div>
+
+        <section v-if="sectorRotation.warnings && sectorRotation.warnings.length" class="cache-warning">
+          <strong>轮动数据提示</strong>
+          <span v-for="warning in sectorRotation.warnings" :key="warning">{{ warning }}</span>
+        </section>
+
+        <div class="sector-rotation-grid">
+          <div class="panel sector-rotation-board">
+            <div class="panel-head">
+              <div>
+                <h3>延续流入榜</h3>
+                <span>连续流入、放量扩散、龙头强度靠前</span>
+              </div>
+              <button class="secondary" @click="loadSectorRotation(true)" :disabled="sectorRotationLoading">
+                {{ sectorRotationLoading ? '刷新中' : '刷新' }}
+              </button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>板块</th>
+                  <th>分数</th>
+                  <th>信心</th>
+                  <th>今日净流入</th>
+                  <th>变化</th>
+                  <th>上涨率</th>
+                  <th>推荐票</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in sectorRotation.continuation_inflow || []" :key="'continuation-' + row.industry_name">
+                  <td>{{ row.rank }}</td>
+                  <td><strong>{{ row.industry_name }}</strong><small>{{ row.signal }}</small></td>
+                  <td><strong>{{ formatNumber(row.continuation_score, 1) }}</strong><small>回流 {{ formatNumber(row.rotation_score, 1) }}</small></td>
+                  <td><span class="signal-badge">{{ row.confidence || '低' }}</span></td>
+                  <td>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_today) }}</td>
+                  <td>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_change) }}</td>
+                  <td>{{ formatSectorRotationPercent(row.metrics && row.metrics.up_ratio, 0) }}</td>
+                  <td>
+                    <div class="rotation-stock-groups">
+                      <strong>进攻龙头</strong>
+                      <span v-for="stock in row.attack_leaders || []" :key="stock.ts_code">{{ rotationStockText(stock, 'attack_score') }}</span>
+                      <strong>补涨候选</strong>
+                      <span v-for="stock in row.catchup_candidates || []" :key="'c-' + stock.ts_code">{{ rotationStockText(stock, 'catchup_score') }}</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!(sectorRotation.continuation_inflow || []).length">
+                  <td colspan="8" class="empty-line">暂无足够资金流数据</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel sector-rotation-board">
+            <div class="panel-head">
+              <div>
+                <h3>轮动回流榜</h3>
+                <span>流出转改善、趋势未破坏、补涨空间靠前</span>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>板块</th>
+                  <th>分数</th>
+                  <th>信心</th>
+                  <th>今日净流入</th>
+                  <th>变化</th>
+                  <th>上涨率</th>
+                  <th>推荐票</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in sectorRotation.rotation_rebound || []" :key="'rotation-' + row.industry_name">
+                  <td>{{ row.rank }}</td>
+                  <td><strong>{{ row.industry_name }}</strong><small>{{ row.signal }}</small></td>
+                  <td><strong>{{ formatNumber(row.rotation_score, 1) }}</strong><small>延续 {{ formatNumber(row.continuation_score, 1) }}</small></td>
+                  <td><span class="signal-badge">{{ row.confidence || '低' }}</span></td>
+                  <td>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_today) }}</td>
+                  <td>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_change) }}</td>
+                  <td>{{ formatSectorRotationPercent(row.metrics && row.metrics.up_ratio, 0) }}</td>
+                  <td>
+                    <div class="rotation-stock-groups">
+                      <strong>进攻龙头</strong>
+                      <span v-for="stock in row.attack_leaders || []" :key="stock.ts_code">{{ rotationStockText(stock, 'attack_score') }}</span>
+                      <strong>补涨候选</strong>
+                      <span v-for="stock in row.catchup_candidates || []" :key="'c-' + stock.ts_code">{{ rotationStockText(stock, 'catchup_score') }}</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!(sectorRotation.rotation_rebound || []).length">
+                  <td colspan="8" class="empty-line">暂无足够资金流数据</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -1308,6 +1418,7 @@
   <script src="./realtime-info-utils.js?v=20260731-tail-premium-v1"></script>
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
   <script src="./free-review-utils.js?v=20260730-free-review-v1"></script>
+  <script src="./sector-rotation-utils.js?v=20260812-sector-rotation-v1"></script>
   <script src="./main.js?v=20260731-tail-premium-v1"></script>
 </body>
 </html>

@@ -531,6 +531,15 @@ createApp({
       marketNewsSummary: {},
       sectorPotentialRefreshing: false,
       sectorPotentialTimer: null,
+      sectorRotation: {
+        trade_date: '',
+        lookback_trade_dates: [],
+        moneyflow_trade_dates: [],
+        warnings: [],
+        continuation_inflow: [],
+        rotation_rebound: [],
+      },
+      sectorRotationLoading: false,
       freeReviewMeta: {},
       freeReviewBuild: {},
       freeReviewSectors: [],
@@ -603,6 +612,7 @@ createApp({
         first_limit: '主升浪启动',
         sectors: '板块机会',
         sector_potential: '板块潜力',
+        sector_rotation: '明日轮动',
         intraday_monitor: '实时共振监控',
         overnight_monitor: '次日早盘跟进',
         realtime_info: '实时信息',
@@ -749,6 +759,7 @@ createApp({
       else this.stopSectorPotentialPolling();
       if (tab !== 'realtime_info') this.stopRealtimeInfoMonitor();
       if (tab === 'free_review') this.loadFreeReview(false);
+      if (tab === 'sector_rotation') this.loadSectorRotation(false);
     },
   },
   methods: {
@@ -801,6 +812,22 @@ createApp({
     moneyflowTop(key) {
       const summary = this.latest && this.latest.moneyflow_summary;
       return summary && Array.isArray(summary[key]) ? summary[key] : [];
+    },
+    sectorRotationTopScore(key, scoreKey) {
+      const rows = this.sectorRotation && Array.isArray(this.sectorRotation[key])
+        ? this.sectorRotation[key]
+        : [];
+      if (!rows.length) return '--';
+      return formatNumber(rows[0][scoreKey], 1);
+    },
+    formatSectorRotationMoney(value) {
+      return formatRotationMoney(value);
+    },
+    formatSectorRotationPercent(value, digits) {
+      return formatRotationPercent(value, digits);
+    },
+    rotationStockText(stock, scoreKey) {
+      return rotationStockText(stock, scoreKey);
     },
     monitorSignalText(row) {
       const labels = [];
@@ -943,6 +970,10 @@ createApp({
           await this.loadFreeReview(false);
           return;
         }
+        if (this.activeTab === 'sector_rotation') {
+          await this.loadSectorRotation(false);
+          return;
+        }
         const [latest, reports] = await Promise.all([
           this.request('/reports/latest'),
           this.request(`/reports?limit=${this.limit}`),
@@ -957,6 +988,20 @@ createApp({
         this.error = error.message;
       } finally {
         this.loading = false;
+      }
+    },
+    async loadSectorRotation(force = false) {
+      if (this.sectorRotationLoading && !force) return;
+      this.sectorRotationLoading = true;
+      this.error = '';
+      try {
+        this.sectorRotation = await this.request(
+          `/sector-rotation/tomorrow?limit=${this.limit || 10}&stocks_per_sector=5`,
+        );
+      } catch (error) {
+        this.error = error.message || '明日轮动加载失败';
+      } finally {
+        this.sectorRotationLoading = false;
       }
     },
     freeReviewQueryPayload() {
