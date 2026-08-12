@@ -1,0 +1,209 @@
+quantClient/main.js
+  5f7e929a67519684 529,675-692,1359,1361
+quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst
+  14ddb90fc14b127b 7-9
+realtime_tail_premium_service.py
+  5f7e929a67519684 3,31-32,37-38,249-435,753,808,876,923,952-964
+quantClient/realtime-info-utils.test.js
+  14ddb90fc14b127b 137
+tests/test_realtime_tail_premium_service.py
+  5f7e929a67519684 194,203,215,219-240,249,263,269,408,456,514,556,679-742
+quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
+  14ddb90fc14b127b 1-4,7
+README_BACKEND.md
+  14ddb90fc14b127b 43-45
+tests/test_realtime_info_api.py
+  5f7e929a67519684 43-49
+app.py
+  5f7e929a67519684 242,245-248
+quantClient/styles.css
+  5f7e929a67519684 671-703
+quantClient/realtime-tail-premium-layout.test.js
+  5f7e929a67519684 26-30
+realtime_info_service.py
+  5f7e929a67519684 98-99,104-111,116-124,136-152,1215,1292-1301,1306-1310,1505,1510,1527-1534,1562-1577
+quantClient/realtime-info-utils.js
+  14ddb90fc14b127b 125
+quantClient/index.html
+  5f7e929a67519684 702-742,840
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.8",
+  "base_commit_sha": "5254dad1876fd2aa2e1f37770b792bedeab67773",
+  "prompts": {
+    "14ddb90fc14b127b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fea4c-33b4-7553-b536-e6c496bd8dc9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    },
+    "5f7e929a67519684": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fda22-1d79-7b32-b714-fc7bc7282dd4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "zhangchenhy <zhangchenhy@cmhi.chinamobile.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 496,
+      "overriden_lines": 0
+    }
+  },
+  "commit_stats": {
+    "git_diff_added_lines": 513,
+    "git_diff_deleted_lines": 228,
+    "ai_additions": 509,
+    "ai_accepted": 509,
+    "BYMC": 0,
+    "mixed_additions": 0,
+    "BYAC": 509,
+    "BYRC": 0,
+    "per_file": {
+      "README_BACKEND.md": {
+        "BYMC": [],
+        "BYAC": [
+          "43-45"
+        ],
+        "BYRC": []
+      },
+      "app.py": {
+        "BYMC": [],
+        "BYAC": [
+          "242",
+          "245-248"
+        ],
+        "BYRC": []
+      },
+      "quantClient/index.html": {
+        "BYMC": [],
+        "BYAC": [
+          "702-742",
+          "840"
+        ],
+        "BYRC": []
+      },
+      "quantClient/main.js": {
+        "BYMC": [],
+        "BYAC": [
+          "529",
+          "675-692",
+          "1359",
+          "1361"
+        ],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.js": {
+        "BYMC": [],
+        "BYAC": [
+          "125"
+        ],
+        "BYRC": []
+      },
+      "quantClient/realtime-info-utils.test.js": {
+        "BYMC": [],
+        "BYAC": [
+          "137"
+        ],
+        "BYRC": []
+      },
+      "quantClient/realtime-tail-premium-layout.test.js": {
+        "BYMC": [],
+        "BYAC": [
+          "26-30"
+        ],
+        "BYRC": []
+      },
+      "quantClient/styles.css": {
+        "BYMC": [],
+        "BYAC": [
+          "671-703"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst": {
+        "BYMC": [],
+        "BYAC": [
+          "1-4",
+          "7"
+        ],
+        "BYRC": []
+      },
+      "quantServer/quantServer/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst": {
+        "BYMC": [],
+        "BYAC": [
+          "7-9"
+        ],
+        "BYRC": []
+      },
+      "realtime_info_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "98-99",
+          "104-111",
+          "116-124",
+          "136-152",
+          "1215",
+          "1292-1301",
+          "1306-1310",
+          "1505",
+          "1510",
+          "1527-1534",
+          "1562-1577"
+        ],
+        "BYRC": []
+      },
+      "realtime_tail_premium_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "3",
+          "31-32",
+          "37-38",
+          "249-435",
+          "753",
+          "808",
+          "876",
+          "923",
+          "952-964"
+        ],
+        "BYRC": []
+      },
+      "tests/test_realtime_info_api.py": {
+        "BYMC": [],
+        "BYAC": [
+          "43-49"
+        ],
+        "BYRC": []
+      },
+      "tests/test_realtime_tail_premium_service.py": {
+        "BYMC": [],
+        "BYAC": [
+          "194",
+          "203",
+          "215",
+          "219-240",
+          "249",
+          "263",
+          "269",
+          "408",
+          "456",
+          "514",
+          "556",
+          "679-742"
+        ],
+        "BYRC": []
+      }
+    }
+  },
+  "commit_timestamp": 1786522306,
+  "requirement_id": ""
+}
