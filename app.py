@@ -19,6 +19,7 @@ from market_cache import get_cache_status
 from morning_follow_service import build_morning_follow_monitor
 from market_news_summary_service import build_market_news_summary
 from overnight_monitor_service import build_overnight_monitor
+from sector_rotation_service import build_tomorrow_sector_rotation
 from free_review_models import FreeReviewQuery
 from indicator_settings import (
     load_macd_settings,
@@ -267,6 +268,27 @@ def market_news_summary(
         )
     except Exception as exc:
         logger.exception("获取消息面简报失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/sector-rotation/tomorrow")
+def sector_rotation_tomorrow(
+    trade_date: str | None = Query(None, pattern=r"^\d{8}$"),
+    limit: int = Query(10, ge=1, le=30),
+    stocks_per_sector: int = Query(5, ge=1, le=10),
+):
+    try:
+        return build_tomorrow_sector_rotation(
+            trade_date=trade_date,
+            limit=limit,
+            stocks_per_sector=stocks_per_sector,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("获取明日板块轮动失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
