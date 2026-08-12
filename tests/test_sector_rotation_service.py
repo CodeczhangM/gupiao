@@ -1,4 +1,5 @@
 import unittest
+import json
 from unittest.mock import patch
 
 import pandas as pd
@@ -149,6 +150,41 @@ class SectorRotationServiceTests(unittest.TestCase):
             for row in result["rotation_rebound"][0]["catchup_candidates"]
         ]
         self.assertEqual(catchup_scores, sorted(catchup_scores, reverse=True))
+
+    def test_payload_is_strict_json_serializable_with_missing_numeric_values(self):
+        import sector_rotation_service
+
+        market = market_rows()
+        market.loc[0, "volume_ratio"] = float("nan")
+        market.loc[1, "turnover_rate"] = float("nan")
+        history = history_rows()
+        history.loc[0, "high"] = float("nan")
+
+        with patch(
+            "sector_rotation_service.get_complete_dates",
+            return_value=["20260812", "20260811", "20260810"],
+        ):
+            with patch(
+                "sector_rotation_service.load_market_snapshot",
+                return_value=market,
+            ):
+                with patch(
+                    "sector_rotation_service.load_recent_daily",
+                    return_value=history,
+                ):
+                    with patch(
+                        "sector_rotation_service.load_moneyflow",
+                        side_effect=lambda date: moneyflow_for(date),
+                    ):
+                        result = (
+                            sector_rotation_service
+                            .build_tomorrow_sector_rotation(
+                                limit=5,
+                                stocks_per_sector=3,
+                            )
+                        )
+
+        json.dumps(result, ensure_ascii=False, allow_nan=False)
 
     def test_missing_one_moneyflow_day_degrades_confidence(self):
         import sector_rotation_service

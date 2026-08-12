@@ -50,7 +50,7 @@ def _empty_payload(
     lookback_dates: list[str],
     warnings: list[str],
 ) -> dict[str, Any]:
-    return {
+    return _json_safe({
         "trade_date": trade_date,
         "lookback_trade_dates": lookback_dates,
         "context_trade_dates": {"short": [], "medium_count": 0},
@@ -59,7 +59,30 @@ def _empty_payload(
         "warnings": warnings,
         "continuation_inflow": [],
         "rotation_rebound": [],
-    }
+    })
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (bool, str, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if hasattr(value, "item"):
+        return _json_safe(value.item())
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
 
 
 def _prepare_market(market_df: pd.DataFrame) -> pd.DataFrame:
@@ -556,7 +579,7 @@ def build_tomorrow_sector_rotation(
         .reset_index(drop=True)
     )
 
-    return {
+    return _json_safe({
         "trade_date": current,
         "lookback_trade_dates": lookback_dates,
         "context_trade_dates": {
@@ -574,4 +597,4 @@ def build_tomorrow_sector_rotation(
             _sector_output(row, index + 1)
             for index, row in rotation.iterrows()
         ],
-    }
+    })
