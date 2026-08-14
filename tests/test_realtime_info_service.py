@@ -19,6 +19,7 @@ from realtime_info_service import (
     _apply_minute_snapshots_to_market,
     _load_realtime_market_inputs,
     _load_realtime_intraday_signal_bars,
+    _market_relative_candidate_mask,
     _minute_price_snapshot,
     _minute_result_with_1459_fallback,
     _snapshot_supports_realtime_filters,
@@ -585,6 +586,117 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertEqual(requested_codes, ["600202.SH"])
         self.assertEqual(list(result), ["600202.SH"])
+
+    def test_market_relative_filter_requires_more_than_market_when_market_up(self):
+        candidates = pd.DataFrame([
+            {"ts_code": "600001.SH", "pct_chg": 2.2},
+            {"ts_code": "600002.SH", "pct_chg": 1.7},
+        ])
+        candidates, benchmark = _attach_market_relative_fields(
+            candidates,
+            {
+                "market_pct_chg": 1.0,
+                "market_state": "up",
+                "market_state_label": "大盘上涨",
+                "sample_count": 2000,
+            },
+        )
+
+        mask = _market_relative_candidate_mask(candidates, benchmark)
+
+        self.assertEqual(mask.tolist(), [True, False])
+
+    def test_market_relative_filter_accepts_small_drop_when_market_down(self):
+        candidates = pd.DataFrame([
+            {"ts_code": "600001.SH", "pct_chg": -0.2},
+            {"ts_code": "600002.SH", "pct_chg": -1.1},
+            {"ts_code": "600003.SH", "pct_chg": 0.1},
+        ])
+        candidates, benchmark = _attach_market_relative_fields(
+            candidates,
+            {
+                "market_pct_chg": -2.0,
+                "market_state": "down",
+                "market_state_label": "大盘下跌",
+                "sample_count": 2000,
+            },
+        )
+
+        mask = _market_relative_candidate_mask(candidates, benchmark)
+
+        self.assertEqual(mask.tolist(), [True, False, True])
+
+    def test_market_relative_filter_falls_back_to_old_positive_rule_without_benchmark(self):
+        candidates = pd.DataFrame([
+            {"ts_code": "600001.SH", "pct_chg": 0.2},
+            {"ts_code": "600002.SH", "pct_chg": 0.19},
+            {"ts_code": "600003.SH", "pct_chg": -0.2},
+        ])
+        candidates, benchmark = _attach_market_relative_fields(
+            candidates,
+            {
+                "market_pct_chg": None,
+                "market_state": "fallback",
+                "market_state_label": "大盘不可用",
+                "sample_count": 0,
+            },
+        )
+
+        mask = _market_relative_candidate_mask(candidates, benchmark)
+
+        self.assertEqual(mask.tolist(), [True, False, False])
+
+    def test_signal_minutes_use_market_relative_filter_for_down_market(self):
+        requested_codes = []
+        market = pd.DataFrame([
+            {
+                "ts_code": "600001.SH",
+                "name": "抗跌股",
+                "industry": "机器人",
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.4,
+                "amount": 800_000,
+                "pct_chg": -0.2,
+            },
+            {
+                "ts_code": "600002.SH",
+                "name": "弱势股",
+                "industry": "机器人",
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.4,
+                "amount": 790_000,
+                "pct_chg": -1.3,
+            },
+            {
+                "ts_code": "600003.SH",
+                "name": "市场样本",
+                "industry": "其他",
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.4,
+                "amount": 780_000,
+                "pct_chg": -4.0,
+            },
+        ])
+        sectors = pd.DataFrame([{"industry_name": "机器人"}])
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            requested_codes.append(ts_code)
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        result = _load_realtime_intraday_signal_bars(
+            market,
+            sectors,
+            "20260729",
+            datetime(2026, 7, 29, 14, 50),
+            minute_loader=minute_loader,
+        )
+
+        self.assertEqual(requested_codes, ["600001.SH"])
+        self.assertEqual(list(result), ["600001.SH"])
 
     def test_signal_minutes_skip_st_named_candidates(self):
         requested_codes = []

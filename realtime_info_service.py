@@ -207,6 +207,36 @@ def _attach_market_relative_fields(
     return result, benchmark
 
 
+def _market_relative_candidate_mask(
+    candidates: pd.DataFrame,
+    benchmark: dict[str, Any],
+) -> pd.Series:
+    if candidates is None or candidates.empty:
+        return pd.Series([], dtype=bool)
+    pct = (
+        pd.to_numeric(candidates["pct_chg"], errors="coerce")
+        if "pct_chg" in candidates.columns
+        else pd.Series(pd.NA, index=candidates.index)
+    )
+    market_pct = benchmark.get("market_pct_chg") if benchmark else None
+    state = str((benchmark or {}).get("market_state") or "fallback")
+    if market_pct is None or state == "fallback":
+        return pct.ge(0.2).fillna(False)
+    relative = (
+        pd.to_numeric(candidates["relative_strength"], errors="coerce")
+        if "relative_strength" in candidates.columns
+        else pct - float(market_pct)
+    )
+    if state == "up":
+        return (
+            (pct >= float(market_pct) + 1.0).fillna(False)
+            & pct.ge(1.5).fillna(False)
+        )
+    if state == "down":
+        return relative.ge(1.5).fillna(False) & pct.ge(-0.5).fillna(False)
+    return pct.ge(1.0).fillna(False) & relative.ge(1.0).fillna(False)
+
+
 def _filter_realtime_output(result: dict[str, Any]) -> dict[str, Any]:
     filtered = _json_safe(result)
     for section_name in ("intraday", "overnight"):
@@ -909,12 +939,17 @@ def _load_realtime_intraday_signal_bars(
         ].copy()
     if candidates.empty:
         return {}
+    benchmark = _build_market_relative_benchmark(market)
     for column in ("turnover_rate", "volume_ratio", "amount", "pct_chg"):
         candidates[column] = pd.to_numeric(candidates[column], errors="coerce") if column in candidates else 0
+    candidates, benchmark = _attach_market_relative_fields(
+        candidates,
+        benchmark,
+    )
     candidates = candidates[
         candidates["turnover_rate"].between(1.0, 12, inclusive="both")
         & (candidates["volume_ratio"] >= 1.0)
-        & (candidates["pct_chg"] >= 0.2)
+        & _market_relative_candidate_mask(candidates, benchmark)
     ].copy()
     if candidates.empty:
         return {}
