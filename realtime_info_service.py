@@ -54,6 +54,9 @@ _REALTIME_TAIL_CANDIDATE_LIMIT = 15
 _REALTIME_OVERNIGHT_MAX_FETCH = 30
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
+_REALTIME_MARKET_RELATIVE_RULE_VERSION = "market-relative-v1"
+_MARKET_RELATIVE_UP_THRESHOLD = 0.3
+_MARKET_RELATIVE_DOWN_THRESHOLD = -0.3
 _REALTIME_OUTPUT_EXCLUDE_PREFIXES = ("3", "8", "9", "688", "689")
 _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _REALTIME_RESULT_CACHE: dict[tuple, dict[str, Any]] = {}
@@ -83,6 +86,125 @@ def _overnight_pct_allowed(value: Any) -> bool:
     except (TypeError, ValueError):
         return False
     return 2 <= pct <= 7
+
+
+def _fallback_market_relative_benchmark() -> dict[str, Any]:
+    return {
+        "market_pct_chg": None,
+        "market_state": "fallback",
+        "market_state_label": "大盘不可用",
+        "sample_count": 0,
+    }
+
+
+def _build_market_relative_benchmark(market: pd.DataFrame) -> dict[str, Any]:
+    if market is None or market.empty or "ts_code" not in market.columns:
+        return _fallback_market_relative_benchmark()
+    data = market.copy()
+    data["ts_code"] = data["ts_code"].astype(str)
+    allowed = _is_mainboard_a_stock(data["ts_code"]) & data["ts_code"].apply(
+        _realtime_output_allowed
+    )
+    if "name" in data.columns:
+        allowed = allowed & ~data["name"].astype(str).str.upper().str.contains("ST")
+    data = data[allowed].copy()
+    if "pct_chg" not in data.columns:
+        return _fallback_market_relative_benchmark()
+    data["pct_chg"] = pd.to_numeric(data["pct_chg"], errors="coerce")
+    pct = data["pct_chg"].dropna()
+    if pct.empty:
+        return _fallback_market_relative_benchmark()
+    market_pct = round(float(pct.mean()), 6)
+    if market_pct >= _MARKET_RELATIVE_UP_THRESHOLD:
+        state, label = "up", "大盘上涨"
+    elif market_pct <= _MARKET_RELATIVE_DOWN_THRESHOLD:
+        state, label = "down", "大盘下跌"
+    else:
+        state, label = "flat", "大盘震荡"
+    return {
+        "market_pct_chg": market_pct,
+        "market_state": state,
+        "market_state_label": label,
+        "sample_count": int(len(pct)),
+    }
+
+
+def _market_relative_label(state: str) -> str:
+    return {
+        "up": "强于大盘",
+        "flat": "震荡走强",
+        "down": "逆势抗跌",
+    }.get(str(state), "原规则")
+
+
+def _market_relative_reason(stock_pct: Any, benchmark: dict[str, Any]) -> str:
+    market_pct = benchmark.get("market_pct_chg")
+    try:
+        stock_value = float(stock_pct)
+        market_value = float(market_pct)
+    except (TypeError, ValueError):
+        return "大盘基准不可用，沿用原实时涨幅规则"
+    relative = stock_value - market_value
+    return (
+        f"大盘 {market_value:.2f}%，个股 {stock_value:.2f}%，"
+        f"相对强 {relative:.2f}pct"
+    )
+
+
+def _numeric_value(value: Any, default: float = 0.0) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    return default if pd.isna(result) else result
+
+
+def _market_relative_score(row: pd.Series) -> float:
+    relative = _numeric_value(row.get("relative_strength"))
+    stock_pct = _numeric_value(row.get("pct_chg"))
+    volume_ratio = _numeric_value(row.get("volume_ratio"))
+    turnover = _numeric_value(row.get("turnover_rate"))
+    return round(
+        relative * 40
+        + max(stock_pct, 0) * 10
+        + min(max(volume_ratio, 0), 4) * 8
+        + (10 if 2 <= turnover <= 8 else 0),
+        2,
+    )
+
+
+def _attach_market_relative_fields(
+    market: pd.DataFrame,
+    benchmark: dict[str, Any] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if market is None or market.empty:
+        return market, benchmark or _build_market_relative_benchmark(market)
+    benchmark = benchmark or _build_market_relative_benchmark(market)
+    result = market.copy()
+    market_pct = benchmark.get("market_pct_chg")
+    result["market_pct_chg"] = market_pct
+    result["market_resonance_state"] = benchmark.get("market_state")
+    result["market_resonance_state_label"] = benchmark.get("market_state_label")
+    result["market_resonance_label"] = _market_relative_label(
+        str(benchmark.get("market_state"))
+    )
+    result["pct_chg"] = (
+        pd.to_numeric(result["pct_chg"], errors="coerce")
+        if "pct_chg" in result.columns
+        else pd.NA
+    )
+    if market_pct is None:
+        result["relative_strength"] = pd.NA
+    else:
+        result["relative_strength"] = result["pct_chg"] - float(market_pct)
+    result["market_resonance_reason"] = result["pct_chg"].apply(
+        lambda value: _market_relative_reason(value, benchmark)
+    )
+    result["realtime_relative_strength_score"] = result.apply(
+        _market_relative_score,
+        axis=1,
+    )
+    return result, benchmark
 
 
 def _filter_realtime_output(result: dict[str, Any]) -> dict[str, Any]:

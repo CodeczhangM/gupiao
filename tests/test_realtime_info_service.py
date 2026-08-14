@@ -11,6 +11,8 @@ from realtime_info_service import (
     MinuteLoadResult,
     build_realtime_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
+    _attach_market_relative_fields,
+    _build_market_relative_benchmark,
     _enrich_rows_with_market,
     _fill_missing_realtime_volume_ratio,
     _market_price_map,
@@ -184,6 +186,58 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(result.iloc[0]["volume_ratio"], 2.8)
+
+    def test_market_relative_benchmark_uses_mainboard_non_st_equal_weight(self):
+        market = pd.DataFrame([
+            {"ts_code": "600001.SH", "name": "主板一", "pct_chg": 1.0},
+            {"ts_code": "000001.SZ", "name": "主板二", "pct_chg": 3.0},
+            {"ts_code": "300001.SZ", "name": "创业板", "pct_chg": 20.0},
+            {"ts_code": "688001.SH", "name": "科创板", "pct_chg": 15.0},
+            {"ts_code": "920001.BJ", "name": "北交所", "pct_chg": 10.0},
+            {"ts_code": "600002.SH", "name": "ST风险", "pct_chg": -9.0},
+        ])
+
+        benchmark = _build_market_relative_benchmark(market)
+
+        self.assertAlmostEqual(benchmark["market_pct_chg"], 2.0)
+        self.assertEqual(benchmark["market_state"], "up")
+        self.assertEqual(benchmark["market_state_label"], "大盘上涨")
+        self.assertEqual(benchmark["sample_count"], 2)
+
+    def test_attach_market_relative_fields_adds_strength_label_reason_and_score(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "600001.SH",
+                "name": "强势股",
+                "pct_chg": 3.2,
+                "turnover_rate": 5.0,
+                "volume_ratio": 2.0,
+            },
+            {
+                "ts_code": "600002.SH",
+                "name": "普通股",
+                "pct_chg": 1.2,
+                "turnover_rate": 1.0,
+                "volume_ratio": 1.0,
+            },
+        ])
+        benchmark = {
+            "market_pct_chg": 1.0,
+            "market_state": "up",
+            "market_state_label": "大盘上涨",
+            "sample_count": 2000,
+        }
+
+        result, returned = _attach_market_relative_fields(market, benchmark)
+
+        self.assertEqual(returned, benchmark)
+        strong = result[result["ts_code"] == "600001.SH"].iloc[0]
+        self.assertAlmostEqual(strong["market_pct_chg"], 1.0)
+        self.assertAlmostEqual(strong["relative_strength"], 2.2)
+        self.assertEqual(strong["market_resonance_label"], "强于大盘")
+        self.assertIn("大盘 1.00%", strong["market_resonance_reason"])
+        self.assertIn("个股 3.20%", strong["market_resonance_reason"])
+        self.assertGreater(strong["realtime_relative_strength_score"], 0)
 
     def test_market_enrichment_updates_pct_with_current_snapshot(self):
         market = pd.DataFrame([{
