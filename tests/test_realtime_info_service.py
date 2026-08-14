@@ -1897,12 +1897,21 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         sectors = pd.DataFrame([{"industry_name": "机器人", "potential_score": 88.0}])
         cached_minute_bars.return_value = build_60min_bars("600201.SH", water_macd_kdj_cross_closes())
 
-        result = _load_realtime_intraday_signal_bars(
-            market,
-            sectors,
-            "20260729",
-            datetime(2026, 7, 29, 14, 10),
-        )
+        with patch(
+            "realtime_info_service._build_market_relative_benchmark",
+            return_value={
+                "market_pct_chg": None,
+                "market_state": "fallback",
+                "market_state_label": "大盘不可用",
+                "sample_count": 0,
+            },
+        ):
+            result = _load_realtime_intraday_signal_bars(
+                market,
+                sectors,
+                "20260729",
+                datetime(2026, 7, 29, 14, 10),
+            )
 
         self.assertEqual(list(result.keys()), ["600201.SH"])
         self.assertIn("60m", result["600201.SH"])
