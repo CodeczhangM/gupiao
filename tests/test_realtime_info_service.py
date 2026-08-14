@@ -703,6 +703,17 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "amount": 780_000,
                 "pct_chg": -4.0,
             },
+        ] + [
+            {
+                "ts_code": f"6001{index:02d}.SH",
+                "name": f"市场样本{index}",
+                "industry": "其他",
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.4,
+                "amount": 780_000,
+                "pct_chg": -3.0,
+            }
+            for index in range(20)
         ])
         sectors = pd.DataFrame([{"industry_name": "机器人"}])
 
@@ -831,6 +842,16 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "volume_ratio": 1.2,
                 "amount": 200_000,
             },
+        ] + [
+            {
+                "ts_code": f"6001{index:02d}.SH",
+                "name": f"市场样本{index}",
+                "pct_chg": -3.0,
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.2,
+                "amount": 200_000,
+            }
+            for index in range(20)
         ])
 
         self.assertTrue(_snapshot_supports_realtime_filters(market))

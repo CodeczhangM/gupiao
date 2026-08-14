@@ -57,6 +57,7 @@ _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
 _REALTIME_MARKET_RELATIVE_RULE_VERSION = "market-relative-v1"
 _MARKET_RELATIVE_UP_THRESHOLD = 0.3
 _MARKET_RELATIVE_DOWN_THRESHOLD = -0.3
+_MARKET_RELATIVE_MIN_SAMPLE_COUNT = 20
 _REALTIME_OUTPUT_EXCLUDE_PREFIXES = ("3", "8", "9", "688", "689")
 _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _REALTIME_RESULT_CACHE: dict[tuple, dict[str, Any]] = {}
@@ -227,7 +228,12 @@ def _market_relative_candidate_mask(
     )
     market_pct = benchmark.get("market_pct_chg") if benchmark else None
     state = str((benchmark or {}).get("market_state") or "fallback")
-    if market_pct is None or state == "fallback":
+    sample_count = int((benchmark or {}).get("sample_count") or 0)
+    if (
+        market_pct is None
+        or state == "fallback"
+        or sample_count < _MARKET_RELATIVE_MIN_SAMPLE_COUNT
+    ):
         return pct.ge(0.2).fillna(False)
     relative = (
         pd.to_numeric(candidates["relative_strength"], errors="coerce")
