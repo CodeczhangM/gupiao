@@ -899,15 +899,30 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 [],
             )
 
-        result = realtime_info_service._build_realtime_intraday_section(
-            market,
-            pd.DataFrame(),
-            "20260731",
-            datetime(2026, 7, 31, 14, 20),
-            limit=10,
-            minute_loader=minute_loader,
-            force_refresh=True,
-        )
+        with (
+            patch(
+                "realtime_info_service.macd_parameter_key",
+                return_value="macd-test",
+            ),
+            patch(
+                "strategy.load_macd_settings",
+                return_value={
+                    "fast_period": 5,
+                    "slow_period": 34,
+                    "signal_period": 5,
+                    "version": 1,
+                },
+            ),
+        ):
+            result = realtime_info_service._build_realtime_intraday_section(
+                market,
+                pd.DataFrame(),
+                "20260731",
+                datetime(2026, 7, 31, 14, 20),
+                limit=10,
+                minute_loader=minute_loader,
+                force_refresh=True,
+            )
 
         self.assertEqual(
             [row["ts_code"] for row in result["stocks"]],
@@ -917,6 +932,105 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertTrue(row["macd_golden_cross_60m"])
         self.assertTrue(row["kdj_golden_cross_60m"])
         self.assertIn("多头", row["intraday_signal_reason"])
+
+    @patch("realtime_info_service._load_tail_minute_bars_for_pick")
+    def test_intraday_confluence_outputs_market_relative_fields(self, tail_loader):
+        import realtime_info_service
+
+        market = pd.DataFrame([
+            {
+                "trade_date": "20260731",
+                "ts_code": "600301.SH",
+                "name": "强势共振",
+                "industry": "机器人",
+                "close": 12.6,
+                "high": 12.8,
+                "low": 12.1,
+                "pct_chg": 3.2,
+                "turnover_rate": 4.8,
+                "volume_ratio": 1.5,
+                "amount": 180_000_000,
+            },
+            {
+                "trade_date": "20260731",
+                "ts_code": "600302.SH",
+                "name": "市场样本",
+                "industry": "其他",
+                "close": 10.1,
+                "high": 10.2,
+                "low": 9.9,
+                "pct_chg": -1.2,
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.1,
+                "amount": 120_000_000,
+            },
+        ])
+        tail_loader.return_value = MinuteLoadResult(
+            pd.DataFrame(), "not_available", []
+        )
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        with (
+            patch(
+                "realtime_info_service.macd_parameter_key",
+                return_value="macd-test",
+            ),
+            patch(
+                "strategy.load_macd_settings",
+                return_value={
+                    "fast_period": 5,
+                    "slow_period": 34,
+                    "signal_period": 5,
+                    "version": 1,
+                },
+            ),
+        ):
+            result = realtime_info_service._build_realtime_intraday_section(
+                market,
+                pd.DataFrame(),
+                "20260731",
+                datetime(2026, 7, 31, 14, 20),
+                limit=10,
+                minute_loader=minute_loader,
+                force_refresh=True,
+            )
+
+        row = result["stocks"][0]
+        self.assertEqual(row["ts_code"], "600301.SH")
+        self.assertIn("market_pct_chg", row)
+        self.assertIn("relative_strength", row)
+        self.assertIn("market_resonance_label", row)
+        self.assertIn("market_resonance_reason", row)
+        self.assertIn("realtime_relative_strength_score", row)
+        self.assertIn(
+            row["market_resonance_label"],
+            {"强于大盘", "震荡走强", "逆势抗跌"},
+        )
+
+    def test_intraday_cache_key_includes_market_relative_rule_version(self):
+        import realtime_info_service
+
+        with (
+            patch("realtime_info_service.macd_parameter_key", return_value="macd-test"),
+            patch("realtime_info_service._REALTIME_INTRADAY_RESULT_CACHE", {}) as cache,
+        ):
+            realtime_info_service._build_realtime_intraday_section(
+                pd.DataFrame(),
+                pd.DataFrame(),
+                "20260731",
+                datetime(2026, 7, 31, 14, 20),
+                limit=10,
+                force_refresh=True,
+            )
+
+        [cache_key] = list(cache.keys())
+        self.assertIn("market-relative-v1", cache_key)
 
     def test_tail_minutes_are_limited_before_fetch(self):
         import realtime_info_service

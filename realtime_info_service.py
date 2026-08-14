@@ -1144,6 +1144,7 @@ def _build_realtime_intraday_section(
         int(limit),
         _realtime_end_datetime(trade_date, now=now),
         macd_parameter_key(),
+        _REALTIME_MARKET_RELATIVE_RULE_VERSION,
     )
     cached = (
         None
@@ -1165,6 +1166,9 @@ def _build_realtime_intraday_section(
         history,
         trade_date,
         now,
+    )
+    realtime_market, _market_relative_benchmark = _attach_market_relative_fields(
+        realtime_market
     )
     sector_potential = rank_sector_potential(
         realtime_market,
@@ -1241,6 +1245,7 @@ def _build_realtime_intraday_section(
         key=lambda item: (
             item.get("preliminary_status") == "主力抢筹",
             item["signal"].get("next_day_bias") == "高开偏强",
+            float(item["signal"].get("realtime_relative_strength_score") or 0),
             float(item["signal"].get("intraday_signal_score") or 0),
             float(item["signal"].get("volume_ratio") or 0),
         ),
@@ -1327,6 +1332,7 @@ def _build_realtime_intraday_section(
         key=lambda item: (
             item.get("main_force_status") == "主力抢筹",
             item.get("next_day_bias") == "高开偏强",
+            float(item.get("realtime_relative_strength_score") or 0),
             float(item.get("intraday_signal_score") or 0),
             float(item.get("volume_ratio") or 0),
         ),
