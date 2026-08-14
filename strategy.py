@@ -609,11 +609,30 @@ def _select_intraday_signal_stocks(
     candidates["turnover_num"] = _numeric_series(candidates, "turnover_rate")
     candidates["volume_ratio_num"] = _numeric_series(candidates, "volume_ratio")
     candidates["pct_chg_num"] = _numeric_series(candidates, "pct_chg")
+    candidates["relative_strength_num"] = _numeric_series(
+        candidates,
+        "relative_strength",
+    )
     candidates["amount_num"] = _numeric_series(candidates, "amount")
+    market_resonance_state = (
+        candidates["market_resonance_state"]
+        if "market_resonance_state" in candidates
+        else pd.Series("", index=candidates.index)
+    )
+    resilient_down_market = (
+        market_resonance_state
+        .astype(str)
+        .eq("down")
+        & candidates["relative_strength_num"].ge(1.5)
+        & candidates["pct_chg_num"].ge(-0.5)
+    )
     candidates = candidates[
         candidates["turnover_num"].between(1.0, 12, inclusive="both")
         & (candidates["volume_ratio_num"] >= 1.0)
-        & (candidates["pct_chg_num"] >= 0.2)
+        & (
+            (candidates["pct_chg_num"] >= 0.2)
+            | resilient_down_market
+        )
     ].copy()
     if candidates.empty:
         return []

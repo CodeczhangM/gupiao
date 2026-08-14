@@ -120,6 +120,8 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertIn("macd-5-34-5-v8", memory_key)
         self.assertIn("macd-5-34-5-v8", database_key)
+        self.assertIn("market-relative-v1", memory_key)
+        self.assertIn("market-relative-v1", database_key)
 
     def test_screening_date_uses_base_snapshot_without_actual_minutes(self):
         import realtime_info_service
@@ -1032,6 +1034,85 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertIn(
             row["market_resonance_label"],
             {"强于大盘", "震荡走强", "逆势抗跌"},
+        )
+
+    @patch("realtime_info_service._load_tail_minute_bars_for_pick")
+    def test_intraday_confluence_outputs_resilient_stock_when_market_down(self, tail_loader):
+        import realtime_info_service
+
+        market = pd.DataFrame([
+            {
+                "trade_date": "20260731",
+                "ts_code": "600301.SH",
+                "name": "逆势抗跌",
+                "industry": "机器人",
+                "close": 9.98,
+                "high": 10.2,
+                "low": 9.8,
+                "pct_chg": -0.2,
+                "turnover_rate": 4.8,
+                "volume_ratio": 1.5,
+                "amount": 180_000_000,
+            },
+        ] + [
+            {
+                "trade_date": "20260731",
+                "ts_code": f"6004{index:02d}.SH",
+                "name": f"市场样本{index}",
+                "industry": "其他",
+                "close": 9.7,
+                "high": 10.0,
+                "low": 9.5,
+                "pct_chg": -3.0,
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.1,
+                "amount": 120_000_000,
+            }
+            for index in range(20)
+        ])
+        tail_loader.return_value = MinuteLoadResult(
+            pd.DataFrame(), "not_available", []
+        )
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        with (
+            patch(
+                "realtime_info_service.macd_parameter_key",
+                return_value="macd-test",
+            ),
+            patch(
+                "strategy.load_macd_settings",
+                return_value={
+                    "fast_period": 5,
+                    "slow_period": 34,
+                    "signal_period": 5,
+                    "version": 1,
+                },
+            ),
+        ):
+            result = realtime_info_service._build_realtime_intraday_section(
+                market,
+                pd.DataFrame(),
+                "20260731",
+                datetime(2026, 7, 31, 14, 20),
+                limit=10,
+                minute_loader=minute_loader,
+                force_refresh=True,
+            )
+
+        self.assertEqual(
+            [row["ts_code"] for row in result["stocks"]],
+            ["600301.SH"],
+        )
+        self.assertEqual(
+            result["stocks"][0]["market_resonance_label"],
+            "逆势抗跌",
         )
 
     def test_intraday_cache_key_includes_market_relative_rule_version(self):

@@ -324,6 +324,7 @@ def _realtime_result_key(limit: int, now: datetime) -> tuple:
         int(limit),
         f"{now.strftime('%Y%m%d%H%M')}{bucket}",
         macd_parameter_key(),
+        _REALTIME_MARKET_RELATIVE_RULE_VERSION,
     )
 
 
@@ -1564,6 +1565,7 @@ def _database_realtime_result_key(limit: int) -> str:
     return (
         f"limit={max(1, min(int(limit), 100))}"
         f"|{macd_parameter_key()}"
+        f"|{_REALTIME_MARKET_RELATIVE_RULE_VERSION}"
     )
 
 
@@ -1685,7 +1687,11 @@ def build_realtime_info(
     debug: bool = False,
 ) -> dict[str, Any]:
     current = now or datetime.now()
-    successful_key = (int(limit), macd_parameter_key())
+    successful_key = (
+        int(limit),
+        macd_parameter_key(),
+        _REALTIME_MARKET_RELATIVE_RULE_VERSION,
+    )
     cache_key = _realtime_result_key(limit, current)
     if not force_refresh and not debug:
         with _REALTIME_RESULT_LOCK:
