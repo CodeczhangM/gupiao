@@ -193,6 +193,7 @@ def _attach_market_relative_fields(
     result["market_pct_chg"] = market_pct
     result["market_resonance_state"] = benchmark.get("market_state")
     result["market_resonance_state_label"] = benchmark.get("market_state_label")
+    result["market_relative_sample_count"] = benchmark.get("sample_count")
     result["market_resonance_label"] = _market_relative_label(
         str(benchmark.get("market_state"))
     )
@@ -213,6 +214,27 @@ def _attach_market_relative_fields(
         axis=1,
     )
     return result, benchmark
+
+
+def _refresh_market_relative_fields(
+    signal: dict[str, Any],
+    benchmark: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(signal, dict):
+        return signal
+    resolved = benchmark or {
+        "market_pct_chg": signal.get("market_pct_chg"),
+        "market_state": signal.get("market_resonance_state"),
+        "market_state_label": signal.get("market_resonance_state_label"),
+        "sample_count": signal.get("market_relative_sample_count"),
+    }
+    refreshed, _resolved = _attach_market_relative_fields(
+        pd.DataFrame([signal]),
+        resolved,
+    )
+    if refreshed is None or refreshed.empty:
+        return signal
+    return {**signal, **refreshed.iloc[0].to_dict()}
 
 
 def _market_relative_candidate_mask(
@@ -1219,6 +1241,10 @@ def _build_realtime_intraday_section(
         trade_date,
         base_trade_date=base_trade_date,
     )
+    signal_market, _market_relative_benchmark = _attach_market_relative_fields(
+        signal_market,
+        _market_relative_benchmark,
+    )
     sector_potential = _attach_intraday_signal_stocks(
         sector_potential,
         signal_market,
@@ -1285,6 +1311,10 @@ def _build_realtime_intraday_section(
                 ),
             )
             signal = {**signal, **tail_snapshot}
+            signal = _refresh_market_relative_fields(
+                signal,
+                _market_relative_benchmark,
+            )
             refreshed = _macd_kdj_60m_signal(
                 pd.Series(signal),
                 {"60m": intraday_bars[ts_code].get("60m"), "tail_1m": tail_1m},

@@ -20,6 +20,7 @@ from realtime_info_service import (
     _load_realtime_market_inputs,
     _load_realtime_intraday_signal_bars,
     _market_relative_candidate_mask,
+    _refresh_market_relative_fields,
     _minute_price_snapshot,
     _minute_result_with_1459_fallback,
     _snapshot_supports_realtime_filters,
@@ -241,6 +242,31 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertIn("大盘 1.00%", strong["market_resonance_reason"])
         self.assertIn("个股 3.20%", strong["market_resonance_reason"])
         self.assertGreater(strong["realtime_relative_strength_score"], 0)
+
+    def test_refresh_market_relative_fields_recomputes_after_pct_overlay(self):
+        signal = {
+            "ts_code": "600001.SH",
+            "pct_chg": -0.09,
+            "market_pct_chg": -0.99,
+            "market_resonance_state": "down",
+            "market_resonance_state_label": "大盘下跌",
+            "market_resonance_label": "逆势抗跌",
+            "relative_strength": 11.08,
+            "market_resonance_reason": "大盘 -0.99%，个股 10.09%，相对强 11.08pct",
+            "realtime_relative_strength_score": 999,
+            "volume_ratio": 1.5,
+            "turnover_rate": 4.8,
+        }
+
+        refreshed = _refresh_market_relative_fields(signal)
+
+        self.assertAlmostEqual(refreshed["relative_strength"], 0.9)
+        self.assertIn("个股 -0.09%", refreshed["market_resonance_reason"])
+        self.assertIn("相对强 0.90pct", refreshed["market_resonance_reason"])
+        self.assertNotEqual(
+            refreshed["realtime_relative_strength_score"],
+            signal["realtime_relative_strength_score"],
+        )
 
     def test_market_enrichment_updates_pct_with_current_snapshot(self):
         market = pd.DataFrame([{
