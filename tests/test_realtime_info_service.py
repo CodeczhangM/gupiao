@@ -495,13 +495,22 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 with lock:
                     active -= 1
 
-        result = _load_realtime_intraday_signal_bars(
-            market,
-            sectors,
-            "20260729",
-            datetime(2026, 7, 29, 14, 50),
-            minute_loader=minute_loader,
-        )
+        with patch(
+            "realtime_info_service._build_market_relative_benchmark",
+            return_value={
+                "market_pct_chg": None,
+                "market_state": "fallback",
+                "market_state_label": "大盘不可用",
+                "sample_count": 0,
+            },
+        ):
+            result = _load_realtime_intraday_signal_bars(
+                market,
+                sectors,
+                "20260729",
+                datetime(2026, 7, 29, 14, 50),
+                minute_loader=minute_loader,
+            )
 
         self.assertGreater(max_active, 1)
         self.assertLessEqual(max_active, 4)
@@ -545,13 +554,22 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 [],
             )
 
-        result = _load_realtime_intraday_signal_bars(
-            market,
-            sectors,
-            "20260729",
-            datetime(2026, 7, 29, 14, 50),
-            minute_loader=minute_loader,
-        )
+        with patch(
+            "realtime_info_service._build_market_relative_benchmark",
+            return_value={
+                "market_pct_chg": None,
+                "market_state": "fallback",
+                "market_state_label": "大盘不可用",
+                "sample_count": 0,
+            },
+        ):
+            result = _load_realtime_intraday_signal_bars(
+                market,
+                sectors,
+                "20260729",
+                datetime(2026, 7, 29, 14, 50),
+                minute_loader=minute_loader,
+            )
 
         self.assertEqual(requested_codes, ["600201.SH"])
         self.assertEqual(list(result), ["600201.SH"])
@@ -576,13 +594,22 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 [],
             )
 
-        result = _load_realtime_intraday_signal_bars(
-            market,
-            sectors,
-            "20260729",
-            datetime(2026, 7, 29, 14, 50),
-            minute_loader=minute_loader,
-        )
+        with patch(
+            "realtime_info_service._build_market_relative_benchmark",
+            return_value={
+                "market_pct_chg": None,
+                "market_state": "fallback",
+                "market_state_label": "大盘不可用",
+                "sample_count": 0,
+            },
+        ):
+            result = _load_realtime_intraday_signal_bars(
+                market,
+                sectors,
+                "20260729",
+                datetime(2026, 7, 29, 14, 50),
+                minute_loader=minute_loader,
+            )
 
         self.assertEqual(requested_codes, ["600202.SH"])
         self.assertEqual(list(result), ["600202.SH"])
@@ -775,7 +802,16 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "amount": 100_000,
         }])
 
-        self.assertTrue(_snapshot_supports_realtime_filters(market))
+        with patch(
+            "realtime_info_service._build_market_relative_benchmark",
+            return_value={
+                "market_pct_chg": None,
+                "market_state": "fallback",
+                "market_state_label": "大盘不可用",
+                "sample_count": 0,
+            },
+        ):
+            self.assertTrue(_snapshot_supports_realtime_filters(market))
 
     def test_snapshot_supports_market_relative_resilient_down_market_candidate(self):
         market = pd.DataFrame([
