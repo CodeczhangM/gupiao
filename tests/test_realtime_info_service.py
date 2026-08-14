@@ -777,6 +777,63 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
         self.assertTrue(_snapshot_supports_realtime_filters(market))
 
+    def test_snapshot_supports_market_relative_resilient_down_market_candidate(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "600001.SH",
+                "name": "抗跌股",
+                "pct_chg": -0.2,
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.2,
+                "amount": 200_000,
+            },
+            {
+                "ts_code": "600002.SH",
+                "name": "市场样本",
+                "pct_chg": -4.0,
+                "turnover_rate": 3.0,
+                "volume_ratio": 1.2,
+                "amount": 200_000,
+            },
+        ])
+
+        self.assertTrue(_snapshot_supports_realtime_filters(market))
+
+    def test_signal_minutes_fall_back_to_old_pct_rule_when_benchmark_raises(self):
+        requested_codes = []
+        market = pd.DataFrame([{
+            "ts_code": "600202.SH",
+            "industry": "机器人",
+            "turnover_rate": 1.0,
+            "volume_ratio": 1.0,
+            "amount": 300_000,
+            "pct_chg": 0.2,
+        }])
+        sectors = pd.DataFrame([{"industry_name": "机器人"}])
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            requested_codes.append(ts_code)
+            return MinuteLoadResult(
+                build_60min_bars(ts_code, water_macd_kdj_cross_closes()),
+                "fixture",
+                [],
+            )
+
+        with patch(
+            "realtime_info_service._build_market_relative_benchmark",
+            side_effect=RuntimeError("benchmark failed"),
+        ):
+            result = _load_realtime_intraday_signal_bars(
+                market,
+                sectors,
+                "20260729",
+                datetime(2026, 7, 29, 14, 50),
+                minute_loader=minute_loader,
+            )
+
+        self.assertEqual(requested_codes, ["600202.SH"])
+        self.assertEqual(list(result), ["600202.SH"])
+
     @patch("realtime_info_service._load_tail_minute_bars_for_pick")
     def test_intraday_confluence_uses_today_market_when_sector_history_is_empty(self, tail_loader):
         import realtime_info_service

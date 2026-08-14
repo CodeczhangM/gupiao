@@ -129,6 +129,13 @@ def _build_market_relative_benchmark(market: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def _safe_market_relative_benchmark(market: pd.DataFrame) -> dict[str, Any]:
+    try:
+        return _build_market_relative_benchmark(market)
+    except Exception:
+        return _fallback_market_relative_benchmark()
+
+
 def _market_relative_label(state: str) -> str:
     return {
         "up": "强于大盘",
@@ -178,8 +185,8 @@ def _attach_market_relative_fields(
     benchmark: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     if market is None or market.empty:
-        return market, benchmark or _build_market_relative_benchmark(market)
-    benchmark = benchmark or _build_market_relative_benchmark(market)
+        return market, benchmark or _safe_market_relative_benchmark(market)
+    benchmark = benchmark or _safe_market_relative_benchmark(market)
     result = market.copy()
     market_pct = benchmark.get("market_pct_chg")
     result["market_pct_chg"] = market_pct
@@ -552,8 +559,12 @@ def _snapshot_supports_realtime_filters(market: pd.DataFrame) -> bool:
         market["volume_ratio"], errors="coerce"
     )
     amount = pd.to_numeric(market["amount"], errors="coerce")
+    relative_market, benchmark = _attach_market_relative_fields(
+        market,
+        _safe_market_relative_benchmark(market),
+    )
     intraday_candidate = (
-        pct_chg.ge(0.2)
+        _market_relative_candidate_mask(relative_market, benchmark)
         & turnover.between(1.0, 12, inclusive="both")
         & volume_ratio.ge(1.0)
     )
@@ -939,7 +950,7 @@ def _load_realtime_intraday_signal_bars(
         ].copy()
     if candidates.empty:
         return {}
-    benchmark = _build_market_relative_benchmark(market)
+    benchmark = _safe_market_relative_benchmark(market)
     for column in ("turnover_rate", "volume_ratio", "amount", "pct_chg"):
         candidates[column] = pd.to_numeric(candidates[column], errors="coerce") if column in candidates else 0
     candidates, benchmark = _attach_market_relative_fields(
