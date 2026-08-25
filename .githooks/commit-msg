@@ -7,7 +7,7 @@
 set -eu
 
 MSG_FILE="$1"
-GIT_BIN="${GIT_AI_GIT:-/root/.git-ai/bin/git}"
+GIT_BIN="${GIT_AI_GIT:-git}"
 
 if [ ! -f "$MSG_FILE" ]; then
   exit 0
