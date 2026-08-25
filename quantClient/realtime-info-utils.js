@@ -8,6 +8,8 @@
   root.tailPremiumSelectionState = api.tailPremiumSelectionState;
   root.premiumRiskState = api.premiumRiskState;
   root.detailListText = api.detailListText;
+  root.marketRelativeText = api.marketRelativeText;
+  root.historicalResilienceText = api.historicalResilienceText;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function buildRealtimeInfoUtils() {
   function tailVolumeDisplay(row, isAfter1430) {
     if (!row || row.tail_after_1430_available !== true) {
@@ -141,8 +143,50 @@
     return text || '--';
   }
 
+  function marketRelativeText(row) {
+    const source = row || {};
+    const value = Number(source.relative_strength);
+    if (!Number.isFinite(value)) {
+      return {
+        text: '强弱 --',
+        title: '暂无相对大盘数据',
+        state: 'muted',
+      };
+    }
+    const label = String(source.market_resonance_label || '').trim();
+    const signed = `${value >= 0 ? '+' : ''}${value.toFixed(2)}pct`;
+    const text = `强弱 ${signed}${label ? ` · ${label}` : ''}`;
+    return {
+      text,
+      title: source.market_resonance_reason || text,
+      state: value >= 1 ? 'strong' : (value < 0 ? 'weak' : 'muted'),
+    };
+  }
+
+  function historicalResilienceText(row) {
+    const source = row || {};
+    const score = Number(source.historical_resilience_score);
+    if (!Number.isFinite(score)) {
+      return {
+        text: '--',
+        title: '暂无近20日抗跌力数据',
+        state: 'muted',
+      };
+    }
+    const label = String(source.historical_resilience_label || '').trim();
+    const rounded = Math.round(score);
+    const text = `${rounded}分${label ? ` · ${label}` : ''}`;
+    return {
+      text,
+      title: source.historical_resilience_reason || text,
+      state: score >= 80 ? 'strong' : (score < 50 ? 'weak' : 'muted'),
+    };
+  }
+
   return {
     detailListText,
+    historicalResilienceText,
+    marketRelativeText,
     premiumRiskState,
     realtimeCacheState,
     realtimeDataStatus,

@@ -38,6 +38,7 @@ export MARKET_CACHE_REQUIRED_DAYS=100
 ## 4. 启动服务
 
 ```bash
+source .venv/bin/activate
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 mvn clean package -DskipTests

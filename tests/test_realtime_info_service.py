@@ -11,6 +11,7 @@ from realtime_info_service import (
     MinuteLoadResult,
     build_realtime_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
+    _attach_historical_resilience_fields,
     _attach_market_relative_fields,
     _build_market_relative_benchmark,
     _enrich_rows_with_market,
@@ -242,6 +243,95 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertIn("大盘 1.00%", strong["market_resonance_reason"])
         self.assertIn("个股 3.20%", strong["market_resonance_reason"])
         self.assertGreater(strong["realtime_relative_strength_score"], 0)
+
+    def test_historical_resilience_score_uses_weighted_relative_daily_history(self):
+        dates = [f"202607{day:02d}" for day in range(1, 21)]
+        rows = []
+        for offset, trade_date in enumerate(dates, start=1):
+            market_pct = -1.0 if offset % 2 == 0 else 0.5
+            rows.extend([
+                {
+                    "ts_code": "600003.SH",
+                    "name": "基准一",
+                    "trade_date": trade_date,
+                    "pct_chg": market_pct,
+                },
+                {
+                    "ts_code": "000001.SZ",
+                    "name": "基准二",
+                    "trade_date": trade_date,
+                    "pct_chg": market_pct,
+                },
+                {
+                    "ts_code": "600001.SH",
+                    "name": "抗跌强",
+                    "trade_date": trade_date,
+                    "pct_chg": market_pct + (2.0 if offset % 2 == 0 else 1.0),
+                },
+                {
+                    "ts_code": "600002.SH",
+                    "name": "抗跌弱",
+                    "trade_date": trade_date,
+                    "pct_chg": market_pct - 1.0,
+                },
+            ])
+        market = pd.DataFrame([
+            {"ts_code": "600001.SH", "name": "抗跌强", "pct_chg": 1.0},
+            {"ts_code": "600002.SH", "name": "抗跌弱", "pct_chg": 1.0},
+        ])
+
+        result = _attach_historical_resilience_fields(
+            market,
+            pd.DataFrame(rows),
+            "20260721",
+        ).set_index("ts_code")
+
+        strong = result.loc["600001.SH"]
+        weak = result.loc["600002.SH"]
+        self.assertGreater(strong["historical_resilience_score"], 80)
+        self.assertLess(weak["historical_resilience_score"], 45)
+        self.assertGreater(
+            strong["historical_resilience_score"],
+            weak["historical_resilience_score"],
+        )
+        self.assertEqual(strong["historical_resilience_label"], "强抗跌")
+        self.assertEqual(strong["historical_resilience_sample_count"], 20)
+        self.assertIn("近20日", strong["historical_resilience_reason"])
+        self.assertIn("下跌日跑赢", strong["historical_resilience_reason"])
+
+    def test_historical_resilience_score_marks_insufficient_history(self):
+        market = pd.DataFrame([{
+            "ts_code": "600001.SH",
+            "name": "样本少",
+            "pct_chg": 1.0,
+        }])
+        history = pd.DataFrame([
+            {
+                "ts_code": "600001.SH",
+                "name": "样本少",
+                "trade_date": "20260720",
+                "pct_chg": 1.0,
+            },
+            {
+                "ts_code": "600002.SH",
+                "name": "基准",
+                "trade_date": "20260720",
+                "pct_chg": -1.0,
+            },
+        ])
+
+        result = _attach_historical_resilience_fields(
+            market,
+            history,
+            "20260721",
+        )
+
+        self.assertTrue(pd.isna(result.iloc[0]["historical_resilience_score"]))
+        self.assertEqual(result.iloc[0]["historical_resilience_label"], "历史不足")
+        self.assertEqual(
+            result.iloc[0]["historical_resilience_reason"],
+            "近20日有效日线不足",
+        )
 
     def test_refresh_market_relative_fields_recomputes_after_pct_overlay(self):
         signal = {

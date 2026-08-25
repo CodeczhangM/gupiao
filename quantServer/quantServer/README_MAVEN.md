@@ -1,3 +1,11 @@
+<!--
+ * @Author: codec.zhang
+ * @Date: 2026-08-17 14:05:27
+ * @LastEditors: codec.zhang
+ * @LastEditTime: 2026-08-17 14:05:28
+ * @Description: 
+ * @Email: 
+-->
 # quantServer Maven 启动说明
 
 这个 Spring Boot 服务负责调用旁边的 Python FastAPI 量化服务，并把接口统一暴露给前端或 Nginx。

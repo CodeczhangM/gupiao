@@ -156,6 +156,22 @@ public class QuantController {
                 market, limit, forceRefresh, useAi);
     }
 
+    @GetMapping("/stocks/{tsCode}/trend-box-target")
+    public Map<String, Object> trendBoxTarget(
+            @PathVariable String tsCode,
+            @RequestParam(name = "end_trade_date") String endTradeDate,
+            @RequestParam(name = "lookback_days", defaultValue = "120")
+            int lookbackDays,
+            @RequestParam(name = "auto_detect", defaultValue = "true")
+            boolean autoDetect,
+            @RequestParam(name = "box_start", required = false)
+            String boxStart,
+            @RequestParam(name = "box_end", required = false)
+            String boxEnd) {
+        return quantPythonClient.trendBoxTarget(
+                tsCode, endTradeDate, lookbackDays, autoDetect, boxStart, boxEnd);
+    }
+
     @GetMapping("/sector-rotation/tomorrow")
     public Map<String, Object> sectorRotationTomorrow(
             @RequestParam(name = "trade_date", required = false)

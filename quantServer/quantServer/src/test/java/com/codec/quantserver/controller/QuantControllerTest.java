@@ -188,6 +188,25 @@ class QuantControllerTest {
     }
 
     @Test
+    void trendBoxTargetForwardsStockAndWindowToPythonClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.trendBoxTarget("600519.SH", "20260813", 120, false, "20260722", "20260804"))
+                .thenReturn(Map.of("current_target", Map.of("target_low", 1407.38)));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/stocks/600519.SH/trend-box-target")
+                        .param("end_trade_date", "20260813")
+                        .param("lookback_days", "120")
+                        .param("auto_detect", "false")
+                        .param("box_start", "20260722")
+                        .param("box_end", "20260804"))
+                .andExpect(status().isOk());
+
+        verify(client).trendBoxTarget("600519.SH", "20260813", 120, false, "20260722", "20260804");
+    }
+
+    @Test
     void sectorRotationTomorrowForwardsParameters() throws Exception {
         QuantPythonClient client = mock(QuantPythonClient.class);
         when(client.sectorRotationTomorrow("20260812", 7, 4))

@@ -195,6 +195,32 @@ public class QuantPythonClient {
                 .body(mapType());
     }
 
+    public Map<String, Object> trendBoxTarget(
+            String tsCode,
+            String endTradeDate,
+            int lookbackDays,
+            boolean autoDetect,
+            String boxStart,
+            String boxEnd) {
+        int safeLookbackDays = Math.max(45, Math.min(lookbackDays, 240));
+        return restClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder
+                            .path("/api/stocks/{tsCode}/trend-box-target")
+                            .queryParam("end_trade_date", endTradeDate)
+                            .queryParam("lookback_days", safeLookbackDays)
+                            .queryParam("auto_detect", autoDetect);
+                    if (!autoDetect && boxStart != null && !boxStart.isBlank()
+                            && boxEnd != null && !boxEnd.isBlank()) {
+                        builder.queryParam("box_start", boxStart);
+                        builder.queryParam("box_end", boxEnd);
+                    }
+                    return builder.build(tsCode);
+                })
+                .retrieve()
+                .body(mapType());
+    }
+
     public Map<String, Object> sectorRotationTomorrow(
             String tradeDate, int limit, int stocksPerSector) {
         int safeLimit = Math.max(1, Math.min(limit, 30));

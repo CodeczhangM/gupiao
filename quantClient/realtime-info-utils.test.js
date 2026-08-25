@@ -6,6 +6,8 @@ const {
   tailPremiumSelectionState,
   premiumRiskState,
   detailListText,
+  marketRelativeText,
+  historicalResilienceText,
   tailVolumeDisplay,
 } = require('./realtime-info-utils.js');
 
@@ -150,5 +152,56 @@ assert.equal(premiumRiskState({ risk_level: '低' }), 'strong');
 assert.equal(detailListText(['尾盘承接', '板块强势']), '尾盘承接；板块强势');
 assert.equal(detailListText('等待确认'), '等待确认');
 assert.equal(detailListText([]), '--');
+assert.deepEqual(
+  marketRelativeText({
+    relative_strength: 2.2,
+    market_resonance_label: '强于大盘',
+    market_resonance_reason: '大盘 1.00%，个股 3.20%，相对强 2.20pct',
+  }),
+  {
+    text: '强弱 +2.20pct · 强于大盘',
+    title: '大盘 1.00%，个股 3.20%，相对强 2.20pct',
+    state: 'strong',
+  },
+);
+assert.deepEqual(
+  marketRelativeText({
+    relative_strength: -0.4,
+    market_resonance_label: '弱于大盘',
+  }),
+  {
+    text: '强弱 -0.40pct · 弱于大盘',
+    title: '强弱 -0.40pct · 弱于大盘',
+    state: 'weak',
+  },
+);
+assert.deepEqual(
+  marketRelativeText({}),
+  {
+    text: '强弱 --',
+    title: '暂无相对大盘数据',
+    state: 'muted',
+  },
+);
+assert.deepEqual(
+  historicalResilienceText({
+    historical_resilience_score: 82.4,
+    historical_resilience_label: '强抗跌',
+    historical_resilience_reason: '近20日加权跑赢 +1.23pct',
+  }),
+  {
+    text: '82分 · 强抗跌',
+    title: '近20日加权跑赢 +1.23pct',
+    state: 'strong',
+  },
+);
+assert.deepEqual(
+  historicalResilienceText({}),
+  {
+    text: '--',
+    title: '暂无近20日抗跌力数据',
+    state: 'muted',
+  },
+);
 
 console.log('realtime tail-volume display regression ok');

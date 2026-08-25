@@ -529,6 +529,16 @@ createApp({
       realtimeTailPremiumDebug: false,
       marketNewsLoading: false,
       marketNewsSummary: {},
+      trendBoxLoading: false,
+      trendBoxResult: null,
+      trendBoxForm: {
+        tsCode: '',
+        endTradeDate: '',
+        lookbackDays: 120,
+        autoDetect: true,
+        boxStart: '',
+        boxEnd: '',
+      },
       sectorPotentialRefreshing: false,
       sectorPotentialTimer: null,
       sectorRotation: {
@@ -617,6 +627,7 @@ createApp({
         overnight_monitor: '次日早盘跟进',
         realtime_info: '实时信息',
         market_news: '消息面',
+        trend_box_target: '箱体目标',
         reports: '历史报告',
         backtest: '策略回测',
         evaluation: 'AI 推荐评估',
@@ -699,6 +710,13 @@ createApp({
     tailPremiumDebugSamples() {
       return Array.isArray(this.tailPremiumDebugPayload.samples)
         ? this.tailPremiumDebugPayload.samples.slice(0, 8)
+        : [];
+    },
+    trendBoxBacktestSegments() {
+      return this.trendBoxResult
+        && this.trendBoxResult.wave_backtest
+        && Array.isArray(this.trendBoxResult.wave_backtest.segments)
+        ? this.trendBoxResult.wave_backtest.segments
         : [];
     },
     topShortSector() {
@@ -826,6 +844,13 @@ createApp({
     formatSectorRotationPercent(value, digits) {
       return formatRotationPercent(value, digits);
     },
+    formatSectorRotationStockAmount(stock) {
+      if (!stock || stock.amount === null || stock.amount === undefined || stock.amount === '') return '--';
+      const amount = Number(stock.amount);
+      if (Number.isNaN(amount)) return '--';
+      const amountYuan = Math.abs(amount) >= 10000000 ? amount : amount * 1000;
+      return displayMoney(amountYuan);
+    },
     rotationStockText(stock, scoreKey) {
       return rotationStockText(stock, scoreKey);
     },
@@ -866,6 +891,12 @@ createApp({
     },
     tailPremiumDetailText(value) {
       return detailListText(value);
+    },
+    marketRelativeText(row) {
+      return marketRelativeText(row);
+    },
+    historicalResilienceText(row) {
+      return historicalResilienceText(row);
     },
     monitorBadgeClass(value) {
       if (value === '主力抢筹' || value === '高开偏强') return 'strong';
@@ -922,6 +953,25 @@ createApp({
         dip: '超跌反转',
       };
       return labels[strategy] || strategy || '--';
+    },
+    trendBoxParam(key) {
+      if (!this.trendBoxResult || !this.trendBoxResult.params) return '--';
+      const value = this.trendBoxResult.params[key];
+      if (Array.isArray(value)) return value.join('/');
+      return value === null || value === undefined ? '--' : value;
+    },
+    segmentLabel(segment) {
+      if (segment === 'base') return '底部箱体';
+      if (String(segment || '').startsWith('relay')) {
+        return `中继箱体${String(segment).replace('relay', '')}`;
+      }
+      return segment || '--';
+    },
+    resultClass(result) {
+      if (result === '命中') return 'hit';
+      if (result === '超出') return 'over';
+      if (result === '未到') return 'under';
+      return '';
     },
     saveApiBase() {
       localStorage.setItem('quant_api_base', this.apiBase || '/api/quant');
@@ -1515,6 +1565,44 @@ createApp({
         this.error = error.message;
       } finally {
         this.loading = false;
+      }
+    },
+    async runTrendBoxTarget() {
+      this.trendBoxLoading = true;
+      this.error = '';
+      try {
+        const tsCode = (this.trendBoxForm.tsCode || '').trim().toUpperCase();
+        const endTradeDate = this.compactDate(this.trendBoxForm.endTradeDate || this.latest.trade_date || '');
+        const lookbackDays = Number(this.trendBoxForm.lookbackDays || 120);
+        const autoDetect = this.trendBoxForm.autoDetect !== false;
+        const params = new URLSearchParams({
+          end_trade_date: endTradeDate,
+          lookback_days: String(lookbackDays),
+          auto_detect: String(autoDetect),
+        });
+        if (!tsCode) throw new Error('请输入股票代码');
+        if (!/^\d{8}$/.test(endTradeDate)) throw new Error('请输入8位结束交易日');
+        if (!autoDetect) {
+          const boxStart = this.compactDate(this.trendBoxForm.boxStart || '');
+          const boxEnd = this.compactDate(this.trendBoxForm.boxEnd || '');
+          if (!/^\d{8}$/.test(boxStart) || !/^\d{8}$/.test(boxEnd)) {
+            throw new Error('请输入8位箱体开始日和结束日');
+          }
+          params.set('box_start', boxStart);
+          params.set('box_end', boxEnd);
+          this.trendBoxForm.boxStart = boxStart;
+          this.trendBoxForm.boxEnd = boxEnd;
+        }
+        this.trendBoxResult = await this.request(
+          `/stocks/${encodeURIComponent(tsCode)}/trend-box-target?${params.toString()}`,
+        );
+        this.trendBoxForm.tsCode = tsCode;
+        this.trendBoxForm.endTradeDate = endTradeDate;
+        this.activeTab = 'trend_box_target';
+      } catch (error) {
+        this.error = error.message;
+      } finally {
+        this.trendBoxLoading = false;
       }
     },
     async openReport(id) {

@@ -13,6 +13,7 @@ from realtime_minute_warmup import (
 )
 from stock_detail_service import get_stock_technical_detail
 from trade_review_service import review_trade
+from trend_box_target_service import analyze_trend_box_target
 from data_service import get_trade_dates, sync_cached_market_data
 from intraday_monitor_service import build_intraday_monitor
 from market_cache import get_cache_status
@@ -413,6 +414,36 @@ def stock_technical_detail(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("获取个股技术面失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/stocks/{ts_code}/trend-box-target")
+def stock_trend_box_target(
+    ts_code: str,
+    end_trade_date: str = Query(..., pattern=r"^\d{8}$"),
+    lookback_days: int = Query(90, ge=45, le=240),
+    auto_detect: bool = Query(True),
+    box_start: str | None = Query(None, pattern=r"^\d{8}$"),
+    box_end: str | None = Query(None, pattern=r"^\d{8}$"),
+):
+    try:
+        manual_box = None
+        if not auto_detect:
+            if not box_start or not box_end:
+                raise ValueError("manual box_start and box_end are required")
+            manual_box = {"start": box_start, "end": box_end}
+        return analyze_trend_box_target(
+            ts_code,
+            end_trade_date,
+            lookback_days,
+            manual_box=manual_box,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("计算个股箱体目标失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

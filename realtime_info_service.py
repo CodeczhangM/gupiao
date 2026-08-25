@@ -55,9 +55,12 @@ _REALTIME_OVERNIGHT_MAX_FETCH = 30
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
 _REALTIME_MARKET_RELATIVE_RULE_VERSION = "market-relative-v1"
+_REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION = "historical-resilience-v1"
 _MARKET_RELATIVE_UP_THRESHOLD = 0.3
 _MARKET_RELATIVE_DOWN_THRESHOLD = -0.3
 _MARKET_RELATIVE_MIN_SAMPLE_COUNT = 20
+_HISTORICAL_RESILIENCE_WINDOW = 20
+_HISTORICAL_RESILIENCE_MIN_SAMPLE_COUNT = 5
 _REALTIME_OUTPUT_EXCLUDE_PREFIXES = ("3", "8", "9", "688", "689")
 _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _REALTIME_RESULT_CACHE: dict[tuple, dict[str, Any]] = {}
@@ -179,6 +182,142 @@ def _market_relative_score(row: pd.Series) -> float:
         + (10 if 2 <= turnover <= 8 else 0),
         2,
     )
+
+
+def _empty_historical_resilience_fields(reason: str = "近20日有效日线不足") -> dict[str, Any]:
+    return {
+        "historical_resilience_score": pd.NA,
+        "historical_resilience_label": "历史不足",
+        "historical_resilience_reason": reason,
+        "historical_resilience_weighted_relative": pd.NA,
+        "historical_resilience_down_relative": pd.NA,
+        "historical_resilience_beat_ratio": pd.NA,
+        "historical_resilience_sample_count": 0,
+    }
+
+
+def _historical_resilience_label(score: float) -> str:
+    if score >= 80:
+        return "强抗跌"
+    if score >= 65:
+        return "抗跌"
+    if score >= 50:
+        return "一般"
+    return "偏弱"
+
+
+def _signed_pct_text(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "--"
+    if pd.isna(number):
+        return "--"
+    return f"{number:+.2f}pct"
+
+
+def _build_historical_resilience_lookup(
+    history: pd.DataFrame,
+    trade_date: str,
+) -> dict[str, dict[str, Any]]:
+    required = {"ts_code", "trade_date", "pct_chg"}
+    if history is None or history.empty or not required.issubset(history.columns):
+        return {}
+    hist = history.copy()
+    hist["ts_code"] = hist["ts_code"].astype(str)
+    hist["trade_date"] = hist["trade_date"].astype(str)
+    hist["pct_chg"] = pd.to_numeric(hist["pct_chg"], errors="coerce")
+    allowed = _is_mainboard_a_stock(hist["ts_code"]) & hist["ts_code"].apply(
+        _realtime_output_allowed
+    )
+    if "name" in hist.columns:
+        allowed = allowed & ~hist["name"].astype(str).str.upper().str.contains("ST")
+    hist = hist[allowed].dropna(subset=["pct_chg", "trade_date"]).copy()
+    if hist.empty:
+        return {}
+    prior = hist[hist["trade_date"] < str(trade_date)].copy()
+    if not prior.empty:
+        hist = prior
+    market_by_date = (
+        hist.groupby("trade_date", as_index=False)["pct_chg"]
+        .mean()
+        .rename(columns={"pct_chg": "historical_market_pct_chg"})
+    )
+    hist = hist.merge(market_by_date, on="trade_date", how="inner")
+    hist["historical_relative"] = (
+        hist["pct_chg"] - hist["historical_market_pct_chg"]
+    )
+    lookup: dict[str, dict[str, Any]] = {}
+    for ts_code, group in hist.groupby("ts_code"):
+        recent = (
+            group.sort_values("trade_date", kind="mergesort")
+            .tail(_HISTORICAL_RESILIENCE_WINDOW)
+            .dropna(subset=["historical_relative"])
+            .copy()
+        )
+        sample_count = int(len(recent))
+        if sample_count < _HISTORICAL_RESILIENCE_MIN_SAMPLE_COUNT:
+            lookup[str(ts_code)] = _empty_historical_resilience_fields()
+            continue
+        weights = pd.Series(
+            range(1, sample_count + 1),
+            index=recent.index,
+            dtype="float64",
+        )
+        relative = recent["historical_relative"].astype(float)
+        weighted_relative = float((relative * weights).sum() / weights.sum())
+        beat_ratio = float(((relative > 0).astype(float) * weights).sum() / weights.sum())
+        down = recent[recent["historical_market_pct_chg"] <= _MARKET_RELATIVE_DOWN_THRESHOLD]
+        if down.empty:
+            down_relative = None
+            down_score_component = weighted_relative
+            down_text = "下跌日样本不足"
+        else:
+            down_weights = weights.loc[down.index]
+            down_relative = float(
+                (down["historical_relative"].astype(float) * down_weights).sum()
+                / down_weights.sum()
+            )
+            down_score_component = down_relative
+            down_text = f"下跌日跑赢 {_signed_pct_text(down_relative)}"
+        score = 50 + weighted_relative * 8 + down_score_component * 10 + (beat_ratio - 0.5) * 30
+        score = round(float(max(0, min(100, score))), 2)
+        lookup[str(ts_code)] = {
+            "historical_resilience_score": score,
+            "historical_resilience_label": _historical_resilience_label(score),
+            "historical_resilience_reason": (
+                f"近20日加权跑赢 {_signed_pct_text(weighted_relative)}，"
+                f"{down_text}，跑赢率 {beat_ratio:.0%}，样本 {sample_count}日"
+            ),
+            "historical_resilience_weighted_relative": round(weighted_relative, 6),
+            "historical_resilience_down_relative": (
+                round(down_relative, 6) if down_relative is not None else pd.NA
+            ),
+            "historical_resilience_beat_ratio": round(beat_ratio, 6),
+            "historical_resilience_sample_count": sample_count,
+        }
+    return lookup
+
+
+def _attach_historical_resilience_fields(
+    market: pd.DataFrame,
+    history: pd.DataFrame,
+    trade_date: str,
+) -> pd.DataFrame:
+    if market is None or market.empty:
+        return market
+    result = market.copy()
+    empty = _empty_historical_resilience_fields()
+    lookup = _build_historical_resilience_lookup(history, trade_date)
+    for key, value in empty.items():
+        result[key] = value
+    if "ts_code" not in result.columns or not lookup:
+        return result
+    for index, ts_code in result["ts_code"].astype(str).items():
+        fields = lookup.get(ts_code, empty)
+        for key, value in fields.items():
+            result.at[index, key] = value
+    return result
 
 
 def _attach_market_relative_fields(
@@ -347,6 +486,7 @@ def _realtime_result_key(limit: int, now: datetime) -> tuple:
         f"{now.strftime('%Y%m%d%H%M')}{bucket}",
         macd_parameter_key(),
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
+        _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
     )
 
 
@@ -1174,6 +1314,7 @@ def _build_realtime_intraday_section(
         _realtime_end_datetime(trade_date, now=now),
         macd_parameter_key(),
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
+        _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
     )
     cached = (
         None
@@ -1244,6 +1385,11 @@ def _build_realtime_intraday_section(
     signal_market, _market_relative_benchmark = _attach_market_relative_fields(
         signal_market,
         _market_relative_benchmark,
+    )
+    signal_market = _attach_historical_resilience_fields(
+        signal_market,
+        history,
+        trade_date,
     )
     sector_potential = _attach_intraday_signal_stocks(
         sector_potential,
@@ -1596,6 +1742,7 @@ def _database_realtime_result_key(limit: int) -> str:
         f"limit={max(1, min(int(limit), 100))}"
         f"|{macd_parameter_key()}"
         f"|{_REALTIME_MARKET_RELATIVE_RULE_VERSION}"
+        f"|{_REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION}"
     )
 
 
@@ -1721,6 +1868,7 @@ def build_realtime_info(
         int(limit),
         macd_parameter_key(),
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
+        _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
     )
     cache_key = _realtime_result_key(limit, current)
     if not force_refresh and not debug:
