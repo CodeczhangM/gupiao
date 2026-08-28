@@ -5,11 +5,15 @@ import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.MacdSettingsRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
+import com.codec.quantserver.dto.CycleWatchCreateRequest;
+import com.codec.quantserver.dto.CycleWatchUpdateRequest;
 import com.codec.quantserver.service.QuantPythonClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -37,6 +41,52 @@ public class QuantController {
     @GetMapping("/health/db")
     public Map<String, Object> databaseHealth() {
         return quantPythonClient.databaseHealth();
+    }
+
+    @GetMapping("/cycle-watchlist")
+    public Map<String, Object> cycleWatchlist() {
+        return quantPythonClient.cycleWatchlist();
+    }
+
+    @PostMapping("/cycle-watchlist")
+    public Map<String, Object> createCycleWatch(
+            @RequestBody CycleWatchCreateRequest request) {
+        return quantPythonClient.createCycleWatch(request);
+    }
+
+    @PostMapping("/cycle-watchlist/check")
+    public Map<String, Object> checkCycleWatch(
+            @RequestBody(required = false) Map<String, String> request) {
+        Map<String, String> body = request == null ? Map.of() : request;
+        return quantPythonClient.checkCycleWatch(
+                body.get("ts_code"), body.get("schedule_slot"));
+    }
+
+    @PostMapping("/cycle-watchlist/alerts/read")
+    public Map<String, Object> readCycleWatchAlerts(
+            @RequestBody(required = false) Map<String, String> request) {
+        Map<String, String> body = request == null ? Map.of() : request;
+        return quantPythonClient.readCycleWatchAlerts(body.get("trade_date"));
+    }
+
+    @PatchMapping("/cycle-watchlist/{tsCode}")
+    public Map<String, Object> updateCycleWatch(
+            @PathVariable String tsCode,
+            @RequestBody CycleWatchUpdateRequest request) {
+        return quantPythonClient.updateCycleWatch(tsCode, request);
+    }
+
+    @DeleteMapping("/cycle-watchlist/{tsCode}")
+    public ResponseEntity<Void> deleteCycleWatch(@PathVariable String tsCode) {
+        quantPythonClient.deleteCycleWatch(tsCode);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/cycle-watchlist/{tsCode}/history")
+    public Map<String, Object> cycleWatchHistory(
+            @PathVariable String tsCode,
+            @RequestParam(defaultValue = "50") int limit) {
+        return quantPythonClient.cycleWatchHistory(tsCode, Math.max(1, Math.min(limit, 200)));
     }
 
     @GetMapping("/cache/status")

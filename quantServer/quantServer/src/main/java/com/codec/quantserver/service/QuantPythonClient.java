@@ -5,11 +5,14 @@ import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.MacdSettingsRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
+import com.codec.quantserver.dto.CycleWatchCreateRequest;
+import com.codec.quantserver.dto.CycleWatchUpdateRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
+import java.util.HashMap;
 
 @Service
 public class QuantPythonClient {
@@ -26,6 +29,51 @@ public class QuantPythonClient {
 
     public Map<String, Object> databaseHealth() {
         return getMap("/health/db");
+    }
+
+    public Map<String, Object> cycleWatchlist() {
+        return getMap("/api/cycle-watchlist");
+    }
+
+    public Map<String, Object> createCycleWatch(CycleWatchCreateRequest request) {
+        return restClient.post().uri("/api/cycle-watchlist").body(request)
+                .retrieve().body(mapType());
+    }
+
+    public Map<String, Object> updateCycleWatch(
+            String tsCode, CycleWatchUpdateRequest request) {
+        return restClient.patch()
+                .uri(uriBuilder -> uriBuilder.path("/api/cycle-watchlist/{tsCode}").build(tsCode))
+                .body(request).retrieve().body(mapType());
+    }
+
+    public void deleteCycleWatch(String tsCode) {
+        restClient.delete()
+                .uri(uriBuilder -> uriBuilder.path("/api/cycle-watchlist/{tsCode}").build(tsCode))
+                .retrieve().toBodilessEntity();
+    }
+
+    public Map<String, Object> checkCycleWatch(String tsCode, String scheduleSlot) {
+        Map<String, Object> body = new HashMap<>();
+        if (tsCode != null && !tsCode.isBlank()) body.put("ts_code", tsCode);
+        if (scheduleSlot != null && !scheduleSlot.isBlank()) body.put("schedule_slot", scheduleSlot);
+        return restClient.post().uri("/api/cycle-watchlist/check").body(body)
+                .retrieve().body(mapType());
+    }
+
+    public Map<String, Object> cycleWatchHistory(String tsCode, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        return restClient.get().uri(uriBuilder -> uriBuilder
+                        .path("/api/cycle-watchlist/{tsCode}/history")
+                        .queryParam("limit", safeLimit).build(tsCode))
+                .retrieve().body(mapType());
+    }
+
+    public Map<String, Object> readCycleWatchAlerts(String tradeDate) {
+        Map<String, Object> body = new HashMap<>();
+        if (tradeDate != null && !tradeDate.isBlank()) body.put("trade_date", tradeDate);
+        return restClient.post().uri("/api/cycle-watchlist/alerts/read").body(body)
+                .retrieve().body(mapType());
     }
 
     public Map<String, Object> cacheStatus() {

@@ -4,6 +4,7 @@ import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.MacdSettingsRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
+import com.codec.quantserver.dto.CycleWatchCreateRequest;
 import com.codec.quantserver.service.QuantPythonClient;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,11 +24,54 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 class QuantControllerTest {
+
+    @Test
+    void cycleWatchRoutesForwardToPythonClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.cycleWatchlist()).thenReturn(Map.of("stocks", java.util.List.of()));
+        when(client.createCycleWatch(any(CycleWatchCreateRequest.class)))
+                .thenReturn(Map.of("ts_code", "600000.SH"));
+        when(client.checkCycleWatch("600000", "manual"))
+                .thenReturn(Map.of("success_count", 1));
+        when(client.cycleWatchHistory("600000.SH", 200))
+                .thenReturn(Map.of("history", java.util.List.of()));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/cycle-watchlist"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/quant/cycle-watchlist")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ts_code\":\"600000\",\"note\":\"银行周期\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/quant/cycle-watchlist/check")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ts_code\":\"600000\",\"schedule_slot\":\"manual\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/quant/cycle-watchlist/600000.SH/history")
+                        .param("limit", "999"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/api/quant/cycle-watchlist/600000.SH")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/quant/cycle-watchlist/600000.SH"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/quant/cycle-watchlist/alerts/read")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trade_date\":\"20260828\"}"))
+                .andExpect(status().isOk());
+
+        verify(client).cycleWatchlist();
+        verify(client).cycleWatchHistory("600000.SH", 200);
+    }
 
     @Test
     void macdSettingsGetAndPutForwardToPythonClient() throws Exception {
