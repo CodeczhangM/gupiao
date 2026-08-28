@@ -168,17 +168,23 @@ class IntradayMonitorServiceTests(unittest.TestCase):
         report.assert_not_called()
 
     def test_force_refresh_bypasses_database_result_fast_path(self):
-        with patch(
-            "intraday_monitor_service.load_result_cache",
-            return_value={
-                "payload": {
-                    "trade_date": "20260728",
-                    "stocks": [{"ts_code": "cached"}],
+        with (
+            patch(
+                "intraday_monitor_service.load_result_cache",
+                return_value={
+                    "payload": {
+                        "trade_date": "20260728",
+                        "stocks": [{"ts_code": "cached"}],
+                    },
+                    "updated_at": "2026-07-28 14:40:00",
                 },
-                "updated_at": "2026-07-28 14:40:00",
-            },
-            create=True,
-        ) as database_result:
+                create=True,
+            ) as database_result,
+            patch(
+                "intraday_monitor_service.get_latest_report",
+                return_value=latest_report_fixture(),
+            ),
+        ):
             result = build_intraday_monitor(
                 fetch_realtime=False,
                 now=datetime(2026, 7, 28, 15, 10),
