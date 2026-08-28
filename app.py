@@ -22,6 +22,21 @@ from market_news_summary_service import build_market_news_summary
 from overnight_monitor_service import build_overnight_monitor
 from sector_rotation_service import build_tomorrow_sector_rotation
 from free_review_models import FreeReviewQuery
+from cycle_watch_models import (
+    CycleWatchCheckRequest,
+    CycleWatchCreateRequest,
+    CycleWatchReadAlertsRequest,
+    CycleWatchUpdateRequest,
+)
+from cycle_watch_service import (
+    add_cycle_watch,
+    check_cycle_watchlist,
+    edit_cycle_watch,
+    get_cycle_watch_history,
+    get_cycle_watchlist,
+    read_cycle_watch_alerts,
+    remove_cycle_watch,
+)
 from indicator_settings import (
     load_macd_settings,
     macd_parameter_key,
@@ -250,6 +265,92 @@ def realtime_info(
         return build_realtime_info(**kwargs)
     except Exception as exc:
         logger.exception("获取实时信息失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/cycle-watchlist")
+def list_cycle_watch():
+    try:
+        return get_cycle_watchlist()
+    except Exception as exc:
+        logger.exception("读取周期关注列表失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/cycle-watchlist")
+def create_cycle_watch(request: CycleWatchCreateRequest):
+    try:
+        return add_cycle_watch(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("添加周期关注股票失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/cycle-watchlist/check")
+def check_cycle_watch(request: CycleWatchCheckRequest):
+    try:
+        return check_cycle_watchlist(
+            ts_code=request.ts_code,
+            schedule_slot=request.schedule_slot,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("检查周期关注股票失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/cycle-watchlist/alerts/read")
+def mark_cycle_watch_alerts_read(request: CycleWatchReadAlertsRequest):
+    try:
+        return read_cycle_watch_alerts(request.trade_date)
+    except Exception as exc:
+        logger.exception("标记周期关注提醒失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.patch("/api/cycle-watchlist/{ts_code}")
+def patch_cycle_watch(ts_code: str, request: CycleWatchUpdateRequest):
+    try:
+        return edit_cycle_watch(
+            ts_code,
+            request.model_dump(exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("修改周期关注股票失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.delete("/api/cycle-watchlist/{ts_code}")
+def delete_cycle_watch(ts_code: str):
+    try:
+        remove_cycle_watch(ts_code)
+        return Response(status_code=204)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("删除周期关注股票失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/cycle-watchlist/{ts_code}/history")
+def cycle_watch_history(ts_code: str, limit: int = Query(50, ge=1)):
+    try:
+        return get_cycle_watch_history(ts_code, min(int(limit), 200))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("读取周期关注历史失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
