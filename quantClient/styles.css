@@ -2173,6 +2173,117 @@ tr:hover td {
   }
 }
 
+.cycle-watch-nav {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.nav-badge {
+  align-items: center;
+  background: #ef4444;
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 11px;
+  justify-content: center;
+  min-height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+}
+
+.cycle-watch-page {
+  display: grid;
+  gap: 18px;
+}
+
+.cycle-watch-actions,
+.cycle-watch-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cycle-watch-form {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, .8fr) repeat(2, minmax(110px, .5fr)) minmax(220px, 1.4fr) auto;
+  margin-top: 16px;
+}
+
+.cycle-watch-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.cycle-watch-form label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cycle-watch-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.cycle-watch-panel {
+  border-top: 3px solid #64748b;
+}
+
+.cycle-watch-panel.is-confirmed { border-top-color: #ef4444; }
+.cycle-watch-panel.is-low-buy { border-top-color: #10b981; }
+.cycle-watch-panel.is-watch { border-top-color: #f59e0b; }
+
+.cycle-watch-panel td strong,
+.cycle-watch-panel td small {
+  display: block;
+}
+
+.cycle-watch-panel td small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.cycle-watch-alert-row {
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+}
+
+.cycle-watch-reasons {
+  min-width: 260px;
+  white-space: normal;
+}
+
+.cycle-watch-history-row td {
+  background: color-mix(in srgb, var(--surface) 76%, #64748b 8%);
+}
+
+.cycle-watch-history,
+.cycle-watch-delayed-list {
+  display: grid;
+  gap: 7px;
+}
+
+.cycle-watch-history span,
+.cycle-watch-delayed-list span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cycle-watch-delayed {
+  border-left: 3px solid #94a3b8;
+}
+
+@media (max-width: 1000px) {
+  .cycle-watch-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cycle-watch-note {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 640px) {
   .shell {
     padding: 14px;
@@ -2239,6 +2350,14 @@ tr:hover td {
   .actions button,
   .switch {
     flex: 1 1 140px;
+  }
+
+  .cycle-watch-form {
+    grid-template-columns: 1fr;
+  }
+
+  .cycle-watch-note {
+    grid-column: auto;
   }
 
   th,

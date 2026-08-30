@@ -12,10 +12,15 @@ from realtime_info_service import (
     build_realtime_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
     _attach_historical_resilience_fields,
+    _attach_bottom_consolidation_fields,
     _attach_market_relative_fields,
     _build_market_relative_benchmark,
+    _build_bottom_filter_debug,
+    _group_realtime_stage_rows,
+    _database_realtime_result_key,
     _enrich_rows_with_market,
     _fill_missing_realtime_volume_ratio,
+    _include_bottom_candidate_sectors,
     _market_price_map,
     _apply_minute_snapshots_to_market,
     _load_realtime_market_inputs,
@@ -27,7 +32,7 @@ from realtime_info_service import (
     _snapshot_supports_realtime_filters,
     _trading_session_progress,
 )
-from strategy import _macd_kdj_60m_signal
+from strategy import _macd_kdj_60m_signal, _select_intraday_signal_stocks
 from tests.test_advantage_stock_scoring import build_60min_bars, build_tail_1min_bars, water_macd_kdj_cross_closes
 
 
@@ -98,6 +103,273 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.addCleanup(self.database_result_saves.stop)
         self.addCleanup(self.database_prune.stop)
         self.addCleanup(self.complete_dates.stop)
+
+    def test_bottom_consolidation_rejects_flat_base_without_catalyst(self):
+        closes = [11.5 - index * 0.04 for index in range(40)] + [
+            9.8 + (index % 4) * 0.05 for index in range(20)
+        ]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600001.SH",
+                "trade_date": f"2026{index + 1:04d}",
+                "close": close,
+                "high": close * 1.02,
+                "low": close * 0.98,
+            }
+            for index, close in enumerate(closes)
+        ])
+        market = pd.DataFrame([{
+            "ts_code": "600001.SH",
+            "close": 9.95,
+        }])
+
+        result = _attach_bottom_consolidation_fields(market, history, "20260731")
+
+        row = result.iloc[0]
+        self.assertFalse(row["bottom_consolidation"])
+        self.assertEqual(row["resonance_type"], "强势共振")
+        self.assertLessEqual(row["bottom_box_amplitude_20d"], 15.0)
+
+    def test_bottom_consolidation_accepts_limit_up_pullback_within_20_days(self):
+        closes = [10.0, 10.1, 11.05, 10.7, 10.4, 10.2, 10.0] + [
+            9.85 + (index % 3) * 0.04 for index in range(12)
+        ]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600010.SH",
+                "trade_date": f"202607{index + 1:02d}",
+                "close": close,
+                "high": close * 1.01,
+                "low": close * 0.99,
+                "pct_chg": 9.8 if index == 2 else 0.0,
+                "vol": 1_000_000,
+            }
+            for index, close in enumerate(closes)
+        ])
+        market = pd.DataFrame([{
+            "ts_code": "600010.SH", "close": 9.92,
+            "pct_chg": 0.8, "vol": 1_100_000,
+        }])
+
+        row = _attach_bottom_consolidation_fields(
+            market, history, "20260731",
+        ).iloc[0]
+
+        self.assertTrue(row["bottom_consolidation"])
+        self.assertEqual(row["resonance_type"], "涨停回落筑底")
+        self.assertEqual(row["bottom_window_days"], 20)
+        self.assertEqual(row["bottom_limit_up_date"], "20260703")
+
+    def test_bottom_consolidation_ignores_zero_low_without_aborting_scan(self):
+        history = pd.DataFrame([
+            {
+                "ts_code": "600012.SH",
+                "trade_date": f"202607{index + 1:02d}",
+                "close": 10.0,
+                "high": 10.1,
+                "low": 0.0 if index == 18 else 9.9,
+                "pct_chg": 9.8 if index == 2 else 0.0,
+                "vol": 1_000_000,
+            }
+            for index in range(19)
+        ])
+        market = pd.DataFrame([{
+            "ts_code": "600012.SH",
+            "close": 9.2,
+            "high": 9.3,
+            "low": 9.1,
+            "pct_chg": 0.2,
+            "vol": 900_000,
+        }])
+
+        row = _attach_bottom_consolidation_fields(
+            market, history, "20260731",
+        ).iloc[0]
+
+        self.assertFalse(row["bottom_consolidation"])
+        self.assertEqual(row["resonance_type"], "强势共振")
+
+    def test_bottom_consolidation_accepts_one_to_three_day_volume_breakout(self):
+        closes = [10.0 + (index % 3) * 0.03 for index in range(17)] + [
+            10.15, 10.35,
+        ]
+        volumes = [1_000_000] * 17 + [1_700_000, 1_900_000]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600011.SH",
+                "trade_date": f"202607{index + 1:02d}",
+                "close": close,
+                "high": close * 1.01,
+                "low": close * 0.99,
+                "pct_chg": 0.2,
+                "vol": volume,
+            }
+            for index, (close, volume) in enumerate(zip(closes, volumes))
+        ])
+        market = pd.DataFrame([{
+            "ts_code": "600011.SH", "close": 10.55,
+            "pct_chg": 1.93, "vol": 2_000_000,
+        }])
+
+        row = _attach_bottom_consolidation_fields(
+            market, history, "20260731",
+        ).iloc[0]
+
+        self.assertTrue(row["bottom_consolidation"])
+        self.assertEqual(row["resonance_type"], "底部放量启动")
+        self.assertEqual(row["bottom_breakout_days"], 3)
+        self.assertGreaterEqual(row["bottom_volume_expansion"], 1.5)
+
+    def test_bottom_consolidation_rejects_continuing_decline(self):
+        closes = [14.0 - index * 0.1 for index in range(60)]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600002.SH",
+                "trade_date": f"2026{index + 1:04d}",
+                "close": close,
+                "high": close * 1.01,
+                "low": close * 0.99,
+            }
+            for index, close in enumerate(closes)
+        ])
+        market = pd.DataFrame([{"ts_code": "600002.SH", "close": 8.0}])
+
+        row = _attach_bottom_consolidation_fields(
+            market, history, "20260731",
+        ).iloc[0]
+
+        self.assertFalse(row["bottom_consolidation"])
+        self.assertEqual(row["resonance_type"], "强势共振")
+
+    def test_bottom_consolidation_rejects_high_position(self):
+        closes = [9.0 + index * 0.05 for index in range(40)] + [
+            11.5 + (index % 4) * 0.05 for index in range(20)
+        ]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600003.SH",
+                "trade_date": f"2026{index + 1:04d}",
+                "close": close,
+                "high": close * 1.02,
+                "low": close * 0.98,
+            }
+            for index, close in enumerate(closes)
+        ])
+        market = pd.DataFrame([{"ts_code": "600003.SH", "close": 11.7}])
+
+        row = _attach_bottom_consolidation_fields(
+            market, history, "20260731",
+        ).iloc[0]
+
+        self.assertFalse(row["bottom_consolidation"])
+
+    def test_bottom_candidate_outside_hot_sectors_gets_minute_confirmation(self):
+        market = pd.DataFrame([
+            {
+                "ts_code": "600101.SH", "name": "强势样本", "industry": "机器人",
+                "pct_chg": 3.0, "turnover_rate": 5.0, "volume_ratio": 1.5,
+                "amount": 200_000_000, "bottom_consolidation": False,
+            },
+            {
+                "ts_code": "600102.SH", "name": "底部启动", "industry": "食品",
+                "pct_chg": 0.1, "turnover_rate": 3.0, "volume_ratio": 0.7,
+                "amount": 100_000_000, "bottom_consolidation": True,
+                "resonance_type": "涨停回落筑底",
+            },
+        ])
+        sectors = pd.DataFrame([{"industry_name": "机器人"}])
+        requested = []
+
+        def minute_loader(ts_code, start, end, freq, trade_date):
+            requested.append(ts_code)
+            return MinuteLoadResult(pd.DataFrame(), "fixture", [])
+
+        _load_realtime_intraday_signal_bars(
+            market,
+            sectors,
+            "20260731",
+            datetime(2026, 7, 31, 14, 20),
+            minute_loader=minute_loader,
+        )
+
+        self.assertIn("600102.SH", requested)
+
+    def test_bottom_candidate_sector_is_added_without_replacing_hot_sector(self):
+        sectors = pd.DataFrame([{"industry_name": "机器人", "rank": 1}])
+        market = pd.DataFrame([
+            {"industry": "机器人", "bottom_consolidation": False},
+            {"industry": "食品", "bottom_consolidation": True},
+        ])
+
+        result = _include_bottom_candidate_sectors(sectors, market)
+
+        self.assertEqual(result.iloc[0]["industry_name"], "机器人")
+        self.assertEqual(set(result["industry_name"]), {"机器人", "食品"})
+
+    def test_bottom_candidate_can_confirm_below_regular_pct_threshold(self):
+        market = pd.DataFrame([{
+            "ts_code": "600103.SH", "name": "底部确认", "pct_chg": 0.1,
+            "turnover_rate": 3.0, "volume_ratio": 1.6,
+            "amount": 100_000_000, "bottom_consolidation": True,
+            "resonance_type": "底部放量启动",
+        }])
+        bars = {
+            "600103.SH": {
+                "60m": build_60min_bars(
+                    "600103.SH", water_macd_kdj_cross_closes(),
+                )
+            }
+        }
+
+        with patch("strategy.load_macd_settings", return_value={
+            "fast_period": 5, "slow_period": 34,
+            "signal_period": 5, "version": 1,
+        }):
+            result = _select_intraday_signal_stocks(market, bars)
+
+        self.assertEqual([row["ts_code"] for row in result], ["600103.SH"])
+
+    def test_bottom_candidate_accepts_below_zero_macd_histogram_repair(self):
+        closes = [12 - index * 0.07 for index in range(39)] + [9.345]
+        row = pd.Series({
+            "ts_code": "600104.SH", "name": "零轴下修复",
+            "pct_chg": 0.3, "turnover_rate": 3.0, "volume_ratio": 0.7,
+            "amount": 100_000_000, "bottom_consolidation": True,
+            "resonance_type": "涨停回落筑底",
+        })
+        bars = {"60m": build_60min_bars("600104.SH", closes)}
+
+        with patch("strategy.load_macd_settings", return_value={
+            "fast_period": 5, "slow_period": 34,
+            "signal_period": 5, "version": 1,
+        }):
+            signal = _macd_kdj_60m_signal(row, bars)
+
+        self.assertIsNotNone(signal)
+        self.assertLess(signal["macd_dif_60m"], 0)
+        self.assertTrue(signal["bottom_turning_60m"])
+
+    def test_bottom_filter_debug_counts_each_pipeline_boundary(self):
+        market = pd.DataFrame([
+            {"ts_code": "600201.SH", "bottom_consolidation": True},
+            {"ts_code": "600202.SH", "bottom_consolidation": True},
+            {"ts_code": "600203.SH", "bottom_consolidation": False},
+        ])
+        bars = {"600201.SH": {"60m": pd.DataFrame([{"close": 10}])}}
+        preliminary = [{
+            "ts_code": "600201.SH",
+            "signal": {"bottom_consolidation": True},
+        }]
+        rows = []
+
+        result = _build_bottom_filter_debug(market, bars, preliminary, rows)
+
+        self.assertEqual(result["daily_candidate_count"], 2)
+        self.assertEqual(result["minute_loaded_count"], 1)
+        self.assertEqual(result["minute_missing_count"], 1)
+        self.assertEqual(result["technical_confirmed_count"], 1)
+        self.assertEqual(result["technical_rejected_count"], 0)
+        self.assertEqual(result["final_output_count"], 0)
 
     def test_trading_session_progress_stops_during_lunch_break(self):
         self.assertEqual(
@@ -1426,6 +1698,117 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         )
         build.assert_not_called()
 
+    def test_database_result_namespace_changes_with_bottom_rule_version(self):
+        with patch(
+            "realtime_info_service._REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION",
+            "bottom-test-v1",
+        ):
+            old_key = _database_realtime_result_key(10)
+        with patch(
+            "realtime_info_service._REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION",
+            "bottom-test-v2",
+        ):
+            new_key = _database_realtime_result_key(10)
+
+        self.assertNotEqual(old_key, new_key)
+
+    def test_last_successful_result_is_not_reused_across_bottom_rule_versions(self):
+        successful = {
+            "trade_date": "20260730",
+            "data_trade_date": "20260730",
+            "data_as_of": "2026-07-30 14:40:00",
+            "intraday": {"stocks": [{"ts_code": "old-rule"}]},
+            "overnight": {"stocks": []},
+        }
+        unavailable = {
+            "trade_date": "20260730",
+            "data_trade_date": "20260730",
+            "data_as_of": "2026-07-30 14:41:00",
+            "intraday": {"stocks": []},
+            "overnight": {"stocks": []},
+        }
+        with (
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+                side_effect=[successful, unavailable],
+            ),
+            patch(
+                "realtime_info_service._REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION",
+                "bottom-test-v1",
+            ),
+        ):
+            first = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 40),
+                limit=10,
+                force_refresh=True,
+            )
+
+        with (
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+                return_value=unavailable,
+            ),
+            patch(
+                "realtime_info_service._REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION",
+                "bottom-test-v2",
+            ),
+        ):
+            second = build_realtime_info(
+                now=datetime(2026, 7, 30, 14, 41),
+                limit=10,
+                force_refresh=True,
+            )
+
+        self.assertEqual(first["intraday"]["stocks"][0]["ts_code"], "old-rule")
+        self.assertEqual(second["data_status"], "unavailable")
+        self.assertEqual(second["intraday"]["stocks"], [])
+
+    def test_empty_force_refresh_falls_back_to_legacy_database_result(self):
+        legacy_payload = {
+            "trade_date": "20260825",
+            "data_trade_date": "20260825",
+            "data_as_of": "2026-08-25 15:00:00",
+            "data_updated_at": "2026-08-25 16:14:47",
+            "intraday": {"stocks": [{"ts_code": "legacy-result"}]},
+            "overnight": {"stocks": []},
+        }
+
+        def load_cached(_scope, key):
+            if "bottom-consolidation" in key:
+                return None
+            return {
+                "payload": legacy_payload,
+                "updated_at": "2026-08-25 16:16:19",
+            }
+
+        with (
+            patch(
+                "realtime_info_service._build_realtime_info_uncached",
+                return_value={
+                    "trade_date": "20260825",
+                    "intraday": {"stocks": []},
+                    "overnight": {"stocks": []},
+                },
+            ),
+            patch(
+                "realtime_info_service.load_result_cache",
+                side_effect=load_cached,
+            ),
+        ):
+            result = build_realtime_info(
+                now=datetime(2026, 8, 25, 16, 56, 53),
+                limit=20,
+                force_refresh=True,
+            )
+
+        self.assertEqual(result["data_status"], "stale")
+        self.assertEqual(result["data_status_label"], "备用缓存")
+        self.assertEqual(
+            result["intraday"]["stocks"][0]["ts_code"],
+            "legacy-result",
+        )
+        self.assertTrue(result["legacy_rule_cache"])
+
     def test_database_result_expires_during_trading(self):
         cached_payload = {
             "trade_date": "20260730",
@@ -2709,6 +3092,70 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertFalse(row["minute_data_current"])
         self.assertEqual(row["next_day_bias"], "数据不足")
         self.assertIn("已尝试15:00和14:59", row["next_day_bias_reason"])
+
+    def test_bottom_consolidation_marks_shrinking_stable_base_as_observation(self):
+        closes = [10.8, 10.5, 10.25, 10.08, 10.0, 10.04, 9.99, 10.03, 10.01,
+                  10.04, 10.02, 10.05, 10.04, 10.06, 10.05, 10.07, 10.06, 10.08, 10.07]
+        volumes = [1_600_000] * 9 + [1_300_000, 1_200_000, 1_100_000, 1_000_000,
+                   900_000, 850_000, 800_000, 700_000, 650_000, 600_000]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600020.SH", "trade_date": f"202607{index + 1:02d}",
+                "close": close, "high": close * 1.01, "low": close * 0.99,
+                "pct_chg": 0.1, "vol": volume,
+            }
+            for index, (close, volume) in enumerate(zip(closes, volumes))
+        ])
+        market = pd.DataFrame([{
+            "ts_code": "600020.SH", "close": 10.09, "high": 10.12, "low": 10.03,
+            "pct_chg": 0.2, "vol": 580_000, "volume_ratio": 0.65,
+        }])
+
+        row = _attach_bottom_consolidation_fields(history=history, market=market, trade_date="20260731").iloc[0]
+
+        self.assertTrue(row["bottom_consolidation"])
+        self.assertEqual(row["resonance_stage"], "observation")
+        self.assertEqual(row["resonance_type"], "缩量企稳观察")
+
+    def test_realtime_stage_groups_apply_limit_independently(self):
+        rows = [
+            {"ts_code": "obs-low", "resonance_stage": "observation", "bottom_setup_score": 60},
+            {"ts_code": "obs-high", "resonance_stage": "observation", "bottom_setup_score": 90},
+            {"ts_code": "trigger-low", "resonance_stage": "trigger", "bottom_breakout_strength": 1.1},
+            {"ts_code": "trigger-high", "resonance_stage": "trigger", "bottom_breakout_strength": 3.2},
+            {"ts_code": "launch-low", "resonance_stage": "launch", "intraday_signal_score": 50},
+            {"ts_code": "launch-high", "resonance_stage": "launch", "intraday_signal_score": 80},
+        ]
+
+        grouped = _group_realtime_stage_rows(rows, limit=1)
+
+        self.assertEqual([row["ts_code"] for row in grouped["observation_stocks"]], ["obs-high"])
+        self.assertEqual([row["ts_code"] for row in grouped["trigger_stocks"]], ["trigger-high"])
+        self.assertEqual([row["ts_code"] for row in grouped["launch_stocks"]], ["launch-high"])
+
+    def test_stable_base_becomes_first_bullish_trigger_on_breakout(self):
+        closes = [10.8, 10.5, 10.25, 10.08, 10.0, 10.04, 9.99, 10.03, 10.01,
+                  10.04, 10.02, 10.05, 10.04, 10.06, 10.05, 10.07, 10.06, 10.08, 10.07]
+        volumes = [1_600_000] * 9 + [1_300_000, 1_200_000, 1_100_000, 1_000_000,
+                   900_000, 850_000, 800_000, 700_000, 650_000, 600_000]
+        history = pd.DataFrame([
+            {
+                "ts_code": "600021.SH", "trade_date": f"202607{index + 1:02d}",
+                "close": close, "high": close * 1.01, "low": close * 0.99,
+                "pct_chg": 0.1, "vol": volume,
+            }
+            for index, (close, volume) in enumerate(zip(closes, volumes))
+        ])
+        market = pd.DataFrame([{
+            "ts_code": "600021.SH", "close": 10.30, "high": 10.35, "low": 10.05,
+            "pct_chg": 2.28, "vol": 720_000, "volume_ratio": 1.25,
+        }])
+
+        row = _attach_bottom_consolidation_fields(market, history, "20260731").iloc[0]
+
+        self.assertEqual(row["resonance_stage"], "trigger")
+        self.assertEqual(row["resonance_type"], "底部首阳触发")
+        self.assertGreater(row["bottom_breakout_strength"], 0)
 
 
 if __name__ == "__main__":

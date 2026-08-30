@@ -3,6 +3,7 @@ import unittest
 import pandas as pd
 
 from tail_premium_scoring import (
+    attach_market_environment_fields,
     build_daily_factor_frame,
     eligible_tail_universe,
     normalize_amount_yuan,
@@ -63,6 +64,19 @@ def _market_row(ts_code="600001.SH", **overrides):
 
 
 class TailPremiumScoringTests(unittest.TestCase):
+    def test_market_environment_fields_use_full_snapshot_benchmark(self):
+        market = pd.DataFrame([
+            {"ts_code": "600001.SH", "pct_chg": 1.0},
+            {"ts_code": "600002.SH", "pct_chg": -2.0},
+            {"ts_code": "600003.SH", "pct_chg": -2.0},
+        ])
+
+        result = attach_market_environment_fields(market)
+
+        self.assertEqual(set(result["market_resonance_state"]), {"down"})
+        self.assertEqual(set(result["market_pct_chg"]), {-1.0})
+        self.assertEqual(result.iloc[0]["relative_strength"], 2.0)
+
     def test_amount_normalization_uses_explicit_unit(self):
         self.assertEqual(
             normalize_amount_yuan(50_000, unit="thousand_yuan"),
@@ -371,6 +385,57 @@ class TailPremiumScoringTests(unittest.TestCase):
             weak_scored["premium_score"],
             strong_scored["premium_score"],
         )
+
+    def test_rising_market_adds_small_explainable_premium_adjustment(self):
+        base = {
+            "pct_chg": 3.0,
+            "market_resonance_state": "up",
+            "market_pct_chg": 1.0,
+            "relative_strength": 2.0,
+            "sector_score": 10,
+        }
+
+        scored = score_tail_premium_row(base)
+
+        self.assertEqual(scored["market_environment_adjustment"], 4.0)
+        self.assertEqual(
+            scored["premium_score"],
+            min(100.0, scored["base_premium_score"] + 4.0),
+        )
+        self.assertIn("大盘上涨", scored["market_environment_reason"])
+
+    def test_falling_market_penalizes_non_resilient_candidate(self):
+        base = {
+            "pct_chg": 0.5,
+            "market_resonance_state": "down",
+            "market_pct_chg": -1.0,
+            "relative_strength": 1.5,
+            "sector_score": 6,
+        }
+
+        scored = score_tail_premium_row(base)
+
+        self.assertEqual(scored["market_environment_adjustment"], -8.0)
+        self.assertEqual(
+            scored["premium_score"],
+            max(0.0, scored["base_premium_score"] - 8.0),
+        )
+        self.assertIn("弱市", scored["market_environment_reason"])
+
+    def test_falling_market_does_not_penalize_resilient_strong_sector_stock(self):
+        base = {
+            "pct_chg": 1.0,
+            "market_resonance_state": "down",
+            "market_pct_chg": -1.0,
+            "relative_strength": 2.0,
+            "sector_score": 10,
+        }
+
+        scored = score_tail_premium_row(base)
+
+        self.assertEqual(scored["market_environment_adjustment"], 0.0)
+        self.assertEqual(scored["premium_score"], scored["base_premium_score"])
+        self.assertIn("逆势", scored["market_environment_reason"])
 
     def test_ranking_is_deterministic_and_defaults_to_top20(self):
         rows = []

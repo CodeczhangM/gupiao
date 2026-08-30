@@ -346,7 +346,7 @@ def delete_cycle_watch(ts_code: str):
 @app.get("/api/cycle-watchlist/{ts_code}/history")
 def cycle_watch_history(ts_code: str, limit: int = Query(50, ge=1)):
     try:
-        return get_cycle_watch_history(ts_code, min(int(limit), 200))
+        return {"history": get_cycle_watch_history(ts_code, min(int(limit), 200))}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

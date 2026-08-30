@@ -527,6 +527,21 @@ createApp({
       realtimeInfoAutoRefresh: false,
       realtimeInfoTimer: null,
       realtimeTailPremiumDebug: false,
+      cycleWatch: {
+        stocks: [],
+        confirmed_stocks: [],
+        low_buy_stocks: [],
+        watch_stocks: [],
+        delayed_stocks: [],
+        unread_alert_count: 0,
+      },
+      cycleWatchForm: {
+        tsCode: '', note: '', plannedLowPrice: '', plannedHighPrice: '',
+      },
+      cycleWatchLoading: false,
+      cycleWatchError: '',
+      cycleWatchHistory: {},
+      cycleWatchExpandedCode: null,
       marketNewsLoading: false,
       marketNewsSummary: {},
       trendBoxLoading: false,
@@ -626,6 +641,7 @@ createApp({
         intraday_monitor: '实时共振监控',
         overnight_monitor: '次日早盘跟进',
         realtime_info: '实时信息',
+        cycle_watch: '周期关注',
         market_news: '消息面',
         trend_box_target: '箱体目标',
         reports: '历史报告',
@@ -638,6 +654,31 @@ createApp({
     },
     backtestRows() {
       return this.backtest && this.backtest.results ? this.backtest.results : [];
+    },
+    cycleWatchGroupsView() {
+      return cycleWatchGroups(this.cycleWatch.stocks || []);
+    },
+    cycleWatchConfirmedRows() {
+      return this.cycleWatch.confirmed_stocks || this.cycleWatchGroupsView.confirmed;
+    },
+    cycleWatchLowBuyRows() {
+      return this.cycleWatch.low_buy_stocks || this.cycleWatchGroupsView.lowBuy;
+    },
+    cycleWatchWatchingRows() {
+      return this.cycleWatch.watch_stocks || this.cycleWatchGroupsView.watch;
+    },
+    cycleWatchDelayedRows() {
+      return this.cycleWatch.delayed_stocks || this.cycleWatchGroupsView.delayed;
+    },
+    cycleWatchUnreadCount() {
+      return Number(this.cycleWatch.unread_alert_count) || cycleWatchAlertCount(this.cycleWatch.stocks);
+    },
+    cycleWatchPanels() {
+      return [
+        { key: 'confirmed', title: '确认后介入', hint: '日线结构与60分钟确认共振', rows: this.cycleWatchConfirmedRows },
+        { key: 'low-buy', title: '低吸提示', hint: '接近支撑，等待缩量企稳', rows: this.cycleWatchLowBuyRows },
+        { key: 'watch', title: '继续观察', hint: '条件尚未齐备，暂不追高', rows: this.cycleWatchWatchingRows },
+      ];
     },
     freeReviewBuildView() {
       return freeReviewBuildState(this.freeReviewBuild);
@@ -678,6 +719,31 @@ createApp({
       return this.realtimeInfo && this.realtimeInfo.intraday && Array.isArray(this.realtimeInfo.intraday.stocks)
         ? this.realtimeInfo.intraday.stocks
         : [];
+    },
+    realtimeObservationRows() {
+      const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
+      return intraday && Array.isArray(intraday.observation_stocks)
+        ? intraday.observation_stocks
+        : this.realtimeIntradayRows.filter((row) => row.resonance_stage === 'observation');
+    },
+    realtimeTriggerRows() {
+      const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
+      return intraday && Array.isArray(intraday.trigger_stocks)
+        ? intraday.trigger_stocks
+        : this.realtimeIntradayRows.filter((row) => row.resonance_stage === 'trigger');
+    },
+    realtimeLaunchRows() {
+      const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
+      return intraday && Array.isArray(intraday.launch_stocks)
+        ? intraday.launch_stocks
+        : this.realtimeIntradayRows.filter((row) => row.resonance_stage === 'launch');
+    },
+    realtimeStageTables() {
+      return [
+        { key: 'observation', title: '缩量企稳观察', rows: this.realtimeObservationRows },
+        { key: 'trigger', title: '底部首阳触发', rows: this.realtimeTriggerRows },
+        { key: 'launch', title: '底部放量启动', rows: this.realtimeLaunchRows },
+      ];
     },
     realtimeOvernightRows() {
       return this.realtimeInfo && this.realtimeInfo.overnight && Array.isArray(this.realtimeInfo.overnight.stocks)
@@ -1033,11 +1099,109 @@ createApp({
         if (this.activeTab === 'intraday_monitor') await this.loadIntradayMonitor(false, false);
         if (this.activeTab === 'overnight_monitor') await this.loadOvernightMonitor(false);
         if (this.activeTab === 'realtime_info') await this.loadRealtimeInfo(false);
+        if (this.activeTab === 'cycle_watch') await this.loadCycleWatchlist(false);
         if (this.activeTab === 'market_news') await this.loadMarketNewsSummary(false);
       } catch (error) {
         this.error = error.message;
       } finally {
         this.loading = false;
+      }
+    },
+    async loadCycleWatchlist(showLoading = true) {
+      if (this.cycleWatchLoading) return;
+      if (showLoading) this.cycleWatchLoading = true;
+      this.cycleWatchError = '';
+      try {
+        this.cycleWatch = await this.request('/cycle-watchlist') || { stocks: [] };
+      } catch (error) {
+        this.cycleWatchError = error.message || '周期关注加载失败';
+      } finally {
+        this.cycleWatchLoading = false;
+      }
+    },
+    async addCycleWatch() {
+      this.cycleWatchLoading = true;
+      this.cycleWatchError = '';
+      try {
+        const form = this.cycleWatchForm;
+        const tsCode = normalizeCycleWatchInput(form.tsCode);
+        const payload = {
+          ts_code: tsCode,
+          note: form.note.trim() || null,
+          planned_low_price: form.plannedLowPrice === '' ? null : Number(form.plannedLowPrice),
+          planned_high_price: form.plannedHighPrice === '' ? null : Number(form.plannedHighPrice),
+        };
+        if (payload.planned_low_price && payload.planned_high_price
+            && payload.planned_low_price > payload.planned_high_price) {
+          throw new Error('计划低价不能高于计划高价');
+        }
+        await this.request('/cycle-watchlist', { method: 'POST', body: JSON.stringify(payload) });
+        this.cycleWatchForm = { tsCode: '', note: '', plannedLowPrice: '', plannedHighPrice: '' };
+        this.cycleWatchLoading = false;
+        await this.loadCycleWatchlist();
+      } catch (error) {
+        this.cycleWatchError = error.message || '添加失败';
+      } finally {
+        this.cycleWatchLoading = false;
+      }
+    },
+    async updateCycleWatch(tsCode, changes) {
+      this.cycleWatchError = '';
+      try {
+        await this.request(`/cycle-watchlist/${encodeURIComponent(tsCode)}`, {
+          method: 'PATCH', body: JSON.stringify(changes),
+        });
+        await this.loadCycleWatchlist();
+      } catch (error) {
+        this.cycleWatchError = error.message || '更新失败';
+      }
+    },
+    async deleteCycleWatch(tsCode) {
+      if (!window.confirm(`确认移除 ${tsCode} 的周期关注？历史评估记录将保留。`)) return;
+      this.cycleWatchError = '';
+      try {
+        await this.request(`/cycle-watchlist/${encodeURIComponent(tsCode)}`, { method: 'DELETE' });
+        if (this.cycleWatchExpandedCode === tsCode) this.cycleWatchExpandedCode = null;
+        await this.loadCycleWatchlist();
+      } catch (error) {
+        this.cycleWatchError = error.message || '移除失败';
+      }
+    },
+    async checkCycleWatch(tsCode = null) {
+      this.cycleWatchLoading = true;
+      this.cycleWatchError = '';
+      try {
+        const payload = { schedule_slot: 'manual' };
+        if (tsCode) payload.ts_code = tsCode;
+        this.cycleWatch = await this.request('/cycle-watchlist/check', {
+          method: 'POST', body: JSON.stringify(payload),
+        }) || { stocks: [] };
+      } catch (error) {
+        this.cycleWatchError = error.message || '检查入场时机失败';
+      } finally {
+        this.cycleWatchLoading = false;
+      }
+    },
+    async loadCycleWatchHistory(tsCode) {
+      if (this.cycleWatchExpandedCode === tsCode) {
+        this.cycleWatchExpandedCode = null;
+        return;
+      }
+      this.cycleWatchError = '';
+      try {
+        const response = await this.request(`/cycle-watchlist/${encodeURIComponent(tsCode)}/history?limit=30`);
+        this.cycleWatchHistory[tsCode] = Array.isArray(response) ? response : (response.history || []);
+        this.cycleWatchExpandedCode = tsCode;
+      } catch (error) {
+        this.cycleWatchError = error.message || '历史记录加载失败';
+      }
+    },
+    async markCycleWatchAlertsRead() {
+      try {
+        await this.request('/cycle-watchlist/alerts/read', { method: 'POST', body: '{}' });
+        await this.loadCycleWatchlist();
+      } catch (error) {
+        this.cycleWatchError = error.message || '提醒状态更新失败';
       }
     },
     async loadSectorRotation(force = false) {

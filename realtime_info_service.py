@@ -56,6 +56,7 @@ _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
 _REALTIME_MARKET_RELATIVE_RULE_VERSION = "market-relative-v1"
 _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION = "historical-resilience-v1"
+_REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION = "bottom-consolidation-v2"
 _MARKET_RELATIVE_UP_THRESHOLD = 0.3
 _MARKET_RELATIVE_DOWN_THRESHOLD = -0.3
 _MARKET_RELATIVE_MIN_SAMPLE_COUNT = 20
@@ -320,6 +321,259 @@ def _attach_historical_resilience_fields(
     return result
 
 
+def _empty_bottom_consolidation_fields(reason: str = "近20日有效日线不足") -> dict[str, Any]:
+    return {
+        "bottom_consolidation": False,
+        "resonance_type": "强势共振",
+        "resonance_stage": None,
+        "bottom_window_days": 0,
+        "bottom_position_20d": pd.NA,
+        "bottom_box_amplitude_20d": pd.NA,
+        "bottom_ma_slope_5d": pd.NA,
+        "bottom_limit_up_date": None,
+        "bottom_pullback_pct": pd.NA,
+        "bottom_breakout_days": 0,
+        "bottom_volume_expansion": pd.NA,
+        "bottom_short_amplitude": pd.NA,
+        "bottom_ma_convergence_pct": pd.NA,
+        "bottom_volume_contraction": pd.NA,
+        "bottom_setup_score": pd.NA,
+        "bottom_breakout_strength": pd.NA,
+        "bottom_consolidation_reason": reason,
+    }
+
+
+def _attach_bottom_consolidation_fields(
+    market: pd.DataFrame,
+    history: pd.DataFrame,
+    trade_date: str,
+) -> pd.DataFrame:
+    if market is None or market.empty:
+        return market
+    result = market.copy()
+    empty = _empty_bottom_consolidation_fields()
+    for key, value in empty.items():
+        result[key] = value
+    required = {"ts_code", "trade_date", "close", "high", "low"}
+    if history is None or history.empty or not required.issubset(history.columns):
+        return result
+    hist = history.copy()
+    hist["ts_code"] = hist["ts_code"].astype(str)
+    hist["trade_date"] = hist["trade_date"].astype(str)
+    hist = hist[hist["trade_date"] < str(trade_date)].copy()
+    for column in ("close", "high", "low", "pct_chg", "vol"):
+        if column not in hist:
+            hist[column] = pd.NA
+        hist[column] = pd.to_numeric(hist[column], errors="coerce")
+    lookup: dict[str, dict[str, Any]] = {}
+    for ts_code, group in hist.groupby("ts_code"):
+        prior = (
+            group.sort_values("trade_date", kind="mergesort")
+            .dropna(subset=["close", "high", "low"])
+            .tail(19)
+        )
+        current_rows = result[result["ts_code"].astype(str) == str(ts_code)]
+        if len(prior) < 9 or current_rows.empty:
+            continue
+        current = current_rows.iloc[0]
+        current_close = _numeric_value(current.get("close"), float(prior["close"].iloc[-1]))
+        current_high = _numeric_value(current.get("high"), current_close)
+        current_low = _numeric_value(current.get("low"), current_close)
+        current_pct = _numeric_value(current.get("pct_chg"))
+        current_vol = _numeric_value(current.get("vol"))
+        current_frame = pd.DataFrame([{
+            "ts_code": str(ts_code),
+            "trade_date": str(trade_date),
+            "close": current_close,
+            "high": current_high,
+            "low": current_low,
+            "pct_chg": current_pct,
+            "vol": current_vol,
+            "limit_flag": current.get("limit_flag"),
+        }])
+        for column in prior.columns:
+            if column not in current_frame:
+                current_frame[column] = pd.NA
+        window = pd.concat([prior, current_frame[prior.columns]], ignore_index=True).tail(20)
+        close20 = pd.to_numeric(window["close"], errors="coerce")
+        high20_series = pd.to_numeric(window["high"], errors="coerce")
+        low20_series = pd.to_numeric(window["low"], errors="coerce")
+        volume20 = pd.to_numeric(window.get("vol"), errors="coerce")
+        pct20 = pd.to_numeric(window.get("pct_chg"), errors="coerce")
+        low20 = float(low20_series.min())
+        high20 = float(high20_series.max())
+        amplitude20 = (high20 / low20 - 1) * 100 if low20 > 0 else float("inf")
+        span20 = high20 - low20
+        position20 = (current_close - low20) / span20 if span20 > 0 else 0.5
+        prior5 = float(close20.iloc[-10:-5].mean())
+        latest5 = float(close20.iloc[-5:].mean())
+        ma_slope5 = (latest5 / prior5 - 1) * 100 if prior5 > 0 else -100.0
+
+        base_window = window.iloc[:-1].tail(10)
+        base_close = pd.to_numeric(base_window["close"], errors="coerce")
+        base_high = pd.to_numeric(base_window["high"], errors="coerce")
+        base_low = pd.to_numeric(base_window["low"], errors="coerce")
+        base_volume = pd.to_numeric(base_window["vol"], errors="coerce")
+        short_low = float(base_low.min())
+        short_high = float(base_high.max())
+        short_amplitude = (
+            (short_high / short_low - 1) * 100 if short_low > 0 else float("inf")
+        )
+        ma5 = float(close20.tail(5).mean())
+        ma10 = float(close20.tail(10).mean())
+        ma5_previous = float(close20.iloc[-6:-1].mean())
+        ma_convergence = abs(ma5 / ma10 - 1) * 100 if ma10 > 0 else float("inf")
+        volume_baseline = base_volume.iloc[-8:-3].dropna()
+        volume_recent = base_volume.tail(3).dropna()
+        volume_contraction = (
+            float(volume_recent.mean() / volume_baseline.mean())
+            if not volume_baseline.empty
+            and not volume_recent.empty
+            and float(volume_baseline.mean()) > 0
+            else None
+        )
+        preceding_lows = base_low.iloc[-6:-3].dropna()
+        recent_lows = base_low.tail(3).dropna()
+        stopped_falling = bool(
+            not preceding_lows.empty
+            and not recent_lows.empty
+            and float(recent_lows.min()) >= float(preceding_lows.min()) * 0.985
+        )
+        stable_base = bool(
+            short_amplitude <= 12.0
+            and ma_convergence <= 2.0
+            and ma5 >= ma5_previous
+            and volume_contraction is not None
+            and volume_contraction <= 0.75
+            and stopped_falling
+            and ma_slope5 >= -1.5
+        )
+        current_volume_ratio = _numeric_value(current.get("volume_ratio"))
+        prior5_close_high = float(base_close.tail(5).max())
+        prior_high = float(base_high.tail(5).max())
+        first_bullish_trigger = bool(
+            stable_base
+            and current_close > prior5_close_high
+            and (current_pct >= 2.0 or current_high > prior_high)
+            and current_volume_ratio >= 1.2
+        )
+        breakout_strength = (
+            (current_close / prior5_close_high - 1) * 100
+            if prior5_close_high > 0 else 0.0
+        )
+        setup_score = max(
+            0.0,
+            min(
+                100.0,
+                100.0 - short_amplitude * 3 - ma_convergence * 10
+                + max(0.0, 0.75 - float(volume_contraction or 0.75)) * 40,
+            ),
+        )
+
+        explicit_limit = window.get("limit_flag", pd.Series(pd.NA, index=window.index))
+        limit_mask = explicit_limit.astype(str).str.lower().isin(
+            {"1", "true", "u", "up", "涨停", "yes"}
+        ) | pct20.ge(9.5).fillna(False)
+        limit_indexes = [int(index) for index in window.index[limit_mask] if int(index) <= len(window) - 3]
+        limit_date = None
+        pullback_pct = None
+        limit_pullback = False
+        if limit_indexes:
+            limit_index = limit_indexes[-1]
+            peak = float(high20_series.iloc[limit_index:].max())
+            pullback_pct = (peak - current_close) / peak * 100 if peak > 0 else None
+            recent5_high = float(high20_series.tail(5).max())
+            recent5_low = float(low20_series.tail(5).min())
+            recent5_amplitude = (
+                (recent5_high / recent5_low - 1) * 100
+                if recent5_low > 0
+                else float("inf")
+            )
+            limit_pullback = bool(
+                pullback_pct is not None
+                and 5.0 <= pullback_pct <= 20.0
+                and recent5_amplitude <= 8.0
+                and ma_slope5 >= -2.5
+            )
+            limit_date = str(window.iloc[limit_index].get("trade_date") or "") or None
+
+        breakout_days = 0
+        volume_expansion = None
+        for days in (3, 2, 1):
+            if len(window) < days + 5:
+                continue
+            baseline = volume20.iloc[-days - 5:-days].dropna()
+            active = volume20.iloc[-days:].dropna()
+            if baseline.empty or len(active) != days or float(baseline.mean()) <= 0:
+                continue
+            expansion = float(active.mean() / baseline.mean())
+            start_close = float(close20.iloc[-days - 1])
+            gain = (current_close / start_close - 1) * 100 if start_close > 0 else 0
+            base = window.iloc[:-days].tail(17)
+            base_low = float(pd.to_numeric(base["low"], errors="coerce").min())
+            base_high = float(pd.to_numeric(base["high"], errors="coerce").max())
+            base_amplitude = (base_high / base_low - 1) * 100 if base_low > 0 else float("inf")
+            if expansion >= 1.5 and 2.0 <= gain <= 10.0 and base_amplitude <= 15.0:
+                breakout_days = days
+                volume_expansion = expansion
+                break
+        volume_breakout = breakout_days > 0
+        is_bottom = limit_pullback or volume_breakout or stable_base
+        resonance_stage = (
+            "launch" if volume_breakout
+            else "trigger" if first_bullish_trigger
+            else "observation" if (stable_base or limit_pullback)
+            else None
+        )
+        resonance_type = (
+            "涨停回落筑底" if resonance_stage == "observation" and limit_pullback
+            else {
+                "launch": "底部放量启动",
+                "trigger": "底部首阳触发",
+                "observation": "缩量企稳观察",
+            }.get(resonance_stage, "强势共振")
+        )
+        lookup[str(ts_code)] = {
+            "bottom_consolidation": is_bottom,
+            "resonance_type": resonance_type,
+            "resonance_stage": resonance_stage,
+            "bottom_window_days": int(len(window)),
+            "bottom_position_20d": round(position20, 6),
+            "bottom_box_amplitude_20d": round(amplitude20, 6),
+            "bottom_ma_slope_5d": round(ma_slope5, 6),
+            "bottom_limit_up_date": limit_date,
+            "bottom_pullback_pct": round(pullback_pct, 6) if pullback_pct is not None else pd.NA,
+            "bottom_breakout_days": breakout_days,
+            "bottom_volume_expansion": (
+                round(volume_expansion, 6) if volume_expansion is not None else pd.NA
+            ),
+            "bottom_short_amplitude": round(short_amplitude, 6),
+            "bottom_ma_convergence_pct": round(ma_convergence, 6),
+            "bottom_volume_contraction": (
+                round(volume_contraction, 6) if volume_contraction is not None else pd.NA
+            ),
+            "bottom_setup_score": round(setup_score, 2),
+            "bottom_breakout_strength": round(breakout_strength, 6),
+            "bottom_consolidation_reason": (
+                f"20日位置 {position20:.0%}，区间振幅 {amplitude20:.2f}%，"
+                f"均价斜率 {ma_slope5:+.2f}%；"
+                + (
+                    f"短箱体缩量企稳，收敛 {ma_convergence:.2f}%"
+                    if resonance_stage == "observation" else
+                    f"突破近5日收盘高点 {breakout_strength:.2f}%"
+                    if resonance_stage == "trigger" else
+                    f"连续{breakout_days}日放量启动 {volume_expansion:.2f}倍"
+                    if volume_breakout else "未出现涨停回落或1至3日放量启动"
+                )
+            ),
+        }
+    for index, ts_code in result["ts_code"].astype(str).items():
+        fields = lookup.get(ts_code, empty)
+        for key, value in fields.items():
+            result.at[index, key] = value
+    return result
+
+
 def _attach_market_relative_fields(
     market: pd.DataFrame,
     benchmark: dict[str, Any] | None = None,
@@ -487,6 +741,7 @@ def _realtime_result_key(limit: int, now: datetime) -> tuple:
         macd_parameter_key(),
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
+        _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
     )
 
 
@@ -1111,7 +1366,17 @@ def _load_realtime_intraday_signal_bars(
         return {}
 
     industries = set(sector_potential["industry_name"].dropna().astype(str))
-    candidates = market[market["industry"].astype(str).isin(industries)].copy()
+    hot_candidates = market[market["industry"].astype(str).isin(industries)].copy()
+    bottom_mask = (
+        market["bottom_consolidation"].fillna(False).astype(bool)
+        if "bottom_consolidation" in market
+        else pd.Series(False, index=market.index)
+    )
+    bottom_candidates = market[bottom_mask].copy()
+    candidates = pd.concat(
+        [hot_candidates, bottom_candidates],
+        ignore_index=True,
+    ).drop_duplicates(subset=["ts_code"], keep="first")
     candidates = candidates[_is_mainboard_a_stock(candidates["ts_code"])].copy()
     if "name" in candidates:
         candidates = candidates[
@@ -1126,16 +1391,59 @@ def _load_realtime_intraday_signal_bars(
         candidates,
         benchmark,
     )
+    candidate_bottom = (
+        candidates["bottom_consolidation"].fillna(False).astype(bool)
+        if "bottom_consolidation" in candidates
+        else pd.Series(False, index=candidates.index)
+    )
+    resonance_type = candidates.get(
+        "resonance_type", pd.Series("", index=candidates.index)
+    ).astype(str)
+    resonance_stage = candidates.get(
+        "resonance_stage", pd.Series("", index=candidates.index)
+    ).astype(str)
+    bottom_volume_allowed = (
+        (resonance_stage.eq("observation") | resonance_type.eq("涨停回落筑底"))
+        & candidates["volume_ratio"].ge(0.6)
+    ) | (
+        resonance_stage.eq("trigger")
+        & candidates["volume_ratio"].ge(1.2)
+    ) | (
+        (resonance_stage.eq("launch") | resonance_type.eq("底部放量启动"))
+        & candidates["volume_ratio"].ge(1.5)
+    )
     candidates = candidates[
-        candidates["turnover_rate"].between(1.0, 12, inclusive="both")
-        & (candidates["volume_ratio"] >= 1.0)
-        & _market_relative_candidate_mask(candidates, benchmark)
+        candidates["turnover_rate"].between(0.6, 12, inclusive="both")
+        & (
+            (
+                candidates["volume_ratio"].ge(1.0)
+                & _market_relative_candidate_mask(candidates, benchmark)
+            )
+            | (candidate_bottom & bottom_volume_allowed)
+        )
     ].copy()
     if candidates.empty:
         return {}
 
-    candidates = candidates.sort_values(["industry", "amount", "volume_ratio"], ascending=[True, False, False])
-    candidates = candidates.groupby("industry", group_keys=False).head(_REALTIME_CANDIDATES_PER_SECTOR)
+    hot_selected = (
+        candidates[candidates["industry"].astype(str).isin(industries)]
+        .sort_values(["industry", "amount", "volume_ratio"], ascending=[True, False, False])
+        .groupby("industry", group_keys=False)
+        .head(_REALTIME_CANDIDATES_PER_SECTOR)
+    )
+    selected_bottom_mask = (
+        candidates["bottom_consolidation"].fillna(False).astype(bool)
+        if "bottom_consolidation" in candidates
+        else pd.Series(False, index=candidates.index)
+    )
+    bottom_selected = (
+        candidates[selected_bottom_mask]
+        .sort_values(["volume_ratio", "amount"], ascending=[False, False])
+        .head(30)
+    )
+    candidates = pd.concat([hot_selected, bottom_selected], ignore_index=True).drop_duplicates(
+        subset=["ts_code"], keep="first"
+    )
     start_60m, _default_end_60m = _history_window(trade_date)
     end_datetime = _realtime_end_datetime(trade_date, now=now)
 
@@ -1226,6 +1534,42 @@ def _today_sector_potential(market: pd.DataFrame, limit: int) -> pd.DataFrame:
     return grouped.rename(columns={"industry": "industry_name"})
 
 
+def _include_bottom_candidate_sectors(
+    sector_potential: pd.DataFrame,
+    market: pd.DataFrame,
+) -> pd.DataFrame:
+    result = (
+        sector_potential.copy()
+        if isinstance(sector_potential, pd.DataFrame)
+        else pd.DataFrame()
+    )
+    if market is None or market.empty or "industry" not in market:
+        return result
+    if "bottom_consolidation" not in market:
+        return result
+    bottom = market[market["bottom_consolidation"].fillna(False).astype(bool)]
+    industries = [
+        value for value in bottom["industry"].dropna().astype(str).unique()
+        if value
+    ]
+    existing = (
+        set(result["industry_name"].dropna().astype(str))
+        if "industry_name" in result else set()
+    )
+    missing = [industry for industry in industries if industry not in existing]
+    if not missing:
+        return result
+    additions = pd.DataFrame([
+        {
+            "industry_name": industry,
+            "rank": len(result) + offset + 1,
+            "bottom_candidate_sector": True,
+        }
+        for offset, industry in enumerate(missing)
+    ])
+    return pd.concat([result, additions], ignore_index=True, sort=False)
+
+
 def _has_any_trade_date_signal_bars(bars_by_code: dict[str, dict[str, pd.DataFrame]], trade_date: str) -> bool:
     return any(_has_trade_date_minutes(bars, trade_date) for bars in (bars_by_code or {}).values())
 
@@ -1250,6 +1594,88 @@ def _latest_bar_time(*frames: pd.DataFrame | None) -> str | None:
         if latest is not None
         else None
     )
+
+
+def _build_bottom_filter_debug(
+    market: pd.DataFrame,
+    intraday_bars: dict[str, dict[str, pd.DataFrame]],
+    preliminary_rows: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    if market is None or market.empty or "ts_code" not in market:
+        daily_codes: set[str] = set()
+    else:
+        mask = (
+            market["bottom_consolidation"].fillna(False).astype(bool)
+            if "bottom_consolidation" in market
+            else pd.Series(False, index=market.index)
+        )
+        daily_codes = set(market.loc[mask, "ts_code"].astype(str))
+    minute_codes = {
+        str(code) for code, values in (intraday_bars or {}).items()
+        if str(code) in daily_codes
+        and any(
+            isinstance(frame, pd.DataFrame) and not frame.empty
+            for frame in (values or {}).values()
+        )
+    }
+    technical_codes = {
+        str(item.get("ts_code") or "")
+        for item in preliminary_rows or []
+        if bool((item.get("signal") or {}).get("bottom_consolidation"))
+    }
+    final_codes = {
+        str(item.get("ts_code") or "")
+        for item in rows or []
+        if bool(item.get("bottom_consolidation"))
+    }
+    return {
+        "daily_candidate_count": len(daily_codes),
+        "minute_loaded_count": len(minute_codes),
+        "minute_missing_count": max(0, len(daily_codes) - len(minute_codes)),
+        "technical_confirmed_count": len(technical_codes),
+        "technical_rejected_count": max(0, len(minute_codes) - len(technical_codes)),
+        "final_output_count": len(final_codes),
+    }
+
+
+def _group_realtime_stage_rows(
+    rows: list[dict[str, Any]],
+    limit: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """Return independently ranked bottom-stage lists without truncating peers."""
+    cap = max(1, min(int(limit), 100))
+    specs = {
+        "observation": (
+            "observation_stocks",
+            lambda row: (
+                float(row.get("bottom_setup_score") or 0),
+                -float(row.get("bottom_ma_convergence_pct") or 999),
+                -float(row.get("bottom_volume_contraction") or 999),
+            ),
+        ),
+        "trigger": (
+            "trigger_stocks",
+            lambda row: (
+                float(row.get("bottom_breakout_strength") or 0),
+                float(row.get("realtime_relative_strength_score") or 0),
+                float(row.get("intraday_signal_score") or 0),
+            ),
+        ),
+        "launch": (
+            "launch_stocks",
+            lambda row: (
+                float(row.get("intraday_signal_score") or 0),
+                float(row.get("bottom_volume_expansion") or 0),
+                float(row.get("relative_strength") or 0),
+            ),
+        ),
+    }
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for stage, (field, key) in specs.items():
+        matches = [row for row in (rows or []) if row.get("resonance_stage") == stage]
+        grouped[field] = sorted(matches, key=key, reverse=True)[:cap]
+    return grouped
 
 
 def _screening_data_trade_date(
@@ -1315,6 +1741,7 @@ def _build_realtime_intraday_section(
         macd_parameter_key(),
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
+        _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
     )
     cached = (
         None
@@ -1340,6 +1767,11 @@ def _build_realtime_intraday_section(
     realtime_market, _market_relative_benchmark = _attach_market_relative_fields(
         realtime_market
     )
+    realtime_market = _attach_bottom_consolidation_fields(
+        realtime_market,
+        history,
+        trade_date,
+    )
     sector_potential = rank_sector_potential(
         realtime_market,
         history,
@@ -1355,6 +1787,10 @@ def _build_realtime_intraday_section(
     )
     if shared_context is not None:
         shared_context["leader_codes"] = leader_codes
+    sector_potential = _include_bottom_candidate_sectors(
+        sector_potential,
+        realtime_market,
+    )
     intraday_bars = _load_realtime_intraday_signal_bars(
         realtime_market,
         sector_potential,
@@ -1391,6 +1827,11 @@ def _build_realtime_intraday_section(
         history,
         trade_date,
     )
+    signal_market = _attach_bottom_consolidation_fields(
+        signal_market,
+        history,
+        trade_date,
+    )
     sector_potential = _attach_intraday_signal_stocks(
         sector_potential,
         signal_market,
@@ -1419,7 +1860,7 @@ def _build_realtime_intraday_section(
                 "preliminary_status": status,
             })
 
-    preliminary_rows = sorted(
+    ranked_preliminary_rows = sorted(
         preliminary_rows,
         key=lambda item: (
             item.get("preliminary_status") == "主力抢筹",
@@ -1429,7 +1870,23 @@ def _build_realtime_intraday_section(
             float(item["signal"].get("volume_ratio") or 0),
         ),
         reverse=True,
-    )[:_REALTIME_TAIL_CANDIDATE_LIMIT]
+    )
+    stage_fetch_cap = min(
+        _REALTIME_TAIL_CANDIDATE_LIMIT,
+        max(1, min(int(limit), 100)),
+    )
+    preliminary_rows = []
+    for stage in ("observation", "trigger", "launch"):
+        preliminary_rows.extend([
+            item for item in ranked_preliminary_rows
+            if item["signal"].get("resonance_stage") == stage
+        ][:stage_fetch_cap])
+    preliminary_rows.extend([
+        item for item in ranked_preliminary_rows
+        if item["signal"].get("resonance_stage") not in {
+            "observation", "trigger", "launch",
+        }
+    ][:_REALTIME_TAIL_CANDIDATE_LIMIT])
 
     rows = []
     for preliminary in preliminary_rows:
@@ -1510,7 +1967,7 @@ def _build_realtime_intraday_section(
             "main_force_reason": reason,
         })
 
-    rows = sorted(
+    all_rows = sorted(
         rows,
         key=lambda item: (
             item.get("main_force_status") == "主力抢筹",
@@ -1520,7 +1977,9 @@ def _build_realtime_intraday_section(
             float(item.get("volume_ratio") or 0),
         ),
         reverse=True,
-    )[: max(1, min(int(limit), 100))]
+    )
+    stage_groups = _group_realtime_stage_rows(all_rows, limit)
+    rows = all_rows[: max(1, min(int(limit), 100))]
     data_as_of = max(
         (
             str(row.get("data_as_of"))
@@ -1549,8 +2008,15 @@ def _build_realtime_intraday_section(
         "refresh_interval_seconds": 30,
         "sector_count": int(0 if sector_potential is None else len(sector_potential)),
         "result_cache_hit": False,
+        "bottom_filter_debug": _build_bottom_filter_debug(
+            signal_market,
+            intraday_bars,
+            preliminary_rows,
+            rows,
+        ),
         "_leader_codes": leader_codes,
         "stocks": rows,
+        **stage_groups,
         "minute_data_sources": sorted({
             str(row.get("minute_data_source"))
             for row in rows if row.get("minute_data_source")
@@ -1737,12 +2203,19 @@ def _has_realtime_stocks(result: dict[str, Any]) -> bool:
     )
 
 
-def _database_realtime_result_key(limit: int) -> str:
+def _legacy_database_realtime_result_key(limit: int) -> str:
     return (
         f"limit={max(1, min(int(limit), 100))}"
         f"|{macd_parameter_key()}"
         f"|{_REALTIME_MARKET_RELATIVE_RULE_VERSION}"
         f"|{_REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION}"
+    )
+
+
+def _database_realtime_result_key(limit: int) -> str:
+    return (
+        _legacy_database_realtime_result_key(limit)
+        + f"|{_REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION}"
     )
 
 
@@ -1806,29 +2279,33 @@ def _load_database_realtime_result(
     *,
     now: datetime | None = None,
     require_fresh: bool = True,
+    allow_legacy: bool = False,
 ) -> dict[str, Any] | None:
-    try:
-        cached = load_result_cache(
-            "realtime_info",
-            _database_realtime_result_key(limit),
-        )
-    except Exception:
-        return None
-    if not cached or not isinstance(cached.get("payload"), dict):
-        return None
-    result = _json_safe(cached["payload"])
-    if not _has_realtime_stocks(result):
-        return None
-    if require_fresh and not _database_result_is_fresh(
-        result,
-        cached.get("updated_at"),
-        now or datetime.now(),
-    ):
-        return None
-    result["cache_source"] = "database"
-    result["cache_updated_at"] = cached.get("updated_at")
-    result["result_cache_hit"] = True
-    return result
+    cache_keys = [(_database_realtime_result_key(limit), False)]
+    if allow_legacy:
+        cache_keys.append((_legacy_database_realtime_result_key(limit), True))
+    for cache_key, legacy_rule_cache in cache_keys:
+        try:
+            cached = load_result_cache("realtime_info", cache_key)
+        except Exception:
+            continue
+        if not cached or not isinstance(cached.get("payload"), dict):
+            continue
+        result = _json_safe(cached["payload"])
+        if not _has_realtime_stocks(result):
+            continue
+        if require_fresh and not _database_result_is_fresh(
+            result,
+            cached.get("updated_at"),
+            now or datetime.now(),
+        ):
+            continue
+        result["cache_source"] = "database"
+        result["cache_updated_at"] = cached.get("updated_at")
+        result["result_cache_hit"] = True
+        result["legacy_rule_cache"] = legacy_rule_cache
+        return result
+    return None
 
 
 def _save_database_realtime_result(
@@ -1869,6 +2346,7 @@ def build_realtime_info(
         macd_parameter_key(),
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
+        _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
     )
     cache_key = _realtime_result_key(limit, current)
     if not force_refresh and not debug:
@@ -1972,6 +2450,7 @@ def build_realtime_info(
                 limit,
                 now=current,
                 require_fresh=False,
+                allow_legacy=True,
             )
         if previous is not None:
             previous = _filter_realtime_output(previous)

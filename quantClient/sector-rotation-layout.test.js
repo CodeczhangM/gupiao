@@ -6,7 +6,7 @@ const root = __dirname;
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
-const rotationSection = html.match(/<div class="sector-rotation-stack">[\s\S]*?<section v-show="activeTab === 'intraday_monitor'"/)?.[0] || '';
+const rotationSection = html.match(/<div class="sector-rotation-stack">[\s\S]*?<section v-show="activeTab === '(?:cycle_watch|intraday_monitor)'"/)?.[0] || '';
 
 assert(
   html.includes("activeTab === 'sector_rotation'"),

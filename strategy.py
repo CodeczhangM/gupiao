@@ -508,13 +508,27 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         or (macd_bullish and macd_above_zero and macd_histogram_up)
     )
     weak_macd_signal = bool(macd_bullish and macd_above_zero)
-    if not macd_signal_ok and not weak_macd_signal:
-        return None
-
     kdj_golden_series = (k > d) & (k.shift(1) <= d.shift(1))
     kdj_golden_cross = bool(kdj_golden_series.iloc[-1])
     kdj_recent_golden_cross = bool(kdj_golden_series.tail(6).fillna(False).any())
     kdj_bullish = bool(k.iloc[-1] > d.iloc[-1])
+    bottom_candidate = bool(row.get("bottom_consolidation"))
+    bottom_histogram_repair = bool(
+        bottom_candidate
+        and len(histogram) >= 2
+        and histogram.iloc[-1] > histogram.iloc[-2]
+        and close.iloc[-1] > close.iloc[-2]
+    )
+    bottom_turning = bool(
+        bottom_candidate
+        and (
+            bottom_histogram_repair
+            or kdj_golden_cross
+            or kdj_recent_golden_cross
+        )
+    )
+    if not macd_signal_ok and not weak_macd_signal and not bottom_turning:
+        return None
     volume_ratio = row.get("volume_ratio_num", row.get("volume_ratio", 0))
     pct_chg = row.get("pct_chg_num", row.get("pct_chg", 0))
     amount = row.get("amount_num", row.get("amount", 0))
@@ -526,6 +540,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         + (35 if not macd_above_zero and macd_golden_cross else 0)
         + (25 if not macd_above_zero and macd_recent_golden_cross and not macd_golden_cross else 0)
         + (28 if weak_macd_signal and not macd_signal_ok else 0)
+        + (20 if bottom_turning and not macd_signal_ok and not weak_macd_signal else 0)
     )
     score = (
         macd_tier_base
@@ -537,7 +552,12 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         + min(float(amount or 0) / 100_000_000, 10)
         + (float(tail_bias["tail_strength_score"] or 50) - 50) * 0.25
     )
-    if macd_golden_cross:
+    if bottom_turning and not macd_signal_ok and not weak_macd_signal:
+        reason_parts = [
+            "60分MACD零轴下柱体修复"
+            if bottom_histogram_repair else "60分KDJ底部拐头"
+        ]
+    elif macd_golden_cross:
         reason_parts = ["60分MACD水上金叉" if macd_above_zero else "60分MACD金叉"]
     elif macd_recent_golden_cross:
         reason_parts = ["60分MACD水上金叉延续" if macd_above_zero else "60分MACD金叉延续"]
@@ -574,6 +594,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         "macd_recent_golden_cross_60m": macd_recent_golden_cross,
         "macd_bullish_60m": macd_bullish,
         "macd_histogram_up_60m": macd_histogram_up,
+        "bottom_turning_60m": bottom_turning,
         "macd_above_zero_60m": macd_above_zero,
         "bullish_stack_60m": bullish_stack_60m,
         "kdj_k_60m": round(float(k.iloc[-1]), 6),
@@ -582,7 +603,7 @@ def _macd_kdj_60m_signal(row: pd.Series, minute_bars: pd.DataFrame | dict | None
         "kdj_golden_cross_60m": kdj_golden_cross,
         "kdj_recent_golden_cross_60m": kdj_recent_golden_cross,
         "kdj_bullish_60m": kdj_bullish,
-        "intraday_signal_tier": "strong" if macd_signal_ok else "weak",
+        "intraday_signal_tier": "strong" if macd_signal_ok else "bottom" if bottom_turning else "weak",
         "intraday_signal_score": round(score, 2),
         "intraday_signal_reason": "、".join(reason_parts),
         **macd_provenance(macd_settings),
@@ -626,12 +647,38 @@ def _select_intraday_signal_stocks(
         & candidates["relative_strength_num"].ge(1.5)
         & candidates["pct_chg_num"].ge(-0.5)
     )
+    bottom_candidate = (
+        candidates["bottom_consolidation"].fillna(False).astype(bool)
+        if "bottom_consolidation" in candidates
+        else pd.Series(False, index=candidates.index)
+    )
+    resonance_type = candidates.get(
+        "resonance_type", pd.Series("", index=candidates.index)
+    ).astype(str)
+    resonance_stage = candidates.get(
+        "resonance_stage", pd.Series("", index=candidates.index)
+    ).astype(str)
+    bottom_volume_allowed = (
+        (resonance_stage.eq("observation") | resonance_type.eq("涨停回落筑底"))
+        & candidates["volume_ratio_num"].ge(0.6)
+    ) | (
+        resonance_stage.eq("trigger")
+        & candidates["volume_ratio_num"].ge(1.2)
+    ) | (
+        (resonance_stage.eq("launch") | resonance_type.eq("底部放量启动"))
+        & candidates["volume_ratio_num"].ge(1.5)
+    )
     candidates = candidates[
-        candidates["turnover_num"].between(1.0, 12, inclusive="both")
-        & (candidates["volume_ratio_num"] >= 1.0)
+        candidates["turnover_num"].between(0.6, 12, inclusive="both")
         & (
-            (candidates["pct_chg_num"] >= 0.2)
-            | resilient_down_market
+            (
+                candidates["volume_ratio_num"].ge(1.0)
+                & (
+                    candidates["pct_chg_num"].ge(0.2)
+                    | resilient_down_market
+                )
+            )
+            | (bottom_candidate & bottom_volume_allowed)
         )
     ].copy()
     if candidates.empty:

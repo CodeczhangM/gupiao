@@ -26,6 +26,9 @@
         <button :class="{ active: activeTab === 'intraday_monitor' }" @click="activeTab = 'intraday_monitor'; loadIntradayMonitor(false)">实时共振</button>
         <button :class="{ active: activeTab === 'overnight_monitor' }" @click="activeTab = 'overnight_monitor'; loadOvernightMonitor(false)">次日早盘跟进</button>
         <button :class="{ active: activeTab === 'realtime_info' }" @click="activeTab = 'realtime_info'">实时信息</button>
+        <button class="cycle-watch-nav" :class="{ active: activeTab === 'cycle_watch' }" @click="activeTab = 'cycle_watch'; loadCycleWatchlist()">
+          周期关注 <span v-if="cycleWatchUnreadCount" class="nav-badge">{{ cycleWatchUnreadCount }}</span>
+        </button>
         <button :class="{ active: activeTab === 'market_news' }" @click="activeTab = 'market_news'; loadMarketNewsSummary(false)">消息面</button>
         <button :class="{ active: activeTab === 'trend_box_target' }" @click="activeTab = 'trend_box_target'">箱体目标</button>
         <button :class="{ active: activeTab === 'backtest' }" @click="activeTab = 'backtest'">回测</button>
@@ -617,6 +620,83 @@
         </div>
       </section>
 
+      <section v-show="activeTab === 'cycle_watch'" class="cycle-watch-page">
+        <div class="panel cycle-watch-manager">
+          <div class="panel-head">
+            <div>
+              <h3>长期关注池</h3>
+              <span>围绕固定股票做 2–5 个交易日短周期；交易日按六个时点自动检查</span>
+            </div>
+            <div class="cycle-watch-actions">
+              <button v-if="cycleWatchUnreadCount" class="secondary" @click="markCycleWatchAlertsRead">标为已读</button>
+              <button class="primary" @click="checkCycleWatch()" :disabled="cycleWatchLoading">
+                {{ cycleWatchLoading ? '检查中' : '立即检查全部' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="cycleWatchError" class="alert">{{ cycleWatchError }}</div>
+          <form class="cycle-watch-form" @submit.prevent="addCycleWatch">
+            <label><span>股票代码</span><input v-model.trim="cycleWatchForm.tsCode" placeholder="600000（自动补 .SH/.SZ）" required></label>
+            <label><span>计划低价</span><input type="number" min="0" step="0.01" v-model="cycleWatchForm.plannedLowPrice" placeholder="可选"></label>
+            <label><span>计划高价</span><input type="number" min="0" step="0.01" v-model="cycleWatchForm.plannedHighPrice" placeholder="可选"></label>
+            <label class="cycle-watch-note"><span>备注</span><input v-model.trim="cycleWatchForm.note" maxlength="500" placeholder="周期逻辑、观察重点（可选）"></label>
+            <button class="primary" type="submit" :disabled="cycleWatchLoading">添加关注</button>
+          </form>
+        </div>
+
+        <div class="cycle-watch-grid">
+          <article v-for="panel in cycleWatchPanels" :key="panel.key" class="panel cycle-watch-panel" :class="`is-${panel.key}`">
+            <div class="panel-head">
+              <div><h3>{{ panel.title }}</h3><span>{{ panel.hint }}</span></div>
+              <strong>{{ panel.rows.length }} 只</strong>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>股票</th><th>机会分</th><th>现价/涨幅</th><th>支撑/计划区</th><th>条件与风险</th><th>操作</th></tr></thead>
+                <tbody>
+                  <template v-for="row in panel.rows" :key="row.ts_code">
+                    <tr :class="{ 'cycle-watch-alert-row': row.is_new_alert && !row.alert_read }">
+                      <td><strong>{{ row.name || '--' }}</strong><small>{{ row.ts_code }}</small></td>
+                      <td><strong>{{ formatNumber(row.opportunity_score) }}</strong><small>{{ row.status_label || panel.title }}</small></td>
+                      <td>{{ formatNumber(row.current_price) }}<small :class="signedClass(row.pct_chg)">{{ formatNumber(row.pct_chg) }}%</small></td>
+                      <td>{{ formatNumber(row.support_price) }}<small>{{ row.planned_low_price || row.planned_high_price ? `${row.planned_low_price || '--'}–${row.planned_high_price || '--'}` : '未设计划区' }}</small></td>
+                      <td class="cycle-watch-reasons">
+                        <span>{{ (row.matched_conditions || []).slice(0, 2).join('；') || '等待条件形成' }}</span>
+                        <small v-if="row.risk_items?.length">风险：{{ row.risk_items.slice(0, 2).join('；') }}</small>
+                        <small v-else>{{ row.invalidation_reason || row.note || '--' }}</small>
+                      </td>
+                      <td class="cycle-watch-row-actions">
+                        <button class="secondary" @click="checkCycleWatch(row.ts_code)">检查</button>
+                        <button class="secondary" @click="loadCycleWatchHistory(row.ts_code)">历史</button>
+                        <button class="danger" @click="deleteCycleWatch(row.ts_code)">移除</button>
+                      </td>
+                    </tr>
+                    <tr v-if="cycleWatchExpandedCode === row.ts_code" class="cycle-watch-history-row">
+                      <td colspan="6">
+                        <div class="cycle-watch-history">
+                          <span v-for="item in (cycleWatchHistory[row.ts_code] || [])" :key="item.id || `${item.trade_date}-${item.schedule_slot}`">
+                            {{ item.trade_date || '--' }} {{ item.schedule_slot || '' }} · {{ item.status_label || item.status }} · {{ formatNumber(item.opportunity_score) }}分
+                          </span>
+                          <span v-if="!(cycleWatchHistory[row.ts_code] || []).length">暂无历史评估</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+                  <tr v-if="!panel.rows.length"><td colspan="6" class="empty">当前没有{{ panel.title }}股票</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div v-if="cycleWatchDelayedRows.length" class="panel cycle-watch-delayed">
+          <div class="panel-head"><h3>数据延迟</h3><span>暂不产生入场提醒，请稍后重试</span></div>
+          <div class="cycle-watch-delayed-list">
+            <span v-for="row in cycleWatchDelayedRows" :key="row.ts_code">{{ row.name || row.ts_code }}：{{ row.invalidation_reason || '行情数据不足' }}</span>
+          </div>
+        </div>
+      </section>
+
       <section v-show="activeTab === 'intraday_monitor'" class="panel">
         <div class="panel-head monitor-head">
           <div>
@@ -841,16 +921,30 @@
           </div>
         </div>
 
-        <div class="panel wide-panel">
+        <div
+          v-for="stageTable in realtimeStageTables"
+          :key="`realtime-stage-${stageTable.key}`"
+          class="panel wide-panel"
+          data-stages="缩量企稳观察 底部首阳触发 底部放量启动"
+        >
           <div class="panel-head">
-            <h3>实时共振</h3>
-            <span>{{ realtimeIntradayRows.length }} 只 · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}</span>
+            <h3>{{ stageTable.title }}</h3>
+            <span>
+              {{ stageTable.rows.length }} 只 · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}
+              <template v-if="stageTable.key === 'observation' && realtimeInfo.intraday?.bottom_filter_debug">
+                · 底部：日线 {{ realtimeInfo.intraday.bottom_filter_debug.daily_candidate_count || 0 }}
+                / 分时 {{ realtimeInfo.intraday.bottom_filter_debug.minute_loaded_count || 0 }}
+                / 技术确认 {{ realtimeInfo.intraday.bottom_filter_debug.technical_confirmed_count || 0 }}
+                / 输出 {{ realtimeInfo.intraday.bottom_filter_debug.final_output_count || 0 }}
+              </template>
+            </span>
           </div>
           <div class="table-wrap intraday-monitor-table">
             <table>
               <thead>
                 <tr>
                   <th>股票</th>
+                  <th>共振类型</th>
                   <th>板块</th>
                   <th>当前价</th>
                   <th>当日高</th>
@@ -865,8 +959,25 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in realtimeIntradayRows" :key="row.ts_code" :class="monitorRowClass(row)">
+                <tr v-for="row in stageTable.rows" :key="row.ts_code" :class="monitorRowClass(row)">
                   <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
+                  <td :title="row.bottom_consolidation_reason || '--'">
+                    <span class="monitor-badge" :class="row.bottom_consolidation ? 'watch' : 'strong'">
+                      {{ row.resonance_type || '强势共振' }}
+                    </span>
+                    <small v-if="row.bottom_consolidation">
+                      <br>20日位置 {{ formatNumber((row.bottom_position_20d || 0) * 100) }}%
+                      · 振幅 {{ formatNumber(row.bottom_box_amplitude_20d) }}%
+                      <template v-if="row.resonance_type === '涨停回落筑底'">
+                        <br>涨停 {{ row.bottom_limit_up_date || '--' }}
+                        · 回落 {{ formatNumber(row.bottom_pullback_pct) }}%
+                      </template>
+                      <template v-else-if="row.resonance_type === '底部放量启动'">
+                        <br>启动 {{ row.bottom_breakout_days || 0 }}日
+                        · 放量 {{ formatNumber(row.bottom_volume_expansion) }}倍
+                      </template>
+                    </small>
+                  </td>
                   <td>{{ row.industry || '--' }}</td>
                   <td>{{ formatNumber(row.current_price) }}</td>
                   <td>{{ formatNumber(row.day_high) }}</td>
@@ -900,8 +1011,8 @@
                     {{ row.next_day_bias_reason || row.main_force_reason || '--' }}
                   </td>
                 </tr>
-                <tr v-if="realtimeIntradayRows.length === 0">
-                  <td colspan="12" class="empty">点击拉取实时信息后展示</td>
+                <tr v-if="stageTable.rows.length === 0">
+                  <td colspan="13" class="empty">暂无{{ stageTable.title }}股票</td>
                 </tr>
               </tbody>
             </table>
@@ -1011,6 +1122,12 @@
                           趋势 {{ formatNumber(row.trend_score) }}/10 ·
                           成交量 {{ formatNumber(row.volume_score) }}/10 ·
                           位置 {{ formatNumber(row.position_score) }}/10
+                        </span></div>
+                        <div><b>市场环境</b><span>
+                          基础 {{ formatNumber(row.base_premium_score) }} 分 ·
+                          修正 {{ formatNumber(row.market_environment_adjustment) }} 分 ·
+                          最终 {{ formatNumber(row.premium_score) }} 分<br>
+                          {{ row.market_environment_reason || '大盘环境不可用，沿用个股基础分' }}
                         </span></div>
                         <div><b>尾盘指标</b><span>
                           14:30后 {{ formatNumber(row.tail_return_after_1430) }}% ·
@@ -1704,6 +1821,7 @@
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
   <script src="./free-review-utils.js?v=20260730-free-review-v1"></script>
   <script src="./sector-rotation-utils.js?v=20260812-sector-rotation-v1"></script>
+  <script src="./cycle-watch-utils.js?v=20260828-cycle-watch-v1"></script>
   <script src="./main.js?v=20260731-tail-premium-v1"></script>
 </body>
 </html>

@@ -18,6 +18,7 @@ from strategy import (
     _tail_next_day_bias,
 )
 from tail_premium_scoring import (
+    attach_market_environment_fields,
     build_daily_factor_frame,
     current_score_version,
     eligible_tail_universe,
@@ -831,6 +832,7 @@ def build_realtime_tail_premium_monitor(
             )
             else "thousand_yuan"
         )
+    market = attach_market_environment_fields(market)
     state, state_label = _selection_state(current)
     stale_waiting_refresh = state == "waiting_tail_window" and not bool(
         metadata.get("data_current", True)

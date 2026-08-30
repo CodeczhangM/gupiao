@@ -188,6 +188,10 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         self.assertIn("premium_score", row)
         self.assertIn("tail_score", row)
         self.assertIn("risk_items", row)
+        self.assertEqual(row["market_resonance_state"], "up")
+        self.assertAlmostEqual(row["market_pct_chg"], 1.5)
+        self.assertAlmostEqual(row["relative_strength"], 1.5)
+        self.assertEqual(row["market_environment_adjustment"], 4.0)
         self.assertEqual(result["data_as_of"], "2026-07-31 14:49:00")
         self.assertEqual(set(frequencies), {"1min"})
 

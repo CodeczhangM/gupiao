@@ -14,7 +14,7 @@ from indicator_settings import (
 )
 
 
-BASE_SCORE_VERSION = "tail-premium-v1"
+BASE_SCORE_VERSION = "tail-premium-v2"
 MODULE_WEIGHTS = {
     "tail": 35.0,
     "limit": 20.0,
@@ -32,6 +32,8 @@ RETURN20_HARD_REJECT = 50.0
 RETURN20_SOFT_RISK = 35.0
 HIGH_POSITION_HARD_REJECT = 0.98
 HIGH_POSITION_SOFT_RISK = 0.95
+MARKET_UP_THRESHOLD = 0.3
+MARKET_DOWN_THRESHOLD = -0.3
 
 
 def current_score_version(settings: dict[str, Any] | None = None) -> str:
@@ -44,6 +46,32 @@ def _number(value: Any, default: float | None = None) -> float | None:
     except (TypeError, ValueError):
         return default
     return result if math.isfinite(result) else default
+
+
+def attach_market_environment_fields(market: pd.DataFrame) -> pd.DataFrame:
+    if market is None or market.empty:
+        return pd.DataFrame() if market is None else market.copy()
+    result = market.copy()
+    pct = pd.to_numeric(result.get("pct_chg"), errors="coerce")
+    valid = pct.dropna()
+    if valid.empty:
+        market_pct = None
+        state = "fallback"
+    else:
+        market_pct = round(float(valid.mean()), 6)
+        if market_pct >= MARKET_UP_THRESHOLD:
+            state = "up"
+        elif market_pct <= MARKET_DOWN_THRESHOLD:
+            state = "down"
+        else:
+            state = "flat"
+    result["market_pct_chg"] = market_pct
+    result["market_resonance_state"] = state
+    result["market_relative_sample_count"] = int(len(valid))
+    result["relative_strength"] = (
+        pct - market_pct if market_pct is not None else pd.NA
+    )
+    return result
 
 
 def normalize_amount_yuan(
@@ -618,6 +646,31 @@ def _risk(row: dict[str, Any]) -> tuple[float, list[str]]:
     return min(40.0, score), list(dict.fromkeys(risks))
 
 
+def _market_environment_adjustment(
+    row: dict[str, Any],
+    sector_score: float,
+) -> tuple[float, str]:
+    state = str(row.get("market_resonance_state") or "fallback")
+    market_pct = _number(row.get("market_pct_chg"))
+    relative_strength = _number(row.get("relative_strength"))
+    stock_pct = _number(row.get("pct_chg"), 0) or 0
+    if state == "up":
+        return 4.0, f"大盘上涨，隔夜情绪加分（大盘{market_pct or 0:.2f}%）"
+    if state == "down":
+        resilient = (
+            relative_strength is not None
+            and relative_strength >= 1.5
+            and stock_pct >= -0.5
+            and sector_score >= 9
+        )
+        if resilient:
+            return 0.0, "弱市中个股逆势且板块强，免除市场扣分"
+        return -8.0, "大盘弱市且个股或板块抗跌不足，降低隔夜预期"
+    if state == "flat":
+        return 0.0, "大盘震荡，市场环境不调整"
+    return 0.0, "大盘环境不可用，沿用个股基础分"
+
+
 def score_tail_premium_row(row: dict[str, Any] | pd.Series) -> dict[str, Any]:
     source = dict(row)
     tail_return = _number(source.get("tail_return_after_1430"), 0) or 0
@@ -648,7 +701,15 @@ def score_tail_premium_row(row: dict[str, Any] | pd.Series) -> dict[str, Any]:
         + volume_score
         + position_score
     )
-    premium_score = min(100.0, max(0.0, gross - risk_score))
+    base_premium_score = min(100.0, max(0.0, gross - risk_score))
+    market_adjustment, market_reason = _market_environment_adjustment(
+        source,
+        sector_score,
+    )
+    premium_score = min(
+        100.0,
+        max(0.0, base_premium_score + market_adjustment),
+    )
     reasons: list[str] = []
     if tail_score >= 20:
         reasons.append("尾盘承接与强度较好")
@@ -677,6 +738,9 @@ def score_tail_premium_row(row: dict[str, Any] | pd.Series) -> dict[str, Any]:
         "volume_score": round(volume_score, 2),
         "position_score": round(position_score, 2),
         "risk_score": round(risk_score, 2),
+        "base_premium_score": round(base_premium_score, 2),
+        "market_environment_adjustment": round(market_adjustment, 2),
+        "market_environment_reason": market_reason,
         "premium_score": round(premium_score, 2),
         "overnight_candidate_score": round(premium_score, 2),
         "risk_level": risk_level,
