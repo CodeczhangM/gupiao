@@ -1195,7 +1195,22 @@ tr:hover td {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.intraday-stage-table table {
+  min-width: 1800px;
+  table-layout: auto;
+}
+
+.intraday-stage-table .chip-washout {
+  width: 300px;
+  min-width: 300px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .intraday-monitor-table table {
