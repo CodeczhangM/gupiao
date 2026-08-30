@@ -12,6 +12,7 @@ from realtime_info_service import (
     build_realtime_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
     _attach_historical_resilience_fields,
+    _attach_realtime_chip_fields,
     _attach_bottom_consolidation_fields,
     _attach_market_relative_fields,
     _build_market_relative_benchmark,
@@ -2254,7 +2255,15 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             {"ts_code": "600101.SH", "close": 12.34, "high": 12.8},
             {"ts_code": "600102.SH", "close": 8.88, "high": 9.2},
         ])
-        load_recent_daily.return_value = pd.DataFrame()
+        load_recent_daily.return_value = pd.DataFrame([
+            {
+                "ts_code": ts_code,
+                "trade_date": f"2026{index + 1:04d}",
+                "close": 10.0,
+            }
+            for ts_code in ("600101.SH", "600102.SH")
+            for index in range(120)
+        ])
         build_realtime_intraday_section.return_value = {
             "trade_date": "20260729",
             "stocks": [{"ts_code": "600101.SH", "name": "实时共振"}],
@@ -2282,6 +2291,10 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         build_realtime_tail_premium_monitor.assert_called_once()
         kwargs = build_realtime_tail_premium_monitor.call_args.kwargs
         self.assertEqual(kwargs["trade_date_override"], "20260729")
+        self.assertEqual(
+            kwargs["history_override"].groupby("ts_code").size().to_dict(),
+            {"600101.SH": 100, "600102.SH": 100},
+        )
         self.assertEqual(
             kwargs["source_metadata"]["data_source"],
             "current_snapshot",
@@ -3167,6 +3180,37 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             result["observation_stocks"][0]["ts_code"],
             "600002.SH",
         )
+
+    @patch("realtime_info_service.attach_chip_peak_fields")
+    def test_chip_enrichment_only_sends_supported_stage_rows(self, attach):
+        source = [
+            {"ts_code": "600001.SH", "resonance_stage": "observation"},
+            {"ts_code": "600002.SH", "resonance_stage": "trigger"},
+            {"ts_code": "600003.SH", "resonance_stage": "launch"},
+            {"ts_code": "600004.SH", "resonance_stage": "regular"},
+        ]
+        attach.return_value = (
+            [
+                {**row, "chip_washout_score": 80.0}
+                for row in source[:3]
+            ],
+            [],
+        )
+
+        result, warnings = _attach_realtime_chip_fields(
+            source,
+            pd.DataFrame(),
+            "20260730",
+        )
+
+        sent_rows = attach.call_args.args[0]
+        self.assertEqual(
+            [row["ts_code"] for row in sent_rows],
+            ["600001.SH", "600002.SH", "600003.SH"],
+        )
+        self.assertEqual([row["ts_code"] for row in result], [row["ts_code"] for row in source])
+        self.assertNotIn("chip_washout_score", result[3])
+        self.assertEqual(warnings, [])
 
     def test_database_cache_key_includes_chip_peak_rule_version(self):
         self.assertIn(

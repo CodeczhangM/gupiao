@@ -187,6 +187,15 @@ class ChipPeakServiceTests(unittest.TestCase):
         self.assertEqual(len(second[0]), 2)
         self.assertIsNot(first[0], second[0])
 
+    @patch("chip_peak_service._query_tushare", return_value=pd.DataFrame())
+    def test_empty_upstream_frames_use_failure_backoff_not_success_cache(self, query):
+        with self.assertRaisesRegex(RuntimeError, "筹码分布为空"):
+            load_chip_data("600001.SH", "20260730")
+        with self.assertRaisesRegex(RuntimeError, "筹码分布为空"):
+            load_chip_data("600001.SH", "20260730")
+
+        self.assertEqual(query.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

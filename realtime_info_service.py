@@ -1693,7 +1693,24 @@ def _attach_realtime_chip_fields(
     history: pd.DataFrame,
     trade_date: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    return attach_chip_peak_fields(rows, history, trade_date)
+    supported_stages = {"observation", "trigger", "launch"}
+    source_rows = [dict(row) for row in (rows or [])]
+    stage_indexes = [
+        index
+        for index, row in enumerate(source_rows)
+        if row.get("resonance_stage") in supported_stages
+    ]
+    if not stage_indexes:
+        return source_rows, []
+    stage_rows = [source_rows[index] for index in stage_indexes]
+    enriched, warnings = attach_chip_peak_fields(
+        stage_rows,
+        history,
+        trade_date,
+    )
+    for index, enriched_row in zip(stage_indexes, enriched):
+        source_rows[index] = enriched_row
+    return source_rows, warnings
 
 
 def _screening_data_trade_date(
@@ -2058,6 +2075,20 @@ def _build_realtime_intraday_section(
     return result
 
 
+def _last_history_rows_per_stock(
+    history: pd.DataFrame,
+    limit: int,
+) -> pd.DataFrame:
+    if history is None or history.empty:
+        return pd.DataFrame() if history is None else history.copy()
+    if "ts_code" not in history.columns:
+        return history.tail(limit).copy()
+    data = history.copy()
+    if "trade_date" in data.columns:
+        data = data.sort_values(["ts_code", "trade_date"])
+    return data.groupby("ts_code", group_keys=False).tail(limit).reset_index(drop=True)
+
+
 def _build_realtime_info_uncached(
     now: datetime | None = None,
     limit: int = 10,
@@ -2145,7 +2176,7 @@ def _build_realtime_info_uncached(
             "max_leaders": _REALTIME_OVERNIGHT_MAX_LEADERS,
             "now": current,
             "market_override": market,
-            "history_override": history,
+            "history_override": _last_history_rows_per_stock(history, 100),
             "trade_date_override": intraday_trade_date,
             "minute_loader": realtime_minute_loader,
             "source_metadata": {

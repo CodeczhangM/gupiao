@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+import data_service
 from data_service import _query_tushare
 
 
@@ -80,20 +81,33 @@ def load_chip_data(
     if failed is not None and time.monotonic() - failed[0] < _CHIP_FAILURE_RETRY_SECONDS:
         raise RuntimeError(failed[1])
 
+    query_args = {"ts_code": key[0], "trade_date": key[1]}
     try:
         chips = _query_tushare(
             "cyq_chips",
-            ts_code=key[0],
-            trade_date=key[1],
+            **query_args,
+        )
+        _validate_chip_frame(
+            chips,
+            {"price", "percent"},
+            key,
+            "筹码分布",
         )
         perf = _query_tushare(
             "cyq_perf",
-            ts_code=key[0],
-            trade_date=key[1],
+            **query_args,
         )
-        chips = chips if isinstance(chips, pd.DataFrame) else pd.DataFrame()
-        perf = perf if isinstance(perf, pd.DataFrame) else pd.DataFrame()
+        _validate_chip_frame(
+            perf,
+            {
+                "cost_5pct", "cost_15pct", "cost_85pct", "cost_95pct",
+                "weight_avg", "winner_rate",
+            },
+            key,
+            "筹码绩效",
+        )
     except Exception as exc:
+        _invalidate_tushare_chip_queries(query_args)
         with _CHIP_CACHE_LOCK:
             _CHIP_FAILURE_CACHE[key] = (time.monotonic(), str(exc))
         raise
@@ -102,6 +116,29 @@ def load_chip_data(
         _CHIP_DATA_CACHE[key] = (chips.copy(), perf.copy())
         _CHIP_FAILURE_CACHE.pop(key, None)
     return chips.copy(), perf.copy()
+
+
+def _validate_chip_frame(
+    frame: Any,
+    required_columns: set[str],
+    key: tuple[str, str],
+    label: str,
+) -> None:
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        raise RuntimeError(f"{label}为空")
+    missing = required_columns.difference(frame.columns)
+    if missing:
+        raise RuntimeError(f"{label}缺少字段: {','.join(sorted(missing))}")
+    if "ts_code" in frame.columns and not frame["ts_code"].astype(str).eq(key[0]).any():
+        raise RuntimeError(f"{label}股票代码不匹配")
+    if "trade_date" in frame.columns and not frame["trade_date"].astype(str).eq(key[1]).any():
+        raise RuntimeError(f"{label}交易日不匹配")
+
+
+def _invalidate_tushare_chip_queries(query_args: dict[str, str]) -> None:
+    for api_name in ("cyq_chips", "cyq_perf"):
+        cache_key = (api_name, tuple(sorted(query_args.items())))
+        data_service._query_cache.pop(cache_key, None)
 
 
 def calculate_concentration(low: Any, high: Any) -> float | None:
