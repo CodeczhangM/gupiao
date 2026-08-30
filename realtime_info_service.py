@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from chip_peak_service import attach_chip_peak_fields, clear_chip_peak_cache
 from data_service import get_trade_dates, sync_cached_market_data
 from indicator_settings import macd_parameter_key, macd_provenance
 from intraday_monitor_service import _main_force_status, _market_phase
@@ -57,6 +58,7 @@ _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
 _REALTIME_MARKET_RELATIVE_RULE_VERSION = "market-relative-v1"
 _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION = "historical-resilience-v1"
 _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION = "bottom-consolidation-v2"
+_REALTIME_CHIP_PEAK_RULE_VERSION = "chip-peak-washout-v1"
 _MARKET_RELATIVE_UP_THRESHOLD = 0.3
 _MARKET_RELATIVE_DOWN_THRESHOLD = -0.3
 _MARKET_RELATIVE_MIN_SAMPLE_COUNT = 20
@@ -74,6 +76,7 @@ def clear_realtime_derived_caches() -> None:
         _REALTIME_RESULT_CACHE.clear()
         _LAST_SUCCESSFUL_REALTIME_RESULTS.clear()
         _REALTIME_INTRADAY_RESULT_CACHE.clear()
+    clear_chip_peak_cache()
 
 
 def _clear_realtime_result_caches() -> None:
@@ -742,6 +745,7 @@ def _realtime_result_key(limit: int, now: datetime) -> tuple:
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
         _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
+        _REALTIME_CHIP_PEAK_RULE_VERSION,
     )
 
 
@@ -1008,7 +1012,7 @@ def _load_realtime_market_inputs(
     market = load_market_snapshot(latest_trade_date)
     if _snapshot_matches_trade_date(market, latest_trade_date):
         return (
-            market, load_recent_daily(latest_trade_date, 100),
+            market, load_recent_daily(latest_trade_date, 120),
             latest_trade_date, "current_snapshot", True, [],
         )
 
@@ -1018,7 +1022,7 @@ def _load_realtime_market_inputs(
         and _snapshot_supports_realtime_filters(external_market)
     ):
         return (
-            external_market, load_recent_daily(latest_trade_date, 100),
+            external_market, load_recent_daily(latest_trade_date, 120),
             latest_trade_date, "eastmoney_snapshot_fallback", True, [],
         )
     if (
@@ -1036,7 +1040,7 @@ def _load_realtime_market_inputs(
             fallback_trade_date = latest_trade_date
 
     fallback_market = load_market_snapshot(fallback_trade_date)
-    fallback_history = load_recent_daily(fallback_trade_date, 100)
+    fallback_history = load_recent_daily(fallback_trade_date, 120)
     warnings = [external_error] if external_error else ["东方财富快照未返回有效数据"]
     return fallback_market, fallback_history, fallback_trade_date, "previous_snapshot", False, warnings
 
@@ -1649,6 +1653,8 @@ def _group_realtime_stage_rows(
         "observation": (
             "observation_stocks",
             lambda row: (
+                bool(row.get("chip_build_position")),
+                float(row.get("chip_washout_score") or 0),
                 float(row.get("bottom_setup_score") or 0),
                 -float(row.get("bottom_ma_convergence_pct") or 999),
                 -float(row.get("bottom_volume_contraction") or 999),
@@ -1657,6 +1663,8 @@ def _group_realtime_stage_rows(
         "trigger": (
             "trigger_stocks",
             lambda row: (
+                bool(row.get("chip_build_position")),
+                float(row.get("chip_washout_score") or 0),
                 float(row.get("bottom_breakout_strength") or 0),
                 float(row.get("realtime_relative_strength_score") or 0),
                 float(row.get("intraday_signal_score") or 0),
@@ -1665,6 +1673,8 @@ def _group_realtime_stage_rows(
         "launch": (
             "launch_stocks",
             lambda row: (
+                bool(row.get("chip_build_position")),
+                float(row.get("chip_washout_score") or 0),
                 float(row.get("intraday_signal_score") or 0),
                 float(row.get("bottom_volume_expansion") or 0),
                 float(row.get("relative_strength") or 0),
@@ -1676,6 +1686,14 @@ def _group_realtime_stage_rows(
         matches = [row for row in (rows or []) if row.get("resonance_stage") == stage]
         grouped[field] = sorted(matches, key=key, reverse=True)[:cap]
     return grouped
+
+
+def _attach_realtime_chip_fields(
+    rows: list[dict[str, Any]],
+    history: pd.DataFrame,
+    trade_date: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    return attach_chip_peak_fields(rows, history, trade_date)
 
 
 def _screening_data_trade_date(
@@ -1742,6 +1760,7 @@ def _build_realtime_intraday_section(
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
         _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
+        _REALTIME_CHIP_PEAK_RULE_VERSION,
     )
     cached = (
         None
@@ -1978,6 +1997,11 @@ def _build_realtime_intraday_section(
         ),
         reverse=True,
     )
+    all_rows, chip_warnings = _attach_realtime_chip_fields(
+        all_rows,
+        history,
+        trade_date,
+    )
     stage_groups = _group_realtime_stage_rows(all_rows, limit)
     rows = all_rows[: max(1, min(int(limit), 100))]
     data_as_of = max(
@@ -2022,9 +2046,12 @@ def _build_realtime_intraday_section(
             for row in rows if row.get("minute_data_source")
         }),
         "fallback_warnings": list(dict.fromkeys(
-            warning
-            for row in rows
-            for warning in (row.get("minute_data_warnings") or [])
+            list(chip_warnings)
+            + [
+                warning
+                for row in rows
+                for warning in (row.get("minute_data_warnings") or [])
+            ]
         ))[:20],
     }
     _REALTIME_INTRADAY_RESULT_CACHE[cache_key] = (time.monotonic(), _json_safe(result))
@@ -2212,10 +2239,17 @@ def _legacy_database_realtime_result_key(limit: int) -> str:
     )
 
 
-def _database_realtime_result_key(limit: int) -> str:
+def _pre_chip_database_realtime_result_key(limit: int) -> str:
     return (
         _legacy_database_realtime_result_key(limit)
         + f"|{_REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION}"
+    )
+
+
+def _database_realtime_result_key(limit: int) -> str:
+    return (
+        _pre_chip_database_realtime_result_key(limit)
+        + f"|{_REALTIME_CHIP_PEAK_RULE_VERSION}"
     )
 
 
@@ -2283,7 +2317,10 @@ def _load_database_realtime_result(
 ) -> dict[str, Any] | None:
     cache_keys = [(_database_realtime_result_key(limit), False)]
     if allow_legacy:
-        cache_keys.append((_legacy_database_realtime_result_key(limit), True))
+        cache_keys.extend([
+            (_pre_chip_database_realtime_result_key(limit), True),
+            (_legacy_database_realtime_result_key(limit), True),
+        ])
     for cache_key, legacy_rule_cache in cache_keys:
         try:
             cached = load_result_cache("realtime_info", cache_key)
@@ -2347,6 +2384,7 @@ def build_realtime_info(
         _REALTIME_MARKET_RELATIVE_RULE_VERSION,
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
         _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
+        _REALTIME_CHIP_PEAK_RULE_VERSION,
     )
     cache_key = _realtime_result_key(limit, current)
     if not force_refresh and not debug:

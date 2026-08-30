@@ -102,7 +102,15 @@ curl http://127.0.0.1:8000/api/scan/latest/strong
 curl http://127.0.0.1:8000/api/scan/latest/dip
 ```
 
-## 6. Nginx 转发示例
+## 6. 实时筹码峰
+
+“实时信息”中的缩量企稳观察、底部首阳触发和底部放量启动会通过 Tushare 的 `cyq_chips` 与 `cyq_perf` 获取逐价格档筹码、成本分位和获利比例。有效结果按股票代码和交易日缓存在进程内，30秒实时刷新不会重复请求同一天的同一只股票。
+
+当前 `TUSHARE_TOKEN` 需要具备这两个特色数据接口的访问权限。权限不足、上游失败或当日数据尚未生成时，页面显示“筹码数据暂缺”，原候选不会被删除，原有阶段判断仍然有效。
+
+盘末隔夜溢价模块不获取、不评分也不展示筹码峰数据。
+
+## 7. Nginx 转发示例
 
 ```nginx
 location /quant/ {
@@ -120,7 +128,7 @@ location /quant/ {
 curl http://你的域名/quant/health
 ```
 
-## 7. Spring 调用方式
+## 8. Spring 调用方式
 
 Spring 后端可以直接请求 Python 服务：
 

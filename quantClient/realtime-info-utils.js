@@ -10,6 +10,7 @@
   root.detailListText = api.detailListText;
   root.marketRelativeText = api.marketRelativeText;
   root.historicalResilienceText = api.historicalResilienceText;
+  root.chipPeakDisplay = api.chipPeakDisplay;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function buildRealtimeInfoUtils() {
   function tailVolumeDisplay(row, isAfter1430) {
     if (!row || row.tail_after_1430_available !== true) {
@@ -183,7 +184,46 @@
     };
   }
 
+  function chipPeakDisplay(row) {
+    const source = row || {};
+    const label = String(source.chip_washout_label || '筹码数据暂缺');
+    const finiteNumber = (value) => {
+      if (value === null || value === undefined || value === '') return null;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    };
+    const numberText = (value, digits = 2) => {
+      const number = finiteNumber(value);
+      return number === null ? '--' : number.toFixed(digits);
+    };
+    const scoreValue = finiteNumber(source.chip_washout_score);
+    const peakPrice = numberText(source.chip_peak_price);
+    const peakPercent = numberText(source.chip_peak_percent);
+    const distanceValue = finiteNumber(source.chip_price_distance_pct);
+    const distance = distanceValue !== null
+      ? `${distanceValue >= 0 ? '+' : ''}${distanceValue.toFixed(2)}%`
+      : '--';
+    const concentration70 = numberText(source.chip_concentration_70_pct);
+    const concentration90 = numberText(source.chip_concentration_90_pct);
+    let state = 'muted';
+    if (source.chip_build_position === true) state = 'strong';
+    else if (label.includes('等待确认') || label === '筹码整理') state = 'watch';
+    else if (label === '筹码结构偏弱') state = 'risk';
+
+    return {
+      label,
+      score: scoreValue !== null ? `${Math.round(scoreValue)}分` : '--',
+      peak: peakPrice === '--'
+        ? '主峰 --'
+        : `主峰 ${peakPrice} / ${peakPercent}% · 距峰 ${distance}`,
+      concentration: `70% ${concentration70 === '--' ? '--' : `${concentration70}%`} · 90% ${concentration90 === '--' ? '--' : `${concentration90}%`}`,
+      state,
+      title: source.chip_washout_reason || '暂无有效筹码峰数据',
+    };
+  }
+
   return {
+    chipPeakDisplay,
     detailListText,
     historicalResilienceText,
     marketRelativeText,

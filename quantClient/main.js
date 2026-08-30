@@ -964,6 +964,9 @@ createApp({
     historicalResilienceText(row) {
       return historicalResilienceText(row);
     },
+    chipPeakDisplay(row) {
+      return globalThis.chipPeakDisplay(row);
+    },
     monitorBadgeClass(value) {
       if (value === '主力抢筹' || value === '高开偏强') return 'strong';
       if (value === '低开风险' || value === '放量分歧') return 'risk';

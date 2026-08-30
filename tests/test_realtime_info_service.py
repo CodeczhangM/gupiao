@@ -85,6 +85,10 @@ class RealtimeInfoServiceTests(unittest.TestCase):
                 "20260723",
             ],
         )
+        self.chip_queries = patch(
+            "chip_peak_service._query_tushare",
+            return_value=pd.DataFrame(),
+        )
         self.snapshot_fallback.start()
         self.eastmoney_minutes.start()
         self.sina_minutes.start()
@@ -94,6 +98,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.database_result_saves.start()
         self.database_prune.start()
         self.complete_dates.start()
+        self.chip_queries.start()
         self.addCleanup(self.snapshot_fallback.stop)
         self.addCleanup(self.eastmoney_minutes.stop)
         self.addCleanup(self.sina_minutes.stop)
@@ -103,6 +108,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.addCleanup(self.database_result_saves.stop)
         self.addCleanup(self.database_prune.stop)
         self.addCleanup(self.complete_dates.stop)
+        self.addCleanup(self.chip_queries.stop)
 
     def test_bottom_consolidation_rejects_flat_base_without_catalyst(self):
         closes = [11.5 - index * 0.04 for index in range(40)] + [
@@ -2266,8 +2272,12 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(result["intraday"]["stocks"][0]["day_high"], 12.8)
         self.assertEqual(result["overnight"]["stocks"][0]["current_price"], 8.88)
         self.assertEqual(result["overnight"]["stocks"][0]["day_high"], 9.2)
+        self.assertFalse(any(
+            key.startswith("chip_")
+            for key in result["overnight"]["stocks"][0]
+        ))
         sync_cached_market_data.assert_called_once_with(force_current=True)
-        load_recent_daily.assert_called_once_with("20260729", 100)
+        load_recent_daily.assert_called_once_with("20260729", 120)
         build_realtime_intraday_section.assert_called_once()
         build_realtime_tail_premium_monitor.assert_called_once()
         kwargs = build_realtime_tail_premium_monitor.call_args.kwargs
@@ -2594,7 +2604,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(row["day_high"], 18.42)
         load_market_snapshot.assert_any_call("20260729")
         load_market_snapshot.assert_any_call("20260728")
-        load_recent_daily.assert_called_once_with("20260728", 100)
+        load_recent_daily.assert_called_once_with("20260728", 120)
 
     @patch("realtime_info_service._cached_minute_bars", create=True)
     def test_realtime_intraday_bar_loader_skips_tail_minute_before_1430(self, cached_minute_bars):
@@ -3132,6 +3142,37 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual([row["ts_code"] for row in grouped["observation_stocks"]], ["obs-high"])
         self.assertEqual([row["ts_code"] for row in grouped["trigger_stocks"]], ["trigger-high"])
         self.assertEqual([row["ts_code"] for row in grouped["launch_stocks"]], ["launch-high"])
+
+    def test_stage_groups_prioritize_buildable_chip_signal_before_original_score(self):
+        rows = [
+            {
+                "ts_code": "600001.SH",
+                "resonance_stage": "observation",
+                "bottom_setup_score": 99,
+                "chip_build_position": False,
+                "chip_washout_score": 60,
+            },
+            {
+                "ts_code": "600002.SH",
+                "resonance_stage": "observation",
+                "bottom_setup_score": 70,
+                "chip_build_position": True,
+                "chip_washout_score": 82,
+            },
+        ]
+
+        result = _group_realtime_stage_rows(rows, 20)
+
+        self.assertEqual(
+            result["observation_stocks"][0]["ts_code"],
+            "600002.SH",
+        )
+
+    def test_database_cache_key_includes_chip_peak_rule_version(self):
+        self.assertIn(
+            "chip-peak-washout-v1",
+            _database_realtime_result_key(20),
+        )
 
     def test_stable_base_becomes_first_bullish_trigger_on_breakout(self):
         closes = [10.8, 10.5, 10.25, 10.08, 10.0, 10.04, 9.99, 10.03, 10.01,

@@ -9,6 +9,7 @@ const {
   marketRelativeText,
   historicalResilienceText,
   tailVolumeDisplay,
+  chipPeakDisplay,
 } = require('./realtime-info-utils.js');
 
 assert.deepEqual(
@@ -202,6 +203,56 @@ assert.deepEqual(
     title: '暂无近20日抗跌力数据',
     state: 'muted',
   },
+);
+
+assert.deepEqual(
+  chipPeakDisplay({
+    chip_washout_label: '底部洗盘 · 可建仓',
+    chip_washout_score: 84,
+    chip_peak_price: 10.2,
+    chip_peak_percent: 12.3,
+    chip_price_distance_pct: 4.5,
+    chip_concentration_70_pct: 9.8,
+    chip_concentration_90_pct: 14.2,
+    chip_build_position: true,
+    chip_washout_reason: '底部筹码集中',
+  }),
+  {
+    label: '底部洗盘 · 可建仓',
+    score: '84分',
+    peak: '主峰 10.20 / 12.30% · 距峰 +4.50%',
+    concentration: '70% 9.80% · 90% 14.20%',
+    state: 'strong',
+    title: '底部筹码集中',
+  },
+);
+
+assert.deepEqual(
+  chipPeakDisplay({ chip_washout_label: '筹码数据暂缺' }),
+  {
+    label: '筹码数据暂缺',
+    score: '--',
+    peak: '主峰 --',
+    concentration: '70% -- · 90% --',
+    state: 'muted',
+    title: '暂无有效筹码峰数据',
+  },
+);
+
+assert.equal(
+  chipPeakDisplay({ chip_washout_label: '底部筹码密集 · 等待确认' }).state,
+  'watch',
+);
+assert.equal(
+  chipPeakDisplay({ chip_washout_label: '筹码结构偏弱' }).state,
+  'risk',
+);
+assert.equal(
+  chipPeakDisplay({
+    chip_washout_label: '筹码整理',
+    chip_peak_price: Number.NaN,
+  }).peak,
+  '主峰 --',
 );
 
 console.log('realtime tail-volume display regression ok');

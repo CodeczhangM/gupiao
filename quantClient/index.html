@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260731-tail-premium-v1">
+  <link rel="stylesheet" href="./styles.css?v=20260830-chip-peak-v1">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -950,6 +950,7 @@
                   <th>当日高</th>
                   <th>涨跌幅</th>
                   <th>抗跌力</th>
+                  <th>筹码峰</th>
                   <th>60分信号</th>
                   <th>主力状态</th>
                   <th>次日倾向</th>
@@ -996,6 +997,18 @@
                       :title="historicalResilienceText(row).title"
                     >{{ historicalResilienceText(row).text }}</span>
                   </td>
+                  <td class="chip-washout" :title="chipPeakDisplay(row).title">
+                    <div class="chip-washout-main">
+                      <span class="monitor-badge" :class="chipPeakDisplay(row).state">
+                        {{ chipPeakDisplay(row).label }}
+                      </span>
+                      <strong>{{ chipPeakDisplay(row).score }}</strong>
+                    </div>
+                    <small class="chip-washout-detail">
+                      {{ chipPeakDisplay(row).peak }}<br>
+                      {{ chipPeakDisplay(row).concentration }}
+                    </small>
+                  </td>
                   <td>{{ monitorSignalText(row) }}</td>
                   <td><span class="monitor-badge" :class="monitorBadgeClass(row.main_force_status)">{{ row.main_force_status || '观察' }}</span></td>
                   <td><span class="monitor-badge" :class="monitorBadgeClass(row.next_day_bias)">{{ row.next_day_bias || '数据不足' }}</span></td>
@@ -1012,7 +1025,7 @@
                   </td>
                 </tr>
                 <tr v-if="stageTable.rows.length === 0">
-                  <td colspan="13" class="empty">暂无{{ stageTable.title }}股票</td>
+                  <td colspan="14" class="empty">暂无{{ stageTable.title }}股票</td>
                 </tr>
               </tbody>
             </table>
@@ -1817,11 +1830,11 @@
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="./cache-utils.js?v=20260712-cache-date-v2"></script>
   <script src="./sector-potential-utils.js?v=20260716-leader-code-v1"></script>
-  <script src="./realtime-info-utils.js?v=20260731-tail-premium-v1"></script>
+  <script src="./realtime-info-utils.js?v=20260830-chip-peak-v1"></script>
   <script src="./morning-follow-utils.js?v=20260730-snapshot-fallback-v1"></script>
   <script src="./free-review-utils.js?v=20260730-free-review-v1"></script>
   <script src="./sector-rotation-utils.js?v=20260812-sector-rotation-v1"></script>
   <script src="./cycle-watch-utils.js?v=20260828-cycle-watch-v1"></script>
-  <script src="./main.js?v=20260731-tail-premium-v1"></script>
+  <script src="./main.js?v=20260830-chip-peak-v1"></script>
 </body>
 </html>

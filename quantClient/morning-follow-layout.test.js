@@ -31,7 +31,7 @@ assert.doesNotMatch(
 );
 assert.match(
   html,
-  /styles\.css\?v=20260731-tail-premium-v1/,
+  /styles\.css\?v=20260830-chip-peak-v1/,
   '应更新样式缓存版本'
 );
 

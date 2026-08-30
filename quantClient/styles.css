@@ -1178,6 +1178,26 @@ tr:hover td {
   color: #b54747;
 }
 
+.chip-washout {
+  min-width: 250px;
+  white-space: normal;
+}
+
+.chip-washout-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.chip-washout-detail {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
 .intraday-monitor-table table {
   min-width: 1400px;
 }

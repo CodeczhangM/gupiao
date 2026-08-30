@@ -10,6 +10,9 @@ const main = fs.readFileSync(
   path.join(__dirname, 'main.js'),
   'utf8',
 );
+const [stageHtml, overnightHtml = ''] = html.split(
+  '<h3>盘末隔夜溢价 TOP20</h3>',
+);
 
 assert.ok(html.includes('盘末隔夜溢价 TOP20'));
 assert.ok(html.includes('premium_score'));
@@ -47,6 +50,13 @@ assert.ok(main.includes('realtimeLaunchRows'));
 assert.ok(html.includes('缩量企稳观察'));
 assert.ok(html.includes('底部首阳触发'));
 assert.ok(html.includes('底部放量启动'));
+assert.ok(stageHtml.includes('<th>筹码峰</th>'));
+assert.ok(stageHtml.includes('chipPeakDisplay(row)'));
+assert.ok(stageHtml.includes('chip-washout'));
+assert.ok(!overnightHtml.includes('chipPeakDisplay'));
+assert.ok(!overnightHtml.includes('chip_peak_'));
+assert.ok(!overnightHtml.includes('chip_washout_'));
+assert.ok(!overnightHtml.includes('<th>筹码峰</th>'));
 assert.ok(main.includes('realtimeTailPremiumDebug'));
 assert.ok(main.includes('top_reasons'));
 assert.ok(main.includes('debug=true'));
