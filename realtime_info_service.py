@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import threading
@@ -39,6 +40,11 @@ from overnight_monitor_service import (
 )
 from realtime_tail_premium_service import (
     build_realtime_tail_premium_monitor,
+)
+from position_candidate_scoring import (
+    position_score_version,
+    rank_scored_position_candidates,
+    score_position_candidate,
 )
 from strategy import (
     _attach_intraday_signal_stocks,
@@ -746,6 +752,7 @@ def _realtime_result_key(limit: int, now: datetime) -> tuple:
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
         _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
         _REALTIME_CHIP_PEAK_RULE_VERSION,
+        position_score_version(),
     )
 
 
@@ -1688,6 +1695,72 @@ def _group_realtime_stage_rows(
     return grouped
 
 
+def _position_filter_reason(row: dict[str, Any]) -> str:
+    if row.get("position_level") == "不展示":
+        return str(row.get("position_level_reason") or "未达到统一建仓标准")
+    missing = row.get("position_missing_confirmations") or []
+    if missing:
+        return "；".join(str(item) for item in missing)
+    return "统一候选TOP10截断"
+
+
+def _build_unified_position_candidates(
+    rows: list[dict[str, Any]],
+    limit: int = 10,
+    *,
+    market_phase: str = "",
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[str],
+    dict[str, Any],
+]:
+    deduplicated: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        code = str(row.get("ts_code") or "")
+        if code:
+            deduplicated[code] = dict(row)
+    scored: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for code, row in deduplicated.items():
+        try:
+            scored.append(
+                score_position_candidate(row, market_phase=market_phase)
+            )
+        except Exception as exc:
+            warnings.append(f"{code} 统一建仓评分失败: {str(exc)[:120]}")
+    candidates = rank_scored_position_candidates(
+        scored,
+        limit=min(max(1, int(limit)), 10),
+    )
+    visible_codes = {str(row.get("ts_code") or "") for row in candidates}
+    reason_counts: Counter = Counter()
+    samples: list[dict[str, Any]] = []
+    for row in scored:
+        if str(row.get("ts_code") or "") in visible_codes:
+            continue
+        reason = _position_filter_reason(row)
+        reason_counts[reason] += 1
+        if len(samples) < 20:
+            samples.append({
+                "ts_code": str(row.get("ts_code") or ""),
+                "name": str(row.get("name") or ""),
+                "position_score": row.get("position_score"),
+                "reason": reason,
+            })
+    debug = {
+        "source_count": len(scored),
+        "visible_count": len(candidates),
+        "filtered_count": max(0, len(scored) - len(candidates)),
+        "top_reasons": [
+            {"reason": reason, "count": int(count)}
+            for reason, count in reason_counts.most_common(10)
+        ],
+        "samples": samples,
+    }
+    return scored, candidates, warnings, debug
+
+
 def _attach_realtime_chip_fields(
     rows: list[dict[str, Any]],
     history: pd.DataFrame,
@@ -1778,6 +1851,7 @@ def _build_realtime_intraday_section(
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
         _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
         _REALTIME_CHIP_PEAK_RULE_VERSION,
+        position_score_version(),
     )
     cached = (
         None
@@ -1887,7 +1961,21 @@ def _build_realtime_intraday_section(
         for stock in sector.get("intraday_signal_stocks") or []:
             ts_code = str(stock.get("ts_code") or "")
             market_snapshot = signal_market_by_code.get(ts_code, {})
-            signal = {**market_snapshot, **stock, "industry": industry}
+            signal = {
+                **market_snapshot,
+                **stock,
+                "industry": industry,
+                "sector_avg_pct_chg": sector.get(
+                    "avg_pct_chg", sector.get("pct_chg")
+                ),
+                "sector_up_ratio": sector.get("up_ratio"),
+                "sector_limit_up_count": sector.get(
+                    "limit_up_count", sector.get("limit_count")
+                ),
+                "sector_rank": sector.get("sector_rank", sector.get("rank")),
+                "sector_potential_score": sector.get("potential_score"),
+                "sector_macd_status": sector.get("sector_macd_status"),
+            }
             status, _reason = _main_force_status(signal)
             preliminary_rows.append({
                 "ts_code": ts_code,
@@ -2019,12 +2107,22 @@ def _build_realtime_intraday_section(
         history,
         trade_date,
     )
-    stage_groups = _group_realtime_stage_rows(all_rows, limit)
-    rows = all_rows[: max(1, min(int(limit), 100))]
+    (
+        scored_rows,
+        position_candidates,
+        position_warnings,
+        position_filter_debug,
+    ) = _build_unified_position_candidates(
+        all_rows,
+        limit=min(int(limit), 10),
+        market_phase=phase,
+    )
+    legacy_rows = scored_rows[:limit]
+    stage_groups = _group_realtime_stage_rows(scored_rows, limit)
     data_as_of = max(
         (
             str(row.get("data_as_of"))
-            for row in rows
+            for row in scored_rows
             if row.get("data_as_of")
         ),
         default=None,
@@ -2049,24 +2147,29 @@ def _build_realtime_intraday_section(
         "refresh_interval_seconds": 30,
         "sector_count": int(0 if sector_potential is None else len(sector_potential)),
         "result_cache_hit": False,
+        "position_candidates": position_candidates,
+        "position_candidate_count": len(position_candidates),
+        "position_score_version": position_score_version(),
+        "position_filter_debug": position_filter_debug,
         "bottom_filter_debug": _build_bottom_filter_debug(
             signal_market,
             intraday_bars,
             preliminary_rows,
-            rows,
+            position_candidates,
         ),
         "_leader_codes": leader_codes,
-        "stocks": rows,
+        "stocks": legacy_rows,
         **stage_groups,
         "minute_data_sources": sorted({
             str(row.get("minute_data_source"))
-            for row in rows if row.get("minute_data_source")
+            for row in legacy_rows if row.get("minute_data_source")
         }),
         "fallback_warnings": list(dict.fromkeys(
             list(chip_warnings)
+            + list(position_warnings)
             + [
                 warning
-                for row in rows
+                for row in legacy_rows
                 for warning in (row.get("minute_data_warnings") or [])
             ]
         ))[:20],
@@ -2281,6 +2384,7 @@ def _database_realtime_result_key(limit: int) -> str:
     return (
         _pre_chip_database_realtime_result_key(limit)
         + f"|{_REALTIME_CHIP_PEAK_RULE_VERSION}"
+        + f"|{position_score_version()}"
     )
 
 
@@ -2416,6 +2520,7 @@ def build_realtime_info(
         _REALTIME_HISTORICAL_RESILIENCE_RULE_VERSION,
         _REALTIME_BOTTOM_CONSOLIDATION_RULE_VERSION,
         _REALTIME_CHIP_PEAK_RULE_VERSION,
+        position_score_version(),
     )
     cache_key = _realtime_result_key(limit, current)
     if not force_refresh and not debug:
@@ -2568,3 +2673,66 @@ def build_realtime_info(
             oldest_key = next(iter(_REALTIME_RESULT_CACHE))
             _REALTIME_RESULT_CACHE.pop(oldest_key, None)
     return _json_safe(safe_result)
+
+
+def build_realtime_tail_premium_info(
+    now: datetime | None = None,
+    limit: int = 20,
+    force_refresh: bool = False,
+    debug: bool = False,
+) -> dict[str, Any]:
+    current = now or datetime.now()
+    warnings: list[str] = []
+    try:
+        latest_trade_date = str(get_trade_dates(n=1)[0])
+    except Exception as exc:
+        latest_trade_date = current.strftime("%Y%m%d")
+        warnings.append(f"Tushare交易日失败: {exc}")
+    try:
+        sync_metadata = sync_cached_market_data(force_current=force_refresh)
+    except Exception as exc:
+        sync_metadata = {}
+        warnings.append(f"Tushare同步失败: {exc}")
+    (
+        market,
+        history,
+        base_trade_date,
+        data_source,
+        data_current,
+        source_warnings,
+    ) = _load_realtime_market_inputs(latest_trade_date, sync_metadata or {})
+    warnings.extend(source_warnings)
+    trade_date, data_source = _select_intraday_trade_date(
+        latest_trade_date, base_trade_date, current, data_source,
+    )
+
+    def minute_loader(code, start, end, freq, requested_trade_date):
+        return _persistent_minute_result(
+            code,
+            start,
+            end,
+            freq,
+            requested_trade_date,
+            current,
+            force_refresh=force_refresh,
+        )
+
+    result = build_realtime_tail_premium_monitor(
+        limit=limit,
+        max_fetch=max(_REALTIME_OVERNIGHT_MAX_FETCH, limit),
+        now=current,
+        market_override=market,
+        history_override=_last_history_rows_per_stock(history, 100),
+        trade_date_override=trade_date,
+        minute_loader=minute_loader,
+        source_metadata={
+            "latest_trade_date": latest_trade_date,
+            "data_current": data_current,
+            "data_source": data_source,
+        },
+        debug=debug,
+    )
+    result["warnings"] = list(dict.fromkeys(
+        warnings + list(result.get("warnings") or [])
+    ))[:20]
+    return _json_safe(result)

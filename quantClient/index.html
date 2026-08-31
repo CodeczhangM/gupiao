@@ -921,111 +921,83 @@
           </div>
         </div>
 
-        <div
-          v-for="stageTable in realtimeStageTables"
-          :key="`realtime-stage-${stageTable.key}`"
-          class="panel wide-panel"
-          data-stages="缩量企稳观察 底部首阳触发 底部放量启动"
-        >
+        <div class="panel wide-panel position-candidate-panel">
           <div class="panel-head">
-            <h3>{{ stageTable.title }}</h3>
-            <span>
-              {{ stageTable.rows.length }} 只 · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}
-              <template v-if="stageTable.key === 'observation' && realtimeInfo.intraday?.bottom_filter_debug">
-                · 底部：日线 {{ realtimeInfo.intraday.bottom_filter_debug.daily_candidate_count || 0 }}
-                / 分时 {{ realtimeInfo.intraday.bottom_filter_debug.minute_loaded_count || 0 }}
-                / 技术确认 {{ realtimeInfo.intraday.bottom_filter_debug.technical_confirmed_count || 0 }}
-                / 输出 {{ realtimeInfo.intraday.bottom_filter_debug.final_output_count || 0 }}
-              </template>
-            </span>
+            <div>
+              <h3>近期观察与建仓</h3>
+              <span>
+                {{ realtimePositionCandidateRows.length }} 只 · 保守型 TOP10
+                · 板块30 / 量价20 / MACD20 / 筹码15 / 强弱尾盘10 / 底部5
+                · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}
+              </span>
+            </div>
           </div>
-          <div class="table-wrap intraday-monitor-table intraday-stage-table">
+          <div class="table-wrap intraday-monitor-table position-candidate-table">
             <table>
               <thead>
                 <tr>
                   <th>股票</th>
-                  <th>共振类型</th>
-                  <th>板块</th>
-                  <th>当前价</th>
-                  <th>当日高</th>
-                  <th>涨跌幅</th>
-                  <th>抗跌力</th>
+                  <th>建仓等级</th>
+                  <th>综合分</th>
+                  <th>板块/热点</th>
+                  <th>现价/涨幅</th>
+                  <th>量价/主力</th>
+                  <th>MACD</th>
                   <th>筹码峰</th>
-                  <th>60分信号</th>
-                  <th>主力状态</th>
-                  <th>次日倾向</th>
-                  <th>14:30后</th>
-                  <th>尾盘量能</th>
-                  <th>原因</th>
+                  <th>尾盘/相对强弱</th>
+                  <th>依据与待确认</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in stageTable.rows" :key="row.ts_code" :class="monitorRowClass(row)">
+                <tr v-for="row in realtimePositionCandidateRows" :key="row.ts_code" :class="monitorRowClass(row)">
                   <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
-                  <td :title="row.bottom_consolidation_reason || '--'">
-                    <span class="monitor-badge" :class="row.bottom_consolidation ? 'watch' : 'strong'">
-                      {{ row.resonance_type || '强势共振' }}
-                    </span>
-                    <small v-if="row.bottom_consolidation">
-                      <br>20日位置 {{ formatNumber((row.bottom_position_20d || 0) * 100) }}%
-                      · 振幅 {{ formatNumber(row.bottom_box_amplitude_20d) }}%
-                      <template v-if="row.resonance_type === '涨停回落筑底'">
-                        <br>涨停 {{ row.bottom_limit_up_date || '--' }}
-                        · 回落 {{ formatNumber(row.bottom_pullback_pct) }}%
-                      </template>
-                      <template v-else-if="row.resonance_type === '底部放量启动'">
-                        <br>启动 {{ row.bottom_breakout_days || 0 }}日
-                        · 放量 {{ formatNumber(row.bottom_volume_expansion) }}倍
-                      </template>
-                    </small>
+                  <td>
+                    <span class="monitor-badge" :class="positionLevelBadgeClass(row.position_level)">
+                      {{ row.position_level }}
+                    </span><br>
+                    <small>{{ row.resonance_type || '--' }}</small>
                   </td>
-                  <td>{{ row.industry || '--' }}</td>
-                  <td>{{ formatNumber(row.current_price) }}</td>
-                  <td>{{ formatNumber(row.day_high) }}</td>
-                  <td :class="signedClass(row.pct_chg)">
-                    <div>{{ formatNumber(row.pct_chg) }}%</div>
-                    <small
-                      class="market-relative-text"
-                      :class="`is-${marketRelativeText(row).state}`"
-                      :title="marketRelativeText(row).title"
-                    >{{ marketRelativeText(row).text }}</small>
+                  <td class="position-score-cell">
+                    <strong>{{ formatNumber(row.position_score) }}</strong><br>
+                    <small v-if="row.position_risk_penalty">风险 -{{ formatNumber(row.position_risk_penalty) }}</small>
                   </td>
                   <td>
-                    <span
-                      class="resilience-score-text"
-                      :class="`is-${historicalResilienceText(row).state}`"
-                      :title="historicalResilienceText(row).title"
-                    >{{ historicalResilienceText(row).text }}</span>
+                    <strong>{{ row.industry || '--' }}</strong><br>
+                    <span class="monitor-badge" :class="row.sector_hot_status === '热点' ? 'strong' : 'watch'">
+                      {{ row.sector_hot_status || '非热点' }} {{ formatNumber(row.sector_hot_score) }}/30
+                    </span>
                   </td>
+                  <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }}<br>{{ formatNumber(row.pct_chg) }}%</td>
+                  <td>{{ formatNumber(row.price_volume_score) }}/20<br><small>{{ row.main_force_status || '--' }} · 量比{{ formatNumber(row.volume_ratio) }}</small></td>
+                  <td>{{ formatNumber(row.macd_score) }}/20<br><small>{{ monitorSignalText(row) }}</small></td>
                   <td class="chip-washout" :title="chipPeakDisplay(row).title">
                     <div class="chip-washout-main">
                       <span class="monitor-badge" :class="chipPeakDisplay(row).state">
                         {{ chipPeakDisplay(row).label }}
                       </span>
-                      <strong>{{ chipPeakDisplay(row).score }}</strong>
+                      <strong>{{ formatNumber(row.chip_peak_score) }}/15</strong>
                     </div>
                     <small class="chip-washout-detail">
                       {{ chipPeakDisplay(row).peak }}<br>
                       {{ chipPeakDisplay(row).concentration }}
                     </small>
                   </td>
-                  <td>{{ monitorSignalText(row) }}</td>
-                  <td><span class="monitor-badge" :class="monitorBadgeClass(row.main_force_status)">{{ row.main_force_status || '观察' }}</span></td>
-                  <td><span class="monitor-badge" :class="monitorBadgeClass(row.next_day_bias)">{{ row.next_day_bias || '数据不足' }}</span></td>
-                  <td :class="signedClass(row.tail_return_after_1430)">
-                    {{ tailReturnText(row) }}
-                  </td>
                   <td>
-                    <span class="monitor-badge" :class="tailVolumeBadgeClass(row)">
-                      {{ tailVolumeText(row) }}
-                    </span>
+                    {{ formatNumber(row.relative_tail_score) }}/10<br>
+                    <small>{{ tailReturnText(row) }} · {{ marketRelativeText(row).text }}</small>
                   </td>
-                  <td class="monitor-reason-cell" :title="row.next_day_bias_reason || row.main_force_reason || '--'">
-                    {{ row.next_day_bias_reason || row.main_force_reason || '--' }}
+                  <td class="monitor-reason-cell" :title="row.position_level_reason || '--'">
+                    {{ (row.position_positive_reasons || []).join('；') || row.position_level_reason || '--' }}
+                    <template v-if="row.position_missing_confirmations && row.position_missing_confirmations.length">
+                      <br><small>待确认：{{ row.position_missing_confirmations.join('；') }}</small>
+                    </template>
+                    <template v-if="row.position_risk_items && row.position_risk_items.length">
+                      <br><small class="negative">风险：{{ row.position_risk_items.join('；') }}</small>
+                    </template>
                   </td>
                 </tr>
-                <tr v-if="stageTable.rows.length === 0">
-                  <td colspan="14" class="empty">暂无{{ stageTable.title }}股票</td>
+                <tr v-if="realtimePositionCandidateRows.length === 0">
+                  <td colspan="10" class="empty">暂无达到保守型观察建仓标准的股票</td>
                 </tr>
               </tbody>
             </table>
@@ -1045,10 +1017,16 @@
             </div>
             <div class="monitor-actions">
               <label class="switch">
-                <input type="checkbox" v-model="realtimeTailPremiumDebug" @change="loadRealtimeInfo(true, false)">
+                <input type="checkbox" v-model="realtimeTailPremiumDebug" @change="loadRealtimeTailPremium(true, false)">
                 <span></span>
                 <b>过滤调试</b>
               </label>
+              <button class="secondary" @click="loadRealtimeTailPremium(true, false)" :disabled="realtimeTailPremiumLoading">
+                {{ realtimeTailPremiumRefreshMode === 'quick' ? '查询中' : '快速查看' }}
+              </button>
+              <button @click="loadRealtimeTailPremium(true, true)" :disabled="realtimeTailPremiumLoading">
+                {{ realtimeTailPremiumRefreshMode === 'force' ? '刷新中' : '强制刷新' }}
+              </button>
             </div>
           </div>
           <div

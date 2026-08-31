@@ -10,6 +10,7 @@ from realtime_market_source import clear_realtime_source_caches
 from realtime_info_service import (
     MinuteLoadResult,
     build_realtime_info,
+    build_realtime_tail_premium_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
     _attach_historical_resilience_fields,
     _attach_realtime_chip_fields,
@@ -17,6 +18,7 @@ from realtime_info_service import (
     _attach_market_relative_fields,
     _build_market_relative_benchmark,
     _build_bottom_filter_debug,
+    _build_unified_position_candidates,
     _group_realtime_stage_rows,
     _database_realtime_result_key,
     _enrich_rows_with_market,
@@ -38,6 +40,39 @@ from tests.test_advantage_stock_scoring import build_60min_bars, build_tail_1min
 
 
 class RealtimeInfoServiceTests(unittest.TestCase):
+    @patch("realtime_info_service._build_realtime_intraday_section")
+    @patch("realtime_info_service.build_realtime_tail_premium_monitor")
+    @patch("realtime_info_service._load_realtime_market_inputs")
+    @patch("realtime_info_service.sync_cached_market_data", return_value={})
+    @patch("realtime_info_service.get_trade_dates", return_value=["20260831"])
+    def test_tail_premium_refresh_does_not_build_intraday_section(
+        self,
+        _dates,
+        _sync,
+        load_inputs,
+        build_tail,
+        build_intraday,
+    ):
+        market = pd.DataFrame([{"ts_code": "603118.SH", "close": 18.4}])
+        history = pd.DataFrame([{
+            "ts_code": "603118.SH", "trade_date": "20260829", "close": 17.73,
+        }])
+        load_inputs.return_value = (
+            market, history, "20260831", "current_snapshot", True, [],
+        )
+        build_tail.return_value = {
+            "trade_date": "20260831",
+            "stocks": [{"ts_code": "603118.SH", "current_price": 18.4}],
+        }
+
+        result = build_realtime_tail_premium_info(
+            now=datetime(2026, 8, 31, 14, 4),
+            force_refresh=True,
+        )
+
+        self.assertEqual(result["stocks"][0]["current_price"], 18.4)
+        build_intraday.assert_not_called()
+        build_tail.assert_called_once()
     def setUp(self):
         _REALTIME_INTRADAY_RESULT_CACHE.clear()
         import realtime_info_service
@@ -3180,6 +3215,170 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             result["observation_stocks"][0]["ts_code"],
             "600002.SH",
         )
+
+    def test_realtime_intraday_returns_one_unified_position_pool(self):
+        def row(ts_code, stage, relative_strength):
+            return {
+                "ts_code": ts_code,
+                "name": ts_code,
+                "industry": "通信设备",
+                "close": 12.5,
+                "pct_chg": 3.2,
+                "vol": 2_000_000,
+                "amount": 180_000_000,
+                "sector_rank": 2,
+                "sector_avg_pct_chg": 2.2,
+                "sector_up_ratio": 0.76,
+                "sector_limit_up_count": 3,
+                "sector_macd_status": "水上多头",
+                "volume_ratio": 1.8,
+                "turnover_rate": 6.0,
+                "price_volume_confirmed": True,
+                "main_force_status": "主力抢筹",
+                "macd_golden_cross": True,
+                "macd_above_zero": True,
+                "intraday_signal_tier": "strong",
+                "intraday_signal_reason": "60分MACD水上金叉",
+                "chip_washout_score": 82,
+                "chip_data_complete": True,
+                "chip_build_position": True,
+                "chip_concentration_70_pct": 9.0,
+                "chip_price_distance_pct": 2.0,
+                "chip_winner_rate": 45.0,
+                "realtime_relative_strength_score": 82,
+                "relative_strength": relative_strength,
+                "tail_after_1430_available": True,
+                "tail_return_after_1430": 0.65,
+                "tail_strength_score": 82,
+                "tail_close_position": 0.9,
+                "tail_volume_ratio": 1.5,
+                "resonance_stage": stage,
+                "bottom_volume_expansion": 1.8,
+            }
+
+        source = [
+            row("600001.SH", "observation", 0.5),
+            row("600002.SH", "trigger", 1.0),
+            row("600003.SH", "launch", 1.5),
+            row("600003.SH", "launch", 2.0),
+        ]
+
+        scored, candidates, warnings, debug = _build_unified_position_candidates(
+            source,
+            limit=10,
+            market_phase="收盘最终结果",
+        )
+
+        self.assertEqual(len(scored), 3)
+        self.assertEqual(len(candidates), 3)
+        self.assertEqual(len({row["ts_code"] for row in candidates}), 3)
+        self.assertEqual(warnings, [])
+        self.assertEqual(debug["source_count"], 3)
+        self.assertEqual(debug["visible_count"], 3)
+
+    def test_unified_position_pool_does_not_backfill_to_five(self):
+        rows = []
+        for index in range(4):
+            rows.append({
+                "ts_code": f"60010{index}.SH",
+                "name": f"候选{index}",
+                "close": 10,
+                "pct_chg": 2.5,
+                "vol": 1_000_000,
+                "sector_rank": 1,
+                "sector_avg_pct_chg": 2.5,
+                "sector_up_ratio": 0.8,
+                "sector_limit_up_count": 4,
+                "sector_macd_status": "水上多头",
+                "volume_ratio": 1.8,
+                "turnover_rate": 5,
+                "price_volume_confirmed": True,
+                "main_force_status": "主力抢筹",
+                "macd_golden_cross": True,
+                "macd_above_zero": True,
+                "intraday_signal_tier": "strong",
+                "chip_data_complete": True,
+                "chip_build_position": True,
+                "chip_concentration_70_pct": 8,
+                "chip_price_distance_pct": 1,
+                "chip_winner_rate": 40,
+                "realtime_relative_strength_score": 80,
+                "tail_after_1430_available": True,
+                "tail_strength_score": 80,
+                "tail_close_position": 0.9,
+                "tail_return_after_1430": 0.5,
+                "tail_volume_ratio": 1.4,
+                "resonance_stage": "launch",
+                "bottom_volume_expansion": 1.8,
+            })
+
+        _scored, candidates, _warnings, _debug = _build_unified_position_candidates(
+            rows,
+            limit=10,
+            market_phase="收盘最终结果",
+        )
+
+        self.assertEqual(len(candidates), 4)
+
+    def test_intraday_cache_key_includes_position_score_version(self):
+        self.assertIn(
+            "position-candidate-v1",
+            _database_realtime_result_key(20),
+        )
+
+    def test_unified_candidates_degrade_missing_confirmations(self):
+        base = {
+            "ts_code": "600001.SH", "name": "保守候选", "close": 10,
+            "pct_chg": 2.5, "vol": 1_000_000, "sector_rank": 1,
+            "sector_avg_pct_chg": 2.5, "sector_up_ratio": 0.8,
+            "sector_limit_up_count": 4, "sector_macd_status": "水上多头",
+            "volume_ratio": 1.8, "turnover_rate": 5,
+            "price_volume_confirmed": True, "main_force_status": "主力抢筹",
+            "macd_golden_cross": True, "macd_above_zero": True,
+            "intraday_signal_tier": "strong", "chip_data_complete": True,
+            "chip_build_position": True, "chip_concentration_70_pct": 8,
+            "chip_price_distance_pct": 1, "chip_winner_rate": 40,
+            "realtime_relative_strength_score": 80,
+            "tail_after_1430_available": True, "tail_strength_score": 80,
+            "tail_close_position": 0.9, "tail_return_after_1430": 0.5,
+            "tail_volume_ratio": 1.4, "resonance_stage": "launch",
+            "bottom_volume_expansion": 1.8,
+        }
+        cases = [
+            ({"chip_data_complete": False}, "筹码数据缺失"),
+            ({"sector_rank": None, "sector_avg_pct_chg": 0,
+              "sector_up_ratio": 0, "sector_limit_up_count": 0,
+              "sector_macd_status": ""}, "热点板块确认缺失"),
+            ({"tail_after_1430_available": False}, "尾盘确认缺失"),
+        ]
+        for index, (changes, expected_missing) in enumerate(cases):
+            row = {**base, **changes, "ts_code": f"60000{index + 1}.SH"}
+            scored, _visible, warnings, _debug = _build_unified_position_candidates(
+                [row], market_phase="收盘最终结果"
+            )
+            self.assertEqual(warnings, [])
+            self.assertNotEqual(scored[0]["position_level"], "立即建仓")
+            self.assertIn(expected_missing, scored[0]["position_missing_confirmations"])
+
+    @patch("realtime_info_service.score_position_candidate")
+    def test_unified_candidates_skip_one_malformed_row(self, score):
+        def score_one(row, *, market_phase=""):
+            if row["ts_code"] == "600002.SH":
+                raise ValueError("bad candidate")
+            return {**row, "position_level": "观察建仓", "position_score": 55,
+                    "sector_hot_score": 15, "price_volume_score": 10,
+                    "macd_score": 10}
+
+        score.side_effect = score_one
+        scored, visible, warnings, debug = _build_unified_position_candidates([
+            {"ts_code": "600001.SH", "name": "正常"},
+            {"ts_code": "600002.SH", "name": "异常"},
+        ])
+
+        self.assertEqual([row["ts_code"] for row in scored], ["600001.SH"])
+        self.assertEqual([row["ts_code"] for row in visible], ["600001.SH"])
+        self.assertIn("600002.SH 统一建仓评分失败", warnings[0])
+        self.assertEqual(debug["source_count"], 1)
 
     @patch("realtime_info_service.attach_chip_peak_fields")
     def test_chip_enrichment_only_sends_supported_stage_rows(self, attach):

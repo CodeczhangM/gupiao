@@ -1213,6 +1213,19 @@ tr:hover td {
   text-overflow: clip;
 }
 
+.position-candidate-table table {
+  min-width: 1420px;
+}
+
+.position-candidate-table .position-score-cell strong {
+  color: var(--blue);
+  font-size: 1.2rem;
+}
+
+.position-candidate-table .monitor-reason-cell {
+  min-width: 260px;
+}
+
 .intraday-monitor-table table {
   min-width: 1400px;
 }

@@ -527,6 +527,8 @@ createApp({
       realtimeInfoAutoRefresh: false,
       realtimeInfoTimer: null,
       realtimeTailPremiumDebug: false,
+      realtimeTailPremiumLoading: false,
+      realtimeTailPremiumRefreshMode: null,
       cycleWatch: {
         stocks: [],
         confirmed_stocks: [],
@@ -720,30 +722,11 @@ createApp({
         ? this.realtimeInfo.intraday.stocks
         : [];
     },
-    realtimeObservationRows() {
+    realtimePositionCandidateRows() {
       const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
-      return intraday && Array.isArray(intraday.observation_stocks)
-        ? intraday.observation_stocks
-        : this.realtimeIntradayRows.filter((row) => row.resonance_stage === 'observation');
-    },
-    realtimeTriggerRows() {
-      const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
-      return intraday && Array.isArray(intraday.trigger_stocks)
-        ? intraday.trigger_stocks
-        : this.realtimeIntradayRows.filter((row) => row.resonance_stage === 'trigger');
-    },
-    realtimeLaunchRows() {
-      const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
-      return intraday && Array.isArray(intraday.launch_stocks)
-        ? intraday.launch_stocks
-        : this.realtimeIntradayRows.filter((row) => row.resonance_stage === 'launch');
-    },
-    realtimeStageTables() {
-      return [
-        { key: 'observation', title: '缩量企稳观察', rows: this.realtimeObservationRows },
-        { key: 'trigger', title: '底部首阳触发', rows: this.realtimeTriggerRows },
-        { key: 'launch', title: '底部放量启动', rows: this.realtimeLaunchRows },
-      ];
+      return intraday && Array.isArray(intraday.position_candidates)
+        ? intraday.position_candidates
+        : [];
     },
     realtimeOvernightRows() {
       return this.realtimeInfo && this.realtimeInfo.overnight && Array.isArray(this.realtimeInfo.overnight.stocks)
@@ -973,6 +956,11 @@ createApp({
       if (value === '冲高分歧' || value === '平开观察') return 'watch';
       return 'muted';
     },
+    positionLevelBadgeClass(value) {
+      if (value === '立即建仓') return 'strong';
+      if (value === '等待确认后建仓') return 'watch';
+      return 'muted';
+    },
     monitorRowClass(row) {
       return {
         'monitor-strong': row.main_force_status === '主力抢筹' || row.next_day_bias === '高开偏强',
@@ -1138,7 +1126,7 @@ createApp({
             && payload.planned_low_price > payload.planned_high_price) {
           throw new Error('计划低价不能高于计划高价');
         }
-        await this.request('/cycle-watchlist', { method: 'POST', body: JSON.stringify(payload) });
+        await addAndCheckCycleWatch(this.request.bind(this), payload);
         this.cycleWatchForm = { tsCode: '', note: '', plannedLowPrice: '', plannedHighPrice: '' };
         this.cycleWatchLoading = false;
         await this.loadCycleWatchlist();
@@ -1174,7 +1162,7 @@ createApp({
       this.cycleWatchLoading = true;
       this.cycleWatchError = '';
       try {
-        const payload = { schedule_slot: 'manual' };
+        const payload = {};
         if (tsCode) payload.ts_code = tsCode;
         this.cycleWatch = await this.request('/cycle-watchlist/check', {
           method: 'POST', body: JSON.stringify(payload),
@@ -1618,15 +1606,37 @@ createApp({
       this.realtimeInfoRefreshMode = forceRefresh ? 'force' : 'quick';
       try {
         const forceQuery = forceRefresh ? '&force_refresh=true' : '';
-        const debugQuery = this.realtimeTailPremiumDebug ? '&debug=true' : '';
-        this.realtimeInfo = (
-          await this.request(`/realtime-info?limit=20${forceQuery}${debugQuery}`)
+        const loaded = (
+          await this.request(`/realtime-info?limit=20${forceQuery}`)
         ) || {};
+        const existingOvernight = this.realtimeInfo && this.realtimeInfo.overnight;
+        this.realtimeInfo = {
+          ...loaded,
+          overnight: existingOvernight || loaded.overnight || {},
+        };
       } catch (error) {
         if (showError) this.error = error.message;
       } finally {
         this.realtimeInfoLoading = false;
         this.realtimeInfoRefreshMode = null;
+      }
+    },
+    async loadRealtimeTailPremium(showError = true, forceRefresh = false) {
+      if (this.realtimeTailPremiumLoading) return;
+      this.realtimeTailPremiumLoading = true;
+      this.realtimeTailPremiumRefreshMode = forceRefresh ? 'force' : 'quick';
+      try {
+        const forceQuery = forceRefresh ? '&force_refresh=true' : '';
+        const debugQuery = this.realtimeTailPremiumDebug ? '&debug=true' : '';
+        const overnight = (
+          await this.request(`/realtime-info/tail-premium?limit=20${forceQuery}${debugQuery}`)
+        ) || {};
+        this.realtimeInfo = { ...(this.realtimeInfo || {}), overnight };
+      } catch (error) {
+        if (showError) this.error = error.message;
+      } finally {
+        this.realtimeTailPremiumLoading = false;
+        this.realtimeTailPremiumRefreshMode = null;
       }
     },
     startRealtimeInfoMonitor() {
