@@ -14,6 +14,7 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         self.assertIn("<h3>近期观察与建仓</h3>", candidate_html)
         self.assertIn("realtimePositionCandidateRows", candidate_html)
         self.assertIn("position_candidates", main)
+        self.assertIn("/realtime-info/position-candidates", main)
         self.assertIn("建仓等级", candidate_html)
         self.assertIn("综合分", candidate_html)
         self.assertIn("MACD", candidate_html)

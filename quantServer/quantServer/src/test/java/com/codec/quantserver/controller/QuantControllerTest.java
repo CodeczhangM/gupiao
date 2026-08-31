@@ -214,6 +214,37 @@ class QuantControllerTest {
     }
 
     @Test
+    void dailyPositionCandidatesForwardWithoutCallingRealtimeMinuteEndpoint() throws Exception {
+        when(quantPythonClient.dailyPositionCandidates(10, true, true))
+                .thenReturn(Map.of("data_source", "database_daily"));
+
+        mockMvc.perform(get("/api/quant/realtime-info/position-candidates")
+                        .param("limit", "10")
+                        .param("force_refresh", "true")
+                        .param("debug", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data_source").value("database_daily"));
+
+        verify(quantPythonClient).dailyPositionCandidates(10, true, true);
+    }
+
+    @Test
+    void realtimeTailPremiumForwardsIndependentRefreshQuery() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.realtimeTailPremium(20, true, true))
+                .thenReturn(Map.of("stocks", java.util.List.of()));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/realtime-info/tail-premium")
+                        .param("limit", "20")
+                        .param("force_refresh", "true")
+                        .param("debug", "true"))
+                .andExpect(status().isOk());
+
+        verify(client).realtimeTailPremium(20, true, true);
+    }
+
+    @Test
     void marketNewsSummaryForwardsQueryToPythonClient() throws Exception {
         QuantPythonClient client = mock(QuantPythonClient.class);
         when(client.marketNewsSummary("all", 6, true, false))

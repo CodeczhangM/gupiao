@@ -261,6 +261,8 @@ def _relative_tail_score(
         reasons.append("个股相对大盘强势")
 
     tail_available = _truthy(row.get("tail_after_1430_available"))
+    if _contains(market_phase, "日线收盘"):
+        return min(WEIGHTS["relative_tail"], score), reasons, missing
     before_tail = _contains(market_phase, "盘中观察", "14:30前", "早盘", "午盘")
     if not tail_available:
         missing.append("尾盘确认未到" if before_tail else "尾盘确认缺失")

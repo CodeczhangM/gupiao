@@ -8,6 +8,17 @@ import app
 
 
 class RealtimeInfoApiTests(unittest.TestCase):
+    @patch("app.build_daily_position_candidate_info", return_value={
+        "data_source": "database_daily", "intraday": {"position_candidates": []},
+    })
+    def test_daily_position_endpoint_forwards_refresh_and_debug(self, service):
+        response = app.daily_position_candidate_info(
+            limit=10, force_refresh=True, debug=True
+        )
+        self.assertEqual(response["data_source"], "database_daily")
+        service.assert_called_once_with(
+            limit=10, force_refresh=True, debug=True
+        )
     @patch(
         "app.build_realtime_info",
         return_value={

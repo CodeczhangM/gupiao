@@ -10,6 +10,7 @@ from realtime_market_source import clear_realtime_source_caches
 from realtime_info_service import (
     MinuteLoadResult,
     build_realtime_info,
+    build_daily_position_candidate_info,
     build_realtime_tail_premium_info,
     _REALTIME_INTRADAY_RESULT_CACHE,
     _attach_historical_resilience_fields,
@@ -59,6 +60,69 @@ def _v2_candidate_fields():
 
 
 class RealtimeInfoServiceTests(unittest.TestCase):
+    @patch("realtime_info_service.attach_chip_peak_fields")
+    @patch("realtime_info_service._load_realtime_intraday_signal_bars")
+    @patch("realtime_info_service.load_eastmoney_market_snapshot")
+    @patch("realtime_info_service._build_history_position_pool")
+    @patch("realtime_info_service.load_recent_daily")
+    @patch("realtime_info_service.load_market_snapshot")
+    @patch("realtime_info_service.get_complete_dates", return_value=["20260831"])
+    def test_daily_position_refresh_uses_database_without_network_or_minutes(
+        self, _dates, snapshot, history, history_pool, realtime_snapshot,
+        minute_bars, chip_loader,
+    ):
+        snapshot.return_value = pd.DataFrame([{
+            "ts_code": "600001.SH", "name": "日线候选", "industry": "银行",
+            "close": 10.5, "pct_chg": 2.0, "vol": 1_000_000,
+            "amount": 100_000_000, "volume_ratio": 1.4,
+        }])
+        history.return_value = pd.DataFrame([{
+            "ts_code": "600001.SH", "trade_date": "20260831", "close": 10.5,
+        }])
+        history_pool.return_value = ([{
+            **snapshot.return_value.iloc[0].to_dict(), **_v2_candidate_fields(),
+            "chip_data_complete": False,
+        }], {"source_main_board": 1}, [])
+
+        result = build_daily_position_candidate_info(force_refresh=True, debug=True)
+
+        self.assertEqual(result["data_source"], "database_daily")
+        self.assertEqual(result["performance"]["network_request_count"], 0)
+        self.assertIn("position_candidates", result["intraday"])
+        realtime_snapshot.assert_not_called()
+        minute_bars.assert_not_called()
+        chip_loader.assert_not_called()
+
+    @patch("realtime_info_service.extract_pullback_confirmation", return_value={"support_held": True})
+    @patch("realtime_info_service.extract_resonance_events", return_value={
+        "resonance_events": [{"type": "volume_breakout", "contribution": 5}],
+        "historical_resonance_score": 5,
+    })
+    @patch("realtime_info_service.extract_limit_gene", return_value={
+        "limit_history_sufficient": True, "limit_gene_eligible": True,
+    })
+    def test_history_pool_runs_per_stock_features_only_for_vectorized_limit_gene_codes(
+        self, gene, _resonance, _pullback,
+    ):
+        codes = [f"600{index:03d}.SH" for index in range(100)]
+        market = pd.DataFrame([
+            {"ts_code": code, "name": code, "close": 10, "pct_chg": 1, "vol": 100}
+            for code in codes
+        ])
+        dates = pd.bdate_range(end="2026-08-31", periods=12)
+        history = pd.DataFrame([
+            {
+                "ts_code": code, "trade_date": date.strftime("%Y%m%d"),
+                "open": 10, "high": 11, "low": 9.8, "close": 10,
+                "pct_chg": 10 if code == codes[0] and date == dates[-2] else 1,
+                "vol": 100,
+            }
+            for code in codes for date in dates
+        ])
+
+        _build_history_position_pool(market, history, "20260831")
+
+        self.assertEqual(gene.call_count, 1)
     @patch("realtime_info_service._build_realtime_intraday_section")
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._load_realtime_market_inputs")

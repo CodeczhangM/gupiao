@@ -6,7 +6,11 @@ from ai_evaluation_service import evaluate_ai_recommendations
 from backtest_service import run_backtest
 from database import get_latest_report, get_report, init_db, list_reports, save_report
 from quant_service import run_quant_scan
-from realtime_info_service import build_realtime_info
+from realtime_info_service import (
+    build_daily_position_candidate_info,
+    build_realtime_info,
+    build_realtime_tail_premium_info,
+)
 from realtime_minute_warmup import (
     get_realtime_minute_warmup_status,
     start_realtime_minute_warmup,
@@ -265,6 +269,40 @@ def realtime_info(
         return build_realtime_info(**kwargs)
     except Exception as exc:
         logger.exception("获取实时信息失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/realtime-info/tail-premium")
+def realtime_tail_premium_info(
+    limit: int = Query(20, ge=1, le=100),
+    force_refresh: bool = False,
+    debug: bool = False,
+):
+    try:
+        return build_realtime_tail_premium_info(
+            limit=limit,
+            force_refresh=force_refresh,
+            debug=debug,
+        )
+    except Exception as exc:
+        logger.exception("获取盘末隔夜溢价失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/realtime-info/position-candidates")
+def daily_position_candidate_info(
+    limit: int = Query(10, ge=1, le=10),
+    force_refresh: bool = False,
+    debug: bool = False,
+):
+    try:
+        return build_daily_position_candidate_info(
+            limit=limit,
+            force_refresh=force_refresh,
+            debug=debug,
+        )
+    except Exception as exc:
+        logger.exception("获取数据库日线建仓候选失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

@@ -116,26 +116,62 @@ def _build_history_position_pool(
     warnings: list[str] = []
     if market is None or market.empty or "ts_code" not in market.columns:
         return [], debug, warnings
+    market_records = market.to_dict("records")
+    mainboard_records = [
+        snapshot for snapshot in market_records
+        if str(snapshot.get("ts_code") or "").endswith((".SH", ".SZ"))
+        and not str(snapshot.get("ts_code") or "").startswith(
+            _REALTIME_OUTPUT_EXCLUDE_PREFIXES
+        )
+        and "ST" not in str(snapshot.get("name") or "").upper()
+        and "退市" not in str(snapshot.get("name") or "").upper()
+    ]
+    debug["source_main_board"] = len(mainboard_records)
+    eligible_codes: set[str] | None = None
+    if (
+        history is not None and not history.empty
+        and {"ts_code", "trade_date"}.issubset(history.columns)
+        and ("pct_chg" in history.columns or "limit_flag" in history.columns)
+    ):
+        prior = history[
+            history["trade_date"].astype(str) < str(trade_date)
+        ].copy()
+        prior = prior.sort_values(["ts_code", "trade_date"])
+        recent_ten = prior.groupby("ts_code", group_keys=False).tail(10)
+        pct = pd.to_numeric(
+            recent_ten.get(
+                "pct_chg", pd.Series(pd.NA, index=recent_ten.index)
+            ),
+            errors="coerce",
+        )
+        limit_mask = pct.ge(9.5).fillna(False)
+        if "limit_flag" in recent_ten.columns:
+            limit_mask |= recent_ten["limit_flag"].astype(str).str.lower().isin(
+                {"1", "true", "yes", "是", "涨停"}
+            )
+        eligible_codes = set(
+            recent_ten.loc[limit_mask, "ts_code"].astype(str)
+        )
+        main_codes = {str(row.get("ts_code") or "") for row in mainboard_records}
+        debug["no_limit_gene"] = len(main_codes - eligible_codes)
     grouped = {
         str(code): bars.copy()
         for code, bars in (
-            history.groupby("ts_code")
+            history[
+                history["ts_code"].astype(str).isin(eligible_codes)
+            ].groupby("ts_code")
+            if history is not None and not history.empty and "ts_code" in history.columns
+            and eligible_codes is not None
+            else history.groupby("ts_code")
             if history is not None and not history.empty and "ts_code" in history.columns
             else []
         )
     }
     rows: list[dict[str, Any]] = []
-    for snapshot in market.to_dict("records"):
+    for snapshot in mainboard_records:
         code = str(snapshot.get("ts_code") or "")
-        if (
-            not code.endswith((".SH", ".SZ"))
-            or code.startswith(_REALTIME_OUTPUT_EXCLUDE_PREFIXES)
-        ):
+        if eligible_codes is not None and code not in eligible_codes:
             continue
-        name = str(snapshot.get("name") or "").upper()
-        if "ST" in name or "退市" in name:
-            continue
-        debug["source_main_board"] += 1
         bars = grouped.get(code, pd.DataFrame())
         cache_key = (code, str(trade_date), position_score_version())
         try:
@@ -151,7 +187,8 @@ def _build_history_position_pool(
                 debug["history_insufficient"] += 1
                 continue
             if not features.get("limit_gene_eligible"):
-                debug["no_limit_gene"] += 1
+                if eligible_codes is None:
+                    debug["no_limit_gene"] += 1
                 continue
             if not features.get("resonance_events"):
                 debug["no_recent_resonance"] += 1
@@ -2766,6 +2803,169 @@ def _save_database_realtime_result(
     except Exception as exc:
         warnings.append(f"实时结果数据库缓存失败: {str(exc)[:120]}")
     return warnings
+
+
+def _attach_daily_sector_context(market: pd.DataFrame) -> pd.DataFrame:
+    if market is None or market.empty or "industry" not in market.columns:
+        return pd.DataFrame() if market is None else market.copy()
+    data = market.copy()
+    data["industry"] = data["industry"].fillna("").astype(str)
+    data["pct_chg"] = pd.to_numeric(data.get("pct_chg"), errors="coerce")
+    grouped = data[data["industry"] != ""].groupby("industry")
+    stats = grouped["pct_chg"].agg(["mean", "count"]).rename(
+        columns={"mean": "sector_avg_pct_chg", "count": "sector_stock_count"}
+    )
+    stats["sector_up_ratio"] = grouped["pct_chg"].apply(
+        lambda values: float((values > 0).mean())
+    )
+    stats["sector_limit_up_count"] = grouped["pct_chg"].apply(
+        lambda values: int((values >= 9.5).sum())
+    )
+    stats = stats.sort_values("sector_avg_pct_chg", ascending=False)
+    stats["sector_rank"] = range(1, len(stats) + 1)
+    return data.merge(stats.reset_index(), on="industry", how="left")
+
+
+def _attach_daily_macd_context(
+    rows: list[dict[str, Any]],
+    history: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    settings = macd_provenance()
+    fast = int(settings["macd_fast_period"])
+    slow = int(settings["macd_slow_period"])
+    signal_period = int(settings["macd_signal_period"])
+    grouped = {
+        str(code): bars.sort_values("trade_date")
+        for code, bars in (
+            history.groupby("ts_code")
+            if history is not None and not history.empty and "ts_code" in history.columns
+            else []
+        )
+    }
+    result = []
+    for source in rows:
+        row = dict(source)
+        closes = pd.to_numeric(
+            grouped.get(str(row.get("ts_code") or ""), pd.DataFrame()).get("close"),
+            errors="coerce",
+        ).dropna()
+        if len(closes) >= slow + signal_period:
+            dif = closes.ewm(span=fast, adjust=False).mean() - closes.ewm(
+                span=slow, adjust=False
+            ).mean()
+            dea = dif.ewm(span=signal_period, adjust=False).mean()
+            rising = bool(dif.iloc[-1] > dif.iloc[-2])
+            row.update({
+                "macd_golden_cross": bool(
+                    dif.iloc[-1] > dea.iloc[-1] and dif.iloc[-2] <= dea.iloc[-2]
+                ),
+                "macd_above_zero": bool(dif.iloc[-1] > 0),
+                "daily_macd_status": "日线MACD向上" if rising else "日线MACD走弱",
+            })
+        result.append(row)
+    return result
+
+
+def _cached_chip_fields_by_code() -> dict[str, dict[str, Any]]:
+    keys = (
+        "chip_peak_price", "chip_secondary_peak_price", "chip_data_complete",
+        "chip_build_position", "chip_washout_score", "chip_concentration_70_pct",
+        "chip_concentration_90_pct", "chip_price_distance_pct", "chip_winner_rate",
+        "chip_peak_bottom_position_pct", "chip_washout_label", "chip_washout_reason",
+    )
+    cached: dict[str, dict[str, Any]] = {}
+    with _REALTIME_RESULT_LOCK:
+        payloads = list(_REALTIME_RESULT_CACHE.values())
+    for payload in reversed(payloads):
+        intraday = payload.get("intraday") or {}
+        for row in list(intraday.get("position_candidates") or []) + list(intraday.get("stocks") or []):
+            code = str(row.get("ts_code") or "")
+            if code and code not in cached and row.get("chip_data_complete"):
+                cached[code] = {key: row.get(key) for key in keys}
+    return cached
+
+
+def build_daily_position_candidate_info(
+    now: datetime | None = None,
+    limit: int = 10,
+    force_refresh: bool = False,
+    debug: bool = False,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    current = now or datetime.now()
+    dates = get_complete_dates(1)
+    if not dates:
+        raise RuntimeError("数据库中没有完整日线交易日")
+    trade_date = str(dates[0])
+    market = load_market_snapshot(trade_date)
+    history = load_recent_daily(trade_date, 40)
+    market = _attach_daily_sector_context(market)
+    pool, history_debug, warnings = _build_history_position_pool(
+        market, history, trade_date
+    )
+    chip_by_code = _cached_chip_fields_by_code()
+    pool = [
+        {
+            **row,
+            **chip_by_code.get(str(row.get("ts_code") or ""), {}),
+            "current_price": row.get("close"),
+            "data_as_of": trade_date,
+            "data_source": "database_daily",
+            "tail_after_1430_available": False,
+        }
+        for row in pool
+    ]
+    pool = _attach_daily_macd_context(pool, history)
+    pool, confirmation_warnings = _refresh_position_confirmation_fields(
+        pool, history, trade_date
+    )
+    scored, candidates, score_warnings, filter_debug = (
+        _build_unified_position_candidates(
+            pool,
+            limit=min(max(1, int(limit)), 10),
+            market_phase="日线收盘",
+        )
+    )
+    filter_debug["history_funnel"] = history_debug
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    return _json_safe({
+        "trade_date": trade_date,
+        "base_trade_date": trade_date,
+        "latest_trade_date": trade_date,
+        "data_trade_date": trade_date,
+        "data_as_of": trade_date,
+        "data_current": False,
+        "data_source": "database_daily",
+        "snapshot_data_source": "database_daily",
+        "data_status": "daily",
+        "data_status_label": "数据库日线",
+        "updated_at": current.isoformat(sep=" ", timespec="seconds"),
+        "result_cache_hit": False,
+        "cache_source": "database_daily",
+        "fallback_warnings": list(dict.fromkeys(
+            warnings + confirmation_warnings + score_warnings
+        ))[:20],
+        "performance": {
+            "daily_position_total_ms": round(elapsed_ms, 3),
+            "network_request_count": 0,
+            "minute_request_count": 0,
+            "chip_network_request_count": 0,
+        },
+        "intraday": {
+            "trade_date": trade_date,
+            "data_trade_date": trade_date,
+            "data_as_of": trade_date,
+            "data_source": "database_daily",
+            "market_phase": "日线收盘模型",
+            "position_candidates": candidates,
+            "position_candidate_count": len(candidates),
+            "position_score_version": position_score_version(),
+            "position_filter_debug": filter_debug,
+            "stocks": scored[:max(1, int(limit))],
+        },
+        "overnight": {"stocks": [], "independent_refresh_required": True},
+        **macd_provenance(),
+    })
 
 
 def build_realtime_info(

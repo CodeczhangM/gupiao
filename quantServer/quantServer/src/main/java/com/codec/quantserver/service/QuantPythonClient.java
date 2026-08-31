@@ -224,6 +224,34 @@ public class QuantPythonClient {
                 .body(mapType());
     }
 
+    public Map<String, Object> dailyPositionCandidates(
+            int limit, boolean forceRefresh, boolean debug) {
+        int safeLimit = Math.max(1, Math.min(limit, 10));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/realtime-info/position-candidates")
+                        .queryParam("limit", safeLimit)
+                        .queryParam("force_refresh", forceRefresh)
+                        .queryParam("debug", debug)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> realtimeTailPremium(
+            int limit, boolean forceRefresh, boolean debug) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/realtime-info/tail-premium")
+                        .queryParam("limit", safeLimit)
+                        .queryParam("force_refresh", forceRefresh)
+                        .queryParam("debug", debug)
+                        .build())
+                .retrieve()
+                .body(mapType());
+    }
+
     public Map<String, Object> marketNewsSummary(
             String market, int limit, boolean forceRefresh, boolean useAi) {
         String safeMarket = switch (market == null ? "all" : market) {

@@ -1631,7 +1631,7 @@ createApp({
         const forceQuery = forceRefresh ? '&force_refresh=true' : '';
         const debugQuery = this.realtimePositionDebug ? '&debug=true' : '';
         const loaded = (
-          await this.request(`/realtime-info?limit=20${forceQuery}${debugQuery}`)
+          await this.request(`/realtime-info/position-candidates?limit=10${forceQuery}${debugQuery}`)
         ) || {};
         const existingOvernight = this.realtimeInfo && this.realtimeInfo.overnight;
         this.realtimeInfo = {

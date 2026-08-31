@@ -196,6 +196,22 @@ public class QuantController {
         return quantPythonClient.realtimeInfo(limit, forceRefresh);
     }
 
+    @GetMapping("/realtime-info/position-candidates")
+    public Map<String, Object> dailyPositionCandidates(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh,
+            @RequestParam(name = "debug", defaultValue = "false") boolean debug) {
+        return quantPythonClient.dailyPositionCandidates(limit, forceRefresh, debug);
+    }
+
+    @GetMapping("/realtime-info/tail-premium")
+    public Map<String, Object> realtimeTailPremium(
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(name = "force_refresh", defaultValue = "false") boolean forceRefresh,
+            @RequestParam(name = "debug", defaultValue = "false") boolean debug) {
+        return quantPythonClient.realtimeTailPremium(limit, forceRefresh, debug);
+    }
+
     @GetMapping("/market-news-summary")
     public Map<String, Object> marketNewsSummary(
             @RequestParam(defaultValue = "all") String market,
