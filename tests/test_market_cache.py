@@ -165,6 +165,33 @@ class MarketCachePolicyTests(unittest.TestCase):
         self.assertIn(("moneyflow_ind_dc", "20260714"), calls)
         self.assertEqual(replace_source.call_count, 8)
 
+    @patch("market_cache.get_complete_dates", side_effect=[
+        ["20260715", "20260714"],
+        ["20260715", "20260714"],
+    ])
+    @patch("market_cache.replace_daily_source")
+    @patch("market_cache.init_market_cache")
+    def test_sync_can_skip_recent_complete_dates_for_realtime_refresh(
+        self, _init, replace_source, _complete
+    ):
+        dates = ["20260715", "20260714"]
+        calls = []
+
+        def fetcher(api_name, **kwargs):
+            calls.append((api_name, kwargs.get("trade_date")))
+            return pd.DataFrame()
+
+        with patch.dict(os.environ, {"MARKET_CACHE_ENABLED": "true"}):
+            result = market_cache.sync_market_cache(
+                fetcher,
+                lambda **_kwargs: dates,
+                retry_recent=False,
+            )
+
+        self.assertEqual(calls, [])
+        self.assertEqual(replace_source.call_count, 0)
+        self.assertFalse(result["cache_updated"])
+
     @patch("market_cache.sync_market_cache")
     @patch("market_cache.init_market_cache")
     @patch("market_cache.get_complete_dates", return_value=[f"2026{index:04d}" for index in range(70)])

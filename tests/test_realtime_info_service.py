@@ -849,14 +849,21 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(result.bars.iloc[0]["close"], 10.0)
         self.assertEqual(result.bars.iloc[-1]["close"], 10.2)
 
-    def test_force_refresh_bypasses_fresh_database_minutes(self):
+    def test_force_refresh_reuses_database_minutes_and_fetches_only_new_tail(self):
         import realtime_info_service
 
-        cached = pd.DataFrame([{
-            "ts_code": "600201.SH",
-            "trade_time": "2026-07-30 14:49:00",
-            "close": 10,
-        }])
+        cached = pd.DataFrame([
+            {
+                "ts_code": "600201.SH",
+                "trade_time": "2026-07-30 14:25:00",
+                "close": 9.9,
+            },
+            {
+                "ts_code": "600201.SH",
+                "trade_time": "2026-07-30 14:49:00",
+                "close": 10,
+            },
+        ])
         refreshed = pd.DataFrame([{
             "ts_code": "600201.SH",
             "trade_time": "2026-07-30 14:50:00",
@@ -866,7 +873,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             patch(
                 "realtime_info_service.load_minute_cache",
                 return_value=cached,
-            ),
+            ) as load_cache,
             patch(
                 "realtime_info_service.minute_cache_is_fresh",
                 return_value=True,
@@ -891,8 +898,68 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             )
 
         provider.assert_called_once()
+        load_cache.assert_called_once()
+        self.assertEqual(provider.call_args.args[1], "2026-07-30 14:50:00")
         self.assertEqual(result.source, "eastmoney_fallback")
+        self.assertEqual(len(result.bars), 3)
         self.assertEqual(result.bars.iloc[-1]["close"], 10.1)
+
+    def test_tail_minutes_for_candidates_use_at_most_four_workers(self):
+        import realtime_info_service
+
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+
+        def loader(ts_code, trade_date, end_datetime, minute_loader=None):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return MinuteLoadResult(pd.DataFrame(), "fixture", [])
+
+        rows = [{"ts_code": f"60000{i}.SH"} for i in range(8)]
+        with patch(
+            "realtime_info_service._load_tail_minute_bars_for_pick",
+            side_effect=loader,
+        ):
+            result = realtime_info_service._load_tail_minutes_for_candidates(
+                rows,
+                "20260831",
+                "2026-08-31 14:50:00",
+            )
+
+        self.assertEqual(len(result), 8)
+        self.assertGreater(max_active, 1)
+        self.assertLessEqual(max_active, 4)
+
+    def test_force_refresh_reloads_current_60m_bar_from_cache_tail(self):
+        import realtime_info_service
+
+        cached = pd.DataFrame([
+            {"ts_code": "600201.SH", "trade_time": "2026-07-30 09:30:00", "close": 10},
+            {"ts_code": "600201.SH", "trade_time": "2026-07-30 14:30:00", "close": 10.1},
+        ])
+        refreshed = pd.DataFrame([
+            {"ts_code": "600201.SH", "trade_time": "2026-07-30 14:30:00", "close": 10.2},
+        ])
+        with (
+            patch("realtime_info_service.load_minute_cache", return_value=cached),
+            patch("realtime_info_service._minute_result_with_1459_fallback",
+                  return_value=MinuteLoadResult(refreshed, "tushare", [])) as provider,
+            patch("realtime_info_service.save_minute_cache"),
+        ):
+            result = realtime_info_service._persistent_minute_result(
+                "600201.SH", "2026-07-30 09:30:00", "2026-07-30 14:50:00",
+                "60min", "20260730", datetime(2026, 7, 30, 14, 50),
+                force_refresh=True,
+            )
+
+        self.assertEqual(provider.call_args.args[1], "2026-07-30 14:30:00")
+        self.assertEqual(result.bars.iloc[-1]["close"], 10.2)
 
     def test_signal_minutes_use_at_most_four_workers(self):
         active = 0
@@ -1680,13 +1747,16 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(trade_dates.call_count, 1)
         self.assertEqual(sync_market.call_count, 1)
         self.assertEqual(intraday_builder.call_count, 1)
-        self.assertEqual(overnight_builder.call_count, 1)
+        self.assertEqual(overnight_builder.call_count, 0)
         self.assertEqual(
             set(first["performance"]),
             {
                 "market_sync_ms",
+                "intraday_total_ms",
                 "intraday_60m_ms",
                 "tail_1m_ms",
+                "tail_1m_wall_ms",
+                "chip_peak_ms",
                 "overnight_ms",
                 "minute_request_count",
                 "minute_cache_hit_count",
@@ -2276,7 +2346,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
     @patch("realtime_info_service.load_market_snapshot")
     @patch("realtime_info_service.sync_cached_market_data")
     @patch("realtime_info_service.get_trade_dates", return_value=["20260729"])
-    def test_realtime_info_syncs_current_market_and_enriches_both_sections(
+    def test_realtime_info_refreshes_intraday_without_rebuilding_overnight(
         self,
         _get_trade_dates,
         sync_cached_market_data,
@@ -2314,32 +2384,19 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertTrue(result["data_current"])
         self.assertEqual(result["intraday"]["stocks"][0]["current_price"], 12.34)
         self.assertEqual(result["intraday"]["stocks"][0]["day_high"], 12.8)
-        self.assertEqual(result["overnight"]["stocks"][0]["current_price"], 8.88)
-        self.assertEqual(result["overnight"]["stocks"][0]["day_high"], 9.2)
-        self.assertFalse(any(
-            key.startswith("chip_")
-            for key in result["overnight"]["stocks"][0]
-        ))
-        sync_cached_market_data.assert_called_once_with(force_current=True)
+        self.assertEqual(result["overnight"]["stocks"], [])
+        self.assertTrue(result["overnight"]["independent_refresh_required"])
+        sync_cached_market_data.assert_called_once_with(
+            force_current=False,
+            retry_recent=False,
+        )
         load_recent_daily.assert_called_once_with("20260729", 120)
         build_realtime_intraday_section.assert_called_once()
-        build_realtime_tail_premium_monitor.assert_called_once()
-        kwargs = build_realtime_tail_premium_monitor.call_args.kwargs
-        self.assertEqual(kwargs["trade_date_override"], "20260729")
-        self.assertEqual(
-            kwargs["history_override"].groupby("ts_code").size().to_dict(),
-            {"600101.SH": 100, "600102.SH": 100},
-        )
-        self.assertEqual(
-            kwargs["source_metadata"]["data_source"],
-            "current_snapshot",
-        )
-        self.assertTrue(callable(kwargs["minute_loader"]))
-        self.assertEqual(
-            kwargs["market_override"].iloc[0]["close"], 12.34
-        )
+        build_realtime_tail_premium_monitor.assert_not_called()
+        self.assertIn("intraday_total_ms", result["performance"])
+        self.assertIn("chip_peak_ms", result["performance"])
 
-    def test_realtime_info_filters_unbuyable_overnight_output_after_enrichment(self):
+    def test_realtime_info_does_not_build_overnight_output(self):
         with (
             patch("realtime_info_service.get_trade_dates", return_value=["20260731"]),
             patch(
@@ -2388,12 +2445,8 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             )
 
         overnight = result["overnight"]
-        self.assertEqual(
-            [row["ts_code"] for row in overnight["stocks"]],
-            ["600988.SH"],
-        )
-        self.assertEqual(overnight["candidate_count"], 1)
-        self.assertEqual(overnight["failed_count"], 0)
+        self.assertEqual(overnight["stocks"], [])
+        self.assertTrue(overnight["independent_refresh_required"])
 
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._build_realtime_intraday_section")
@@ -2441,19 +2494,13 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         result = build_realtime_info(now=datetime(2026, 7, 29, 14, 10))
 
         intraday = result["intraday"]["stocks"][0]
-        overnight = result["overnight"]["stocks"][0]
         self.assertEqual(intraday["current_price"], 11.2)
         self.assertEqual(intraday["day_high"], 11.8)
         self.assertFalse(intraday["tail_after_1430_available"])
         self.assertIsNone(intraday["tail_return_after_1430"])
         self.assertIsNone(intraday["tail_strength_score"])
-        self.assertEqual(overnight["current_price"], 8.6)
-        self.assertEqual(overnight["day_high"], 8.9)
-        self.assertFalse(overnight["tail_after_1430_available"])
-        self.assertIsNone(overnight["tail_return_after_1430"])
-        self.assertIsNone(overnight["tail_strength_score"])
-        self.assertTrue(overnight["tail_auction_available"])
-        self.assertEqual(overnight["tail_auction_return"], 0.15)
+        self.assertEqual(result["overnight"]["stocks"], [])
+        build_realtime_tail_premium_monitor.assert_not_called()
 
     @patch("realtime_info_service.build_realtime_tail_premium_monitor")
     @patch("realtime_info_service._cached_minute_bars", create=True)

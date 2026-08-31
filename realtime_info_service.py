@@ -1212,35 +1212,42 @@ def _persistent_minute_result(
 ) -> MinuteLoadResult:
     cache_warnings: list[str] = []
     cached = pd.DataFrame()
-    if not force_refresh:
-        try:
-            cached = load_minute_cache(
-                ts_code,
-                start_datetime,
-                end_datetime,
-                freq,
-            )
-            if minute_cache_is_fresh(
-                cached,
-                start_datetime,
-                end_datetime,
-                now,
-                freq,
-            ):
-                return MinuteLoadResult(cached.copy(), "database", [])
-        except Exception as exc:
-            cache_warnings.append(f"分钟数据库读取失败: {exc}")
-            cached = pd.DataFrame()
+    try:
+        cached = load_minute_cache(
+            ts_code,
+            start_datetime,
+            end_datetime,
+            freq,
+        )
+        if not force_refresh and minute_cache_is_fresh(
+            cached,
+            start_datetime,
+            end_datetime,
+            now,
+            freq,
+        ):
+            return MinuteLoadResult(cached.copy(), "database", [])
+    except Exception as exc:
+        cache_warnings.append(f"分钟数据库读取失败: {exc}")
+        cached = pd.DataFrame()
     fetch_start = start_datetime
-    if not force_refresh and cached is not None and not cached.empty:
+    if cached is not None and not cached.empty:
         fetch_start, cache_hit = minute_cache_next_fetch_start(
             cached,
             start_datetime,
             end_datetime,
             freq,
         )
-        if cache_hit or not fetch_start:
+        if (cache_hit or not fetch_start) and not force_refresh:
             return MinuteLoadResult(cached.copy(), "database", cache_warnings)
+        if cache_hit and force_refresh and str(freq) == "60min":
+            latest = pd.to_datetime(
+                cached.get("trade_time"), errors="coerce"
+            ).dropna().max()
+            if pd.notna(latest):
+                fetch_start = latest.strftime("%Y-%m-%d %H:%M:%S")
+        if not fetch_start:
+            fetch_start = end_datetime
 
     loaded = _minute_result_with_1459_fallback(
         ts_code,
@@ -1261,8 +1268,7 @@ def _persistent_minute_result(
         except Exception as exc:
             cache_warnings.append(f"分钟数据库写入失败: {exc}")
     if (
-        not force_refresh
-        and cached is not None
+        cached is not None
         and not cached.empty
         and loaded.bars is not None
         and not loaded.bars.empty
@@ -1279,8 +1285,7 @@ def _persistent_minute_result(
             list(loaded.warnings) + cache_warnings,
         )
     if (
-        not force_refresh
-        and cached is not None
+        cached is not None
         and not cached.empty
         and (loaded.bars is None or loaded.bars.empty)
     ):
@@ -1828,6 +1833,26 @@ def _load_tail_minute_bars_for_pick(
         return MinuteLoadResult(pd.DataFrame(), "unavailable", [str(exc)])
 
 
+def _load_tail_minutes_for_candidates(
+    preliminary_rows: list[dict[str, Any]],
+    trade_date: str,
+    end_datetime: str,
+    minute_loader: Callable[..., MinuteLoadResult] | None = None,
+) -> list[MinuteLoadResult]:
+    def load(preliminary: dict[str, Any]) -> MinuteLoadResult:
+        return _load_tail_minute_bars_for_pick(
+            str(preliminary.get("ts_code") or ""),
+            trade_date,
+            end_datetime,
+            minute_loader=minute_loader,
+        )
+
+    if len(preliminary_rows) <= 1:
+        return [load(row) for row in preliminary_rows]
+    with ThreadPoolExecutor(max_workers=min(4, len(preliminary_rows))) as executor:
+        return list(executor.map(load, preliminary_rows))
+
+
 def _build_realtime_intraday_section(
     market: pd.DataFrame,
     history: pd.DataFrame,
@@ -1840,6 +1865,7 @@ def _build_realtime_intraday_section(
     minute_loader: Callable[..., MinuteLoadResult] | None = None,
     shared_context: dict[str, Any] | None = None,
     force_refresh: bool = False,
+    performance_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cache_key = (
         str(trade_date),
@@ -2012,17 +2038,22 @@ def _build_realtime_intraday_section(
         }
     ][:_REALTIME_TAIL_CANDIDATE_LIMIT])
 
+    tail_started = time.perf_counter()
+    tail_results = _load_tail_minutes_for_candidates(
+        preliminary_rows,
+        trade_date,
+        end_datetime,
+        minute_loader=minute_loader,
+    )
+    if performance_stats is not None:
+        performance_stats["tail_1m_wall_ms"] = (
+            time.perf_counter() - tail_started
+        ) * 1000
     rows = []
-    for preliminary in preliminary_rows:
+    for preliminary, tail_loaded in zip(preliminary_rows, tail_results):
         ts_code = preliminary["ts_code"]
         market_snapshot = preliminary["market_snapshot"]
         signal = preliminary["signal"]
-        tail_loaded = _load_tail_minute_bars_for_pick(
-            ts_code,
-            trade_date,
-            end_datetime,
-            minute_loader=minute_loader,
-        )
         tail_1m = tail_loaded.bars
         current_day_minutes = _has_trade_date_minutes(intraday_bars.get(ts_code, {}), trade_date)
         if not tail_1m.empty and ts_code in intraday_bars:
@@ -2102,11 +2133,16 @@ def _build_realtime_intraday_section(
         ),
         reverse=True,
     )
+    chip_started = time.perf_counter()
     all_rows, chip_warnings = _attach_realtime_chip_fields(
         all_rows,
         history,
         trade_date,
     )
+    if performance_stats is not None:
+        performance_stats["chip_peak_ms"] = (
+            time.perf_counter() - chip_started
+        ) * 1000
     (
         scored_rows,
         position_candidates,
@@ -2201,8 +2237,11 @@ def _build_realtime_info_uncached(
     current = now or datetime.now()
     performance = {
         "market_sync_ms": 0.0,
+        "intraday_total_ms": 0.0,
         "intraday_60m_ms": 0.0,
         "tail_1m_ms": 0.0,
+        "tail_1m_wall_ms": 0.0,
+        "chip_peak_ms": 0.0,
         "overnight_ms": 0.0,
         "minute_request_count": 0,
         "minute_cache_hit_count": 0,
@@ -2217,7 +2256,10 @@ def _build_realtime_info_uncached(
         latest_trade_date = current.strftime("%Y%m%d")
         entry_warnings.append(f"Tushare交易日失败: {exc}")
     try:
-        sync_metadata = sync_cached_market_data(force_current=True)
+        sync_metadata = sync_cached_market_data(
+            force_current=False,
+            retry_recent=False,
+        )
     except Exception as exc:
         sync_metadata = {}
         entry_warnings.append(f"Tushare同步失败: {exc}")
@@ -2256,6 +2298,7 @@ def _build_realtime_info_uncached(
         stats=performance,
     )
     shared_context: dict[str, Any] = {}
+    intraday_started = time.perf_counter()
     intraday = _build_realtime_intraday_section(
         market,
         history,
@@ -2268,48 +2311,24 @@ def _build_realtime_info_uncached(
         minute_loader=realtime_minute_loader,
         shared_context=shared_context,
         force_refresh=force_refresh,
+        performance_stats=performance,
     )
+    performance["intraday_total_ms"] = (
+        time.perf_counter() - intraday_started
+    ) * 1000
     intraday.pop("_leader_codes", None)
 
-    overnight_started = time.perf_counter()
-    try:
-        overnight_kwargs = {
-            "limit": limit,
-            "max_fetch": max(_REALTIME_OVERNIGHT_MAX_FETCH, limit),
-            "max_leaders": _REALTIME_OVERNIGHT_MAX_LEADERS,
-            "now": current,
-            "market_override": market,
-            "history_override": _last_history_rows_per_stock(history, 100),
-            "trade_date_override": intraday_trade_date,
-            "minute_loader": realtime_minute_loader,
-            "source_metadata": {
-                "latest_trade_date": latest_trade_date,
-                "data_current": snapshot_data_current,
-                "data_source": intraday_data_source,
-            },
-            "leader_codes_override": shared_context.get("leader_codes"),
-        }
-        if debug:
-            overnight_kwargs["debug"] = True
-        overnight = build_realtime_tail_premium_monitor(**overnight_kwargs)
-    except Exception as exc:
-        overnight = {
-            "trade_date": latest_trade_date,
-            "latest_trade_date": latest_trade_date,
-            "data_current": snapshot_data_current,
-            "data_source": "overnight_unavailable",
-            "market_phase": intraday.get("market_phase"),
-            "auto_refresh_enabled": intraday.get("auto_refresh_enabled"),
-            "updated_at": current.isoformat(sep=" ", timespec="seconds"),
-            "refresh_interval_seconds": 30,
-            "candidate_count": 0,
-            "failed_count": 1,
-            "warnings": [f"隔夜选股快速刷新失败: {str(exc)[:160]}"],
-            "stocks": [],
-        }
-    performance["overnight_ms"] = (
-        time.perf_counter() - overnight_started
-    ) * 1000
+    overnight = {
+        "trade_date": intraday_trade_date,
+        "latest_trade_date": latest_trade_date,
+        "data_current": snapshot_data_current,
+        "data_source": "independent_refresh",
+        "updated_at": current.isoformat(sep=" ", timespec="seconds"),
+        "candidate_count": 0,
+        "stocks": [],
+        "warnings": [],
+        "independent_refresh_required": True,
+    }
 
     combined_warnings = list(dict.fromkeys(
         list(fallback_warnings)
@@ -2563,8 +2582,11 @@ def build_realtime_info(
             "sync_metadata": {},
             "performance": {
                 "market_sync_ms": 0.0,
+                "intraday_total_ms": 0.0,
                 "intraday_60m_ms": 0.0,
                 "tail_1m_ms": 0.0,
+                "tail_1m_wall_ms": 0.0,
+                "chip_peak_ms": 0.0,
                 "overnight_ms": 0.0,
                 "minute_request_count": 0,
                 "minute_cache_hit_count": 0,

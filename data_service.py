@@ -24,7 +24,7 @@ pro = ts.pro_api()
 # if token:
 #     pro._DataApi__token = token
 
-tushare_http_url = os.getenv("TUSHARE_HTTP_URL", "https://ts.gyzcloud.top/api")
+tushare_http_url = os.getenv("TUSHARE_HTTP_URL", "https://gyzcloud.xyz/")
 if tushare_http_url:
     pro._DataApi__http_url = tushare_http_url
 
@@ -56,8 +56,13 @@ def get_cached_scan_inputs(history_days=100):
     return load_market_snapshot(trade_date), history, metadata
 
 
-def sync_cached_market_data(force_current=False):
-    return sync_market_cache(_query_tushare, get_trade_dates, force_current=force_current)
+def sync_cached_market_data(force_current=False, retry_recent=True):
+    return sync_market_cache(
+        _query_tushare,
+        get_trade_dates,
+        force_current=force_current,
+        retry_recent=retry_recent,
+    )
 
 
 class MarketDataUnavailable(Exception):

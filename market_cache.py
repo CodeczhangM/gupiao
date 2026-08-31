@@ -173,7 +173,13 @@ def _record_failure(source_name, trade_date, error):
                 (source_name, trade_date, str(error)[:2000]))
 
 
-def sync_market_cache(fetcher, trade_date_loader, force_current=False, now=None):
+def sync_market_cache(
+    fetcher,
+    trade_date_loader,
+    force_current=False,
+    now=None,
+    retry_recent=True,
+):
     config = get_cache_config()
     if not config.enabled:
         return {"cache_updated": False, "data_trade_date": None, "cache_warnings": []}
@@ -189,7 +195,7 @@ def sync_market_cache(fetcher, trade_date_loader, force_current=False, now=None)
         # Pull newest dates first so a long bootstrap or interrupted request
         # leaves the current market window usable instead of only old history.
         targets = [date for date in dates if date not in complete]
-        recent_retry_dates = dates[:_recent_retry_days()]
+        recent_retry_dates = dates[:_recent_retry_days()] if retry_recent else []
         for date in recent_retry_dates:
             if date not in targets:
                 targets.append(date)
