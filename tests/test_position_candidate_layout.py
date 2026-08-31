@@ -42,7 +42,6 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         html = (ROOT / "quantClient" / "index.html").read_text(encoding="utf-8")
         css = (ROOT / "quantClient" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn("styles.css?v=20260831-position-columns-v1", html)
         self.assertIn('<th class="position-support-col">主关键位</th>', html)
         self.assertIn('<td class="position-support-col position-detail-cell">', html)
         self.assertIn('<th class="position-confirmation-col">突破确认</th>', html)
@@ -54,6 +53,21 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         self.assertIn("white-space: normal;", css.split(
             ".position-candidate-table .position-detail-cell {", 1
         )[1].split("}", 1)[0])
+
+    def test_factor_and_tail_details_wrap_in_dedicated_columns(self):
+        html = (ROOT / "quantClient" / "index.html").read_text(encoding="utf-8")
+        css = (ROOT / "quantClient" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("styles.css?v=20260831-position-columns-v2", html)
+        self.assertIn('<th class="position-factor-col position-wrap-col">板块/量价/筹码</th>', html)
+        self.assertIn('<td class="position-factor-col position-detail-cell">', html)
+        self.assertIn('<th class="position-tail-col position-wrap-col">尾盘/相对强弱</th>', html)
+        self.assertIn('<td class="position-tail-col position-detail-cell">', html)
+        header_css = css.split(
+            ".position-candidate-table .position-wrap-col {", 1
+        )[1].split("}", 1)[0]
+        self.assertIn("white-space: normal;", header_css)
+        self.assertIn("text-overflow: clip;", header_css)
 
 
 if __name__ == "__main__":

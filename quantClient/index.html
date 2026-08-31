@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260831-position-columns-v1">
+  <link rel="stylesheet" href="./styles.css?v=20260831-position-columns-v2">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -979,10 +979,10 @@
                   <th class="position-support-col">主关键位</th>
                   <th class="position-confirmation-col">突破确认</th>
                   <th>历史共振</th>
-                  <th>板块/量价/筹码</th>
+                  <th class="position-factor-col position-wrap-col">板块/量价/筹码</th>
                   <th>现价/涨幅</th>
                   <th>MACD</th>
-                  <th>尾盘/相对强弱</th>
+                  <th class="position-tail-col position-wrap-col">尾盘/相对强弱</th>
                   <th>依据与待确认</th>
                 </tr>
               </thead>
@@ -1015,13 +1015,13 @@
                     {{ row.latest_resonance_date || '--' }}<br>
                     <small>{{ formatNumber(row.historical_resonance_score) }}/20</small>
                   </td>
-                  <td>
+                  <td class="position-factor-col position-detail-cell">
                     <strong>{{ row.industry || '--' }}</strong><br>
                     <small>板{{ formatNumber(row.sector_hot_score) }}/18 · 量{{ formatNumber(row.price_volume_score) }}/12 · 筹{{ formatNumber(row.chip_peak_score) }}/8</small>
                   </td>
                   <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }}<br>{{ formatNumber(row.pct_chg) }}%</td>
                   <td>{{ formatNumber(row.macd_score) }}/7<br><small>{{ monitorSignalText(row) }}</small></td>
-                  <td>
+                  <td class="position-tail-col position-detail-cell">
                     {{ formatNumber(row.relative_tail_score) }}/5<br>
                     <small>{{ tailReturnText(row) }} · {{ marketRelativeText(row).text }}</small>
                   </td>
