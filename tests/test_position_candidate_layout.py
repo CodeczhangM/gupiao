@@ -38,6 +38,23 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         self.assertNotIn("<h3>底部放量启动</h3>", candidate_html)
         self.assertIn("realtimeOvernightRows", overnight_html)
 
+    def test_support_and_confirmation_details_wrap_in_dedicated_columns(self):
+        html = (ROOT / "quantClient" / "index.html").read_text(encoding="utf-8")
+        css = (ROOT / "quantClient" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("styles.css?v=20260831-position-columns-v1", html)
+        self.assertIn('<th class="position-support-col">主关键位</th>', html)
+        self.assertIn('<td class="position-support-col position-detail-cell">', html)
+        self.assertIn('<th class="position-confirmation-col">突破确认</th>', html)
+        self.assertIn('<td class="position-confirmation-col position-detail-cell">', html)
+        self.assertIn(
+            ".position-candidate-table .position-detail-cell {",
+            css,
+        )
+        self.assertIn("white-space: normal;", css.split(
+            ".position-candidate-table .position-detail-cell {", 1
+        )[1].split("}", 1)[0])
+
 
 if __name__ == "__main__":
     unittest.main()

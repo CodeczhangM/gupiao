@@ -1214,7 +1214,28 @@ tr:hover td {
 }
 
 .position-candidate-table table {
-  min-width: 1420px;
+  min-width: 1660px;
+}
+
+.position-candidate-table .position-support-col,
+.position-candidate-table .position-confirmation-col {
+  width: 190px;
+}
+
+.position-candidate-table .position-detail-cell {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.position-candidate-table .position-detail-cell small {
+  display: block;
+  margin-top: 3px;
+  white-space: normal;
 }
 
 .position-candidate-table .position-score-cell strong {
