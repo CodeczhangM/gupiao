@@ -526,6 +526,7 @@ createApp({
       realtimeInfo: {},
       realtimeInfoAutoRefresh: false,
       realtimeInfoTimer: null,
+      realtimePositionDebug: false,
       realtimeTailPremiumDebug: false,
       realtimeTailPremiumLoading: false,
       realtimeTailPremiumRefreshMode: null,
@@ -727,6 +728,28 @@ createApp({
       return intraday && Array.isArray(intraday.position_candidates)
         ? intraday.position_candidates
         : [];
+    },
+    positionFilterDebugPayload() {
+      const intraday = this.realtimeInfo && this.realtimeInfo.intraday;
+      return intraday && intraday.position_filter_debug
+        ? intraday.position_filter_debug
+        : {};
+    },
+    positionFilterDebugRows() {
+      return Array.isArray(this.positionFilterDebugPayload.top_reasons)
+        ? this.positionFilterDebugPayload.top_reasons
+        : [];
+    },
+    positionFilterDebugSamples() {
+      return Array.isArray(this.positionFilterDebugPayload.samples)
+        ? this.positionFilterDebugPayload.samples.slice(0, 20)
+        : [];
+    },
+    positionDebugVisible() {
+      return this.realtimePositionDebug || (
+        this.realtimePositionCandidateRows.length === 0
+        && this.positionFilterDebugPayload.source_count != null
+      );
     },
     realtimeOvernightRows() {
       return this.realtimeInfo && this.realtimeInfo.overnight && Array.isArray(this.realtimeInfo.overnight.stocks)
@@ -1606,8 +1629,9 @@ createApp({
       this.realtimeInfoRefreshMode = forceRefresh ? 'force' : 'quick';
       try {
         const forceQuery = forceRefresh ? '&force_refresh=true' : '';
+        const debugQuery = this.realtimePositionDebug ? '&debug=true' : '';
         const loaded = (
-          await this.request(`/realtime-info?limit=20${forceQuery}`)
+          await this.request(`/realtime-info?limit=20${forceQuery}${debugQuery}`)
         ) || {};
         const existingOvernight = this.realtimeInfo && this.realtimeInfo.overnight;
         this.realtimeInfo = {

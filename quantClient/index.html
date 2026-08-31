@@ -108,7 +108,7 @@
         </div>
 
         <div class="panel macd-settings-panel">
-          <div class="panel-head">
+          <div class="panel-head monitor-head">
             <div>
               <h3>全局 MACD 参数</h3>
               <span>
@@ -930,6 +930,37 @@
                 · 板块30 / 量价20 / MACD20 / 筹码15 / 强弱尾盘10 / 底部5
                 · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}
               </span>
+            </div>
+            <div class="monitor-actions">
+              <label class="switch">
+                <input type="checkbox" v-model="realtimePositionDebug" @change="loadRealtimeInfo(true, false)">
+                <span></span>
+                <b>过滤调试</b>
+              </label>
+            </div>
+          </div>
+          <div v-if="positionDebugVisible" class="position-filter-debug">
+            <div class="position-filter-debug-summary">
+              <strong>筛选过程</strong>
+              <span>原始 {{ positionFilterDebugPayload.source_count || 0 }} 只</span>
+              <span>显示 {{ positionFilterDebugPayload.visible_count || 0 }} 只</span>
+              <span>过滤 {{ positionFilterDebugPayload.filtered_count || 0 }} 只</span>
+            </div>
+            <div v-if="positionFilterDebugRows.length" class="position-filter-debug-reasons">
+              <strong>过滤原因 TOP</strong>
+              <span v-for="item in positionFilterDebugRows" :key="item.reason">
+                {{ item.reason }} {{ item.count }}只
+              </span>
+            </div>
+            <div v-if="positionFilterDebugSamples.length" class="position-filter-debug-samples">
+              <strong>样本</strong>
+              <span v-for="item in positionFilterDebugSamples" :key="item.ts_code">
+                {{ item.ts_code }} {{ item.name || '--' }}：{{ item.reason }}
+                <template v-if="item.position_score != null">（{{ formatNumber(item.position_score) }}分）</template>
+              </span>
+            </div>
+            <div v-if="!positionFilterDebugRows.length" class="position-filter-debug-empty">
+              暂无过滤原因；如果原始候选也是0只，说明上游板块或分钟信号阶段没有产生候选。
             </div>
           </div>
           <div class="table-wrap intraday-monitor-table position-candidate-table">

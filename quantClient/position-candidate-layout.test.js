@@ -17,6 +17,11 @@ assert.ok(candidateHtml.includes('macd_score'));
 assert.ok(candidateHtml.includes('chip_peak_score'));
 assert.ok(candidateHtml.includes('position_missing_confirmations'));
 assert.ok(candidateHtml.includes('position_risk_items'));
+assert.ok(candidateHtml.includes('过滤调试'));
+assert.ok(candidateHtml.includes('positionFilterDebugRows'));
+assert.ok(candidateHtml.includes('positionFilterDebugSamples'));
+assert.ok(main.includes('realtimePositionDebug'));
+assert.ok(main.includes('&debug=true'));
 assert.ok(!candidateHtml.includes('v-for="stageTable in realtimeStageTables"'));
 assert.ok(overnightHtml.includes('realtimeOvernightRows'));
 

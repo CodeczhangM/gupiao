@@ -1226,6 +1226,34 @@ tr:hover td {
   min-width: 260px;
 }
 
+.position-filter-debug {
+  display: grid;
+  gap: 8px;
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  border: 1px solid #f0d7a1;
+  border-radius: 10px;
+  background: #fffaf0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.position-filter-debug-summary,
+.position-filter-debug-reasons,
+.position-filter-debug-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.position-filter-debug strong {
+  color: var(--ink);
+}
+
+.position-filter-debug-samples span {
+  flex-basis: 100%;
+}
+
 .intraday-monitor-table table {
   min-width: 1400px;
 }
