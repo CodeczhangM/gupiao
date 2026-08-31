@@ -215,17 +215,19 @@ class QuantControllerTest {
 
     @Test
     void dailyPositionCandidatesForwardWithoutCallingRealtimeMinuteEndpoint() throws Exception {
-        when(quantPythonClient.dailyPositionCandidates(10, true, true))
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.dailyPositionCandidates(10, true, true))
                 .thenReturn(Map.of("data_source", "database_daily"));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new QuantController(client)).build();
 
         mockMvc.perform(get("/api/quant/realtime-info/position-candidates")
                         .param("limit", "10")
                         .param("force_refresh", "true")
                         .param("debug", "true"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data_source").value("database_daily"));
+                .andExpect(content().json("{\"data_source\":\"database_daily\"}"));
 
-        verify(quantPythonClient).dailyPositionCandidates(10, true, true);
+        verify(client).dailyPositionCandidates(10, true, true);
     }
 
     @Test
