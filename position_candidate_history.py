@@ -138,7 +138,42 @@ def extract_resonance_events(
     bars: pd.DataFrame,
     as_of_trade_date: str,
 ) -> dict[str, Any]:
-    history = _historical_rows(bars, as_of_trade_date).tail(20)
+    full_history = _historical_rows(bars, as_of_trade_date)
+    if not full_history.empty:
+        close = pd.to_numeric(full_history.get("close"), errors="coerce")
+        high = pd.to_numeric(full_history.get("high"), errors="coerce")
+        volume = pd.to_numeric(full_history.get("vol"), errors="coerce")
+        prior_high = high.shift(1).rolling(5, min_periods=3).max()
+        prior_volume = volume.shift(1).rolling(5, min_periods=3).mean()
+        derived_breakout = (
+            (close > prior_high) & (volume >= prior_volume * 1.5)
+        ).fillna(False)
+        existing_breakout = full_history.get(
+            "volume_breakout_event",
+            pd.Series(False, index=full_history.index),
+        ).fillna(False).astype(bool)
+        full_history["volume_breakout_event"] = existing_breakout | derived_breakout
+        derived_strength = (
+            (volume / prior_volume).clip(lower=0, upper=4) * 4
+        ).fillna(0)
+        existing_strength = pd.to_numeric(
+            full_history.get(
+                "volume_breakout_strength",
+                pd.Series(0, index=full_history.index),
+            ),
+            errors="coerce",
+        ).fillna(0)
+        full_history["volume_breakout_strength"] = pd.concat(
+            [existing_strength, derived_strength], axis=1
+        ).max(axis=1)
+        full_history["bottom_first_up_event"] = (
+            (close > pd.to_numeric(full_history.get("open"), errors="coerce"))
+            & (close.shift(1) <= pd.to_numeric(full_history.get("open"), errors="coerce").shift(1))
+        ).fillna(False)
+        full_history["volume_contraction_event"] = (
+            (volume <= prior_volume * 0.8) & (close >= close.shift(1) * 0.985)
+        ).fillna(False)
+    history = full_history.tail(20)
     best_by_type: dict[str, dict[str, Any]] = {}
     total_history = len(history)
     for local_index, (_, row) in enumerate(history.iterrows()):
@@ -231,13 +266,37 @@ def extract_pullback_confirmation(
         bars,
         str(current.get("trade_date") or "29991231"),
     )
+    limit_date = pd.to_datetime(
+        str(gene.get("latest_limit_up_date") or ""),
+        format="%Y%m%d",
+        errors="coerce",
+    )
+    post_limit = normalised[
+        normalised["_trade_timestamp"] > limit_date
+    ].head(10) if pd.notna(limit_date) else normalised.tail(10)
+    platform_lows = pd.to_numeric(post_limit.get("low"), errors="coerce").dropna()
+    platform_highs = pd.to_numeric(post_limit.get("high"), errors="coerce").dropna()
+    platform_lower = float(platform_lows.median()) if not platform_lows.empty else None
+    platform_upper = float(platform_highs.max()) if not platform_highs.empty else None
+    before_limit = normalised[
+        normalised["_trade_timestamp"] < limit_date
+    ] if pd.notna(limit_date) else pd.DataFrame()
+    prior_highs = (
+        pd.to_numeric(before_limit["high"], errors="coerce").dropna()
+        if "high" in before_limit.columns else pd.Series(dtype=float)
+    )
+    prior_breakout = (
+        _number(current.get("prior_breakout_price"))
+        or (float(prior_highs.tail(20).max()) if not prior_highs.empty else None)
+    )
     levels = [
         {"price": gene.get("latest_limit_up_body_low"), "source": "涨停实体低点", "strength": 8},
         {"price": gene.get("latest_limit_up_start_price"), "source": "涨停启动价", "strength": 9},
+        {"price": platform_lower, "source": "平台下沿", "strength": 7},
         {"price": _moving_average_level(normalised, 10), "source": "MA10", "strength": 5},
         {"price": _moving_average_level(normalised, 20), "source": "MA20", "strength": 6},
         {"price": current.get("chip_peak_price"), "source": "筹码峰", "strength": 7},
-        {"price": current.get("prior_breakout_price"), "source": "前期突破位", "strength": 7},
+        {"price": prior_breakout, "source": "前期突破位", "strength": 7},
     ]
     zones = merge_key_levels(levels)
     current_price = _number(
@@ -255,6 +314,8 @@ def extract_pullback_confirmation(
     )
     result = {
         "support_zones": zones,
+        "platform_lower": platform_lower,
+        "platform_upper": platform_upper,
         "primary_support": None if primary is None else primary["price"],
         "primary_support_lower": None if primary is None else primary["lower"],
         "primary_support_upper": None if primary is None else primary["upper"],
@@ -274,14 +335,6 @@ def extract_pullback_confirmation(
         return result
     support = primary["price"]
     result["support_distance_pct"] = round((current_price / support - 1) * 100, 2)
-    limit_date = pd.to_datetime(
-        str(gene.get("latest_limit_up_date") or ""),
-        format="%Y%m%d",
-        errors="coerce",
-    )
-    post_limit = normalised[
-        normalised["_trade_timestamp"] > limit_date
-    ] if pd.notna(limit_date) else normalised
     lows = pd.to_numeric(post_limit.get("low"), errors="coerce").dropna()
     closes = pd.to_numeric(post_limit.get("close"), errors="coerce").dropna()
     volumes = pd.to_numeric(post_limit.get("vol"), errors="coerce").dropna()

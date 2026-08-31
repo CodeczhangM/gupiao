@@ -46,6 +46,11 @@ from position_candidate_scoring import (
     rank_scored_position_candidates,
     score_position_candidate,
 )
+from position_candidate_history import (
+    extract_limit_gene,
+    extract_pullback_confirmation,
+    extract_resonance_events,
+)
 from strategy import (
     _attach_intraday_signal_stocks,
     _is_mainboard_a_stock,
@@ -58,6 +63,7 @@ _REALTIME_SECTOR_LIMIT = 8
 _REALTIME_CANDIDATES_PER_SECTOR = 6
 _REALTIME_PICKS_PER_SECTOR = 5
 _REALTIME_TAIL_CANDIDATE_LIMIT = 15
+POSITION_ENRICHMENT_LIMIT = 40
 _REALTIME_OVERNIGHT_MAX_FETCH = 30
 _REALTIME_OVERNIGHT_MAX_LEADERS = 15
 _REALTIME_INTRADAY_CACHE_TTL_SECONDS = 58
@@ -75,6 +81,7 @@ _REALTIME_INTRADAY_RESULT_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _REALTIME_RESULT_CACHE: dict[tuple, dict[str, Any]] = {}
 _LAST_SUCCESSFUL_REALTIME_RESULTS: dict[tuple, dict[str, Any]] = {}
 _REALTIME_RESULT_LOCK = threading.Lock()
+_POSITION_HISTORY_FEATURE_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
 
 
 def clear_realtime_derived_caches() -> None:
@@ -92,6 +99,79 @@ def _clear_realtime_result_caches() -> None:
 def _realtime_output_allowed(ts_code: Any) -> bool:
     code = str(ts_code or "")
     return bool(code) and not code.startswith(_REALTIME_OUTPUT_EXCLUDE_PREFIXES)
+
+
+def _build_history_position_pool(
+    market: pd.DataFrame,
+    history: pd.DataFrame,
+    trade_date: str,
+) -> tuple[list[dict[str, Any]], dict[str, int], list[str]]:
+    debug = {
+        "source_main_board": 0,
+        "no_limit_gene": 0,
+        "history_insufficient": 0,
+        "no_recent_resonance": 0,
+        "support_broken": 0,
+    }
+    warnings: list[str] = []
+    if market is None or market.empty or "ts_code" not in market.columns:
+        return [], debug, warnings
+    grouped = {
+        str(code): bars.copy()
+        for code, bars in (
+            history.groupby("ts_code")
+            if history is not None and not history.empty and "ts_code" in history.columns
+            else []
+        )
+    }
+    rows: list[dict[str, Any]] = []
+    for snapshot in market.to_dict("records"):
+        code = str(snapshot.get("ts_code") or "")
+        if (
+            not code.endswith((".SH", ".SZ"))
+            or code.startswith(_REALTIME_OUTPUT_EXCLUDE_PREFIXES)
+        ):
+            continue
+        name = str(snapshot.get("name") or "").upper()
+        if "ST" in name or "退市" in name:
+            continue
+        debug["source_main_board"] += 1
+        bars = grouped.get(code, pd.DataFrame())
+        cache_key = (code, str(trade_date), position_score_version())
+        try:
+            features = _POSITION_HISTORY_FEATURE_CACHE.get(cache_key)
+            if features is None:
+                gene = extract_limit_gene(bars, trade_date)
+                resonance = extract_resonance_events(bars, trade_date)
+                features = {**gene, **resonance}
+                _POSITION_HISTORY_FEATURE_CACHE[cache_key] = dict(features)
+            else:
+                features = dict(features)
+            if not features.get("limit_history_sufficient"):
+                debug["history_insufficient"] += 1
+                continue
+            if not features.get("limit_gene_eligible"):
+                debug["no_limit_gene"] += 1
+                continue
+            if not features.get("resonance_events"):
+                debug["no_recent_resonance"] += 1
+                continue
+            pullback = extract_pullback_confirmation(
+                bars,
+                features,
+                {
+                    **snapshot,
+                    "current_price": snapshot.get("current_price", snapshot.get("close")),
+                    "trade_date": trade_date,
+                },
+            )
+            if not pullback.get("support_held"):
+                debug["support_broken"] += 1
+                continue
+            rows.append({**snapshot, **features, **pullback})
+        except Exception as exc:
+            warnings.append(f"{code} 历史建仓特征计算失败: {str(exc)[:120]}")
+    return rows, debug, warnings
 
 
 def _overnight_pct_allowed(value: Any) -> bool:
@@ -1718,7 +1798,11 @@ def _group_realtime_stage_rows(
 
 def _position_filter_reason(row: dict[str, Any]) -> str:
     if row.get("position_level") == "不展示":
-        return str(row.get("position_level_reason") or "未达到统一建仓标准")
+        return str(
+            row.get("position_filter_reason")
+            or row.get("position_level_reason")
+            or "未达到统一建仓标准"
+        )
     missing = row.get("position_missing_confirmations") or []
     if missing:
         return "；".join(str(item) for item in missing)
@@ -1766,13 +1850,50 @@ def _build_unified_position_candidates(
             samples.append({
                 "ts_code": str(row.get("ts_code") or ""),
                 "name": str(row.get("name") or ""),
+                "current_price": row.get("current_price", row.get("close")),
+                "pct_chg": row.get("pct_chg"),
+                "quote_time": row.get("quote_time", row.get("data_as_of")),
+                "quote_source": row.get("quote_source", row.get("data_source")),
+                "latest_limit_up_date": row.get("latest_limit_up_date"),
+                "latest_resonance_date": row.get("latest_resonance_date"),
+                "primary_support": row.get("primary_support"),
+                "confirmation_price": row.get("confirmation_price"),
                 "position_score": row.get("position_score"),
+                "component_scores": {
+                    "support": row.get("support_pullback_score"),
+                    "resonance": row.get("historical_resonance_score"),
+                    "sector": row.get("sector_hot_score"),
+                    "price_volume": row.get("price_volume_score"),
+                    "chip": row.get("chip_peak_score"),
+                    "macd": row.get("macd_score"),
+                    "relative_tail": row.get("relative_tail_score"),
+                },
+                "risk_penalty": row.get("position_risk_penalty"),
                 "reason": reason,
             })
+    visible_before_cap = sum(
+        row.get("position_level") in {"立即建仓", "等待突破建仓", "观察建仓"}
+        for row in scored
+    )
+    reasons = [_position_filter_reason(row) for row in scored]
+    funnel = {
+        "source_scored": len(scored),
+        "today_limit_up": sum(reason.startswith("当日涨停") for reason in reasons),
+        "today_limit_down": sum(reason.startswith("当日跌停") for reason in reasons),
+        "source_sealed": sum(reason.startswith("行情源标记封板") for reason in reasons),
+        "no_limit_gene": sum(reason == "前1至10日无涨停基因" for reason in reasons),
+        "no_recent_resonance": sum(reason == "近20日无有效共振" for reason in reasons),
+        "support_broken": sum("跌破" in reason for reason in reasons),
+        "score_below_50": sum(reason == "综合分低于50" for reason in reasons),
+        "top_truncated": max(0, visible_before_cap - len(candidates)),
+        "final": len(candidates),
+    }
     debug = {
         "source_count": len(scored),
         "visible_count": len(candidates),
         "filtered_count": max(0, len(scored) - len(candidates)),
+        "funnel": funnel,
+        "auto_expand": len(candidates) == 0,
         "top_reasons": [
             {"reason": reason, "count": int(count)}
             for reason, count in reason_counts.most_common(10)
@@ -1793,6 +1914,7 @@ def _attach_realtime_chip_fields(
         index
         for index, row in enumerate(source_rows)
         if row.get("resonance_stage") in supported_stages
+        or row.get("limit_gene_eligible")
     ]
     if not stage_indexes:
         return source_rows, []
@@ -1805,6 +1927,40 @@ def _attach_realtime_chip_fields(
     for index, enriched_row in zip(stage_indexes, enriched):
         source_rows[index] = enriched_row
     return source_rows, warnings
+
+
+def _refresh_position_confirmation_fields(
+    rows: list[dict[str, Any]],
+    history: pd.DataFrame,
+    trade_date: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    grouped = {
+        str(code): bars.copy()
+        for code, bars in (
+            history.groupby("ts_code")
+            if history is not None and not history.empty and "ts_code" in history.columns
+            else []
+        )
+    }
+    refreshed: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for source in rows or []:
+        row = dict(source)
+        code = str(row.get("ts_code") or "")
+        if not row.get("limit_gene_eligible"):
+            refreshed.append(row)
+            continue
+        try:
+            confirmation = extract_pullback_confirmation(
+                grouped.get(code, pd.DataFrame()),
+                row,
+                {**row, "trade_date": trade_date},
+            )
+            refreshed.append({**row, **confirmation})
+        except Exception as exc:
+            warnings.append(f"{code} 实时突破确认更新失败: {str(exc)[:120]}")
+            refreshed.append(row)
+    return refreshed, warnings
 
 
 def _screening_data_trade_date(
@@ -1924,6 +2080,22 @@ def _build_realtime_intraday_section(
         history,
         trade_date,
     )
+    history_pool, history_filter_debug, history_warnings = (
+        _build_history_position_pool(
+            realtime_market,
+            history,
+            trade_date,
+        )
+    )
+    history_pool = sorted(
+        history_pool,
+        key=lambda row: (
+            float(row.get("historical_resonance_score") or 0),
+            float(row.get("primary_support_strength") or 0),
+            -abs(float(row.get("support_distance_pct") or 99)),
+        ),
+        reverse=True,
+    )[:POSITION_ENRICHMENT_LIMIT]
     sector_potential = rank_sector_potential(
         realtime_market,
         history,
@@ -1943,8 +2115,9 @@ def _build_realtime_intraday_section(
         sector_potential,
         realtime_market,
     )
+    minute_market = realtime_market
     intraday_bars = _load_realtime_intraday_signal_bars(
-        realtime_market,
+        minute_market,
         sector_potential,
         trade_date,
         now,
@@ -1956,7 +2129,7 @@ def _build_realtime_intraday_section(
         and not _has_any_trade_date_signal_bars(intraday_bars, trade_date)
     ):
         fallback_bars = _load_realtime_intraday_signal_bars(
-            realtime_market,
+            minute_market,
             sector_potential,
             str(base_trade_date),
             now,
@@ -1997,35 +2170,78 @@ def _build_realtime_intraday_section(
         if signal_market is not None and not signal_market.empty and "ts_code" in signal_market.columns
         else {}
     )
+    sector_records = (
+        sector_potential.to_dict("records")
+        if sector_potential is not None and not sector_potential.empty else []
+    )
+    sector_by_industry = {
+        str(sector.get("industry_name") or sector.get("industry") or ""): sector
+        for sector in sector_records
+    }
+    intraday_signal_by_code = {}
+    for sector in sector_records:
+        for stock in sector.get("intraday_signal_stocks") or []:
+            intraday_signal_by_code[str(stock.get("ts_code") or "")] = stock
     preliminary_rows = []
-    for sector in (sector_potential.to_dict("records") if sector_potential is not None and not sector_potential.empty else []):
+    for historical in history_pool:
+        ts_code = str(historical.get("ts_code") or "")
+        market_snapshot = signal_market_by_code.get(ts_code, historical)
+        industry = str(
+            market_snapshot.get("industry") or historical.get("industry") or ""
+        )
+        sector = sector_by_industry.get(industry, {})
+        stock = intraday_signal_by_code.get(ts_code, {})
+        signal = {
+            **historical,
+            **market_snapshot,
+            **stock,
+            "industry": industry,
+            "sector_avg_pct_chg": sector.get("avg_pct_chg", sector.get("pct_chg")),
+            "sector_up_ratio": sector.get("up_ratio"),
+            "sector_limit_up_count": sector.get("limit_up_count", sector.get("limit_count")),
+            "sector_rank": sector.get("sector_rank", sector.get("rank")),
+            "sector_potential_score": sector.get("potential_score"),
+            "sector_macd_status": sector.get("sector_macd_status"),
+        }
+        status, _reason = _main_force_status(signal)
+        preliminary_rows.append({
+            "ts_code": ts_code,
+            "market_snapshot": market_snapshot,
+            "signal": signal,
+            "preliminary_status": status,
+        })
+    for sector in sector_records:
         industry = sector.get("industry_name") or sector.get("industry") or ""
         for stock in sector.get("intraday_signal_stocks") or []:
             ts_code = str(stock.get("ts_code") or "")
             market_snapshot = signal_market_by_code.get(ts_code, {})
+            existing = next(
+                (item for item in preliminary_rows if item["ts_code"] == ts_code),
+                None,
+            )
             signal = {
+                **(existing.get("signal", {}) if existing else {}),
                 **market_snapshot,
                 **stock,
                 "industry": industry,
-                "sector_avg_pct_chg": sector.get(
-                    "avg_pct_chg", sector.get("pct_chg")
-                ),
+                "sector_avg_pct_chg": sector.get("avg_pct_chg", sector.get("pct_chg")),
                 "sector_up_ratio": sector.get("up_ratio"),
-                "sector_limit_up_count": sector.get(
-                    "limit_up_count", sector.get("limit_count")
-                ),
+                "sector_limit_up_count": sector.get("limit_up_count", sector.get("limit_count")),
                 "sector_rank": sector.get("sector_rank", sector.get("rank")),
                 "sector_potential_score": sector.get("potential_score"),
                 "sector_macd_status": sector.get("sector_macd_status"),
             }
             status, _reason = _main_force_status(signal)
-            preliminary_rows.append({
+            merged = {
                 "ts_code": ts_code,
                 "market_snapshot": market_snapshot,
                 "signal": signal,
                 "preliminary_status": status,
-            })
-
+            }
+            if existing:
+                preliminary_rows[preliminary_rows.index(existing)] = merged
+            else:
+                preliminary_rows.append(merged)
     ranked_preliminary_rows = sorted(
         preliminary_rows,
         key=lambda item: (
@@ -2155,6 +2371,11 @@ def _build_realtime_intraday_section(
         history,
         trade_date,
     )
+    all_rows, confirmation_warnings = _refresh_position_confirmation_fields(
+        all_rows,
+        history,
+        trade_date,
+    )
     if performance_stats is not None:
         performance_stats["chip_peak_ms"] = (
             time.perf_counter() - chip_started
@@ -2169,6 +2390,7 @@ def _build_realtime_intraday_section(
         limit=min(int(limit), 10),
         market_phase=phase,
     )
+    position_filter_debug["history_funnel"] = history_filter_debug
     legacy_rows = scored_rows[:limit]
     stage_groups = _group_realtime_stage_rows(scored_rows, limit)
     data_as_of = max(
@@ -2217,7 +2439,9 @@ def _build_realtime_intraday_section(
             for row in legacy_rows if row.get("minute_data_source")
         }),
         "fallback_warnings": list(dict.fromkeys(
-            list(chip_warnings)
+            list(history_warnings)
+            + list(chip_warnings)
+            + list(confirmation_warnings)
             + list(position_warnings)
             + [
                 warning

@@ -102,6 +102,14 @@ class PositionCandidateHistoryTests(unittest.TestCase):
         self.assertEqual(result["resonance_events"], [])
         self.assertEqual(result["historical_resonance_score"], 0.0)
 
+    def test_resonance_derives_volume_breakout_from_raw_daily_bars(self):
+        bars = _bars()
+        bars.loc[bars.index[-3], "vol"] = 3_000_000
+        bars.loc[bars.index[-3], "close"] = 10.8
+        bars.loc[bars.index[-3], "high"] = 10.9
+        result = extract_resonance_events(bars, "20260831")
+        self.assertIn("volume_breakout", {event["type"] for event in result["resonance_events"]})
+
     def test_invalid_dates_are_ignored_without_string_timestamp_comparison(self):
         bars = _bars(limit_days={1}, events=[("volume_breakout", 2, 8)])
         bars.loc[0, "trade_date"] = "invalid"
@@ -122,6 +130,14 @@ class PositionCandidateHistoryTests(unittest.TestCase):
         zones = merge_key_levels([_level(8 + index, f"L{index}", index) for index in range(5)])
         self.assertEqual(len(zones), 3)
         self.assertEqual([zone["strength"] for zone in zones], [4.0, 3.0, 2.0])
+
+    def test_pullback_levels_include_post_limit_platform(self):
+        result = extract_pullback_confirmation(
+            _pullback_bars(), _gene(), {"current_price": 10.4, "volume_ratio": 1.0}
+        )
+        sources = {source for zone in result["support_zones"] for source in zone["sources"]}
+        self.assertIn("平台下沿", sources)
+        self.assertEqual(result["platform_upper"], 11.0)
 
     def test_pullback_intraday_breach_can_reclaim_support(self):
         result = extract_pullback_confirmation(

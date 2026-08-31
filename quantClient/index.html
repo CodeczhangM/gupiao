@@ -927,7 +927,7 @@
               <h3>近期观察与建仓</h3>
               <span>
                 {{ realtimePositionCandidateRows.length }} 只 · 保守型 TOP10
-                · 板块30 / 量价20 / MACD20 / 筹码15 / 强弱尾盘10 / 底部5
+                · 关键位30 / 历史共振20 / 板块18 / 量价12 / 筹码8 / MACD7 / 强弱尾盘5
                 · {{ macdBasisText(realtimeInfo.intraday || realtimeInfo) }}
               </span>
             </div>
@@ -945,6 +945,11 @@
               <span>原始 {{ positionFilterDebugPayload.source_count || 0 }} 只</span>
               <span>显示 {{ positionFilterDebugPayload.visible_count || 0 }} 只</span>
               <span>过滤 {{ positionFilterDebugPayload.filtered_count || 0 }} 只</span>
+              <span v-if="positionFilterDebugPayload.history_funnel">
+                无涨停基因 {{ positionFilterDebugPayload.history_funnel.no_limit_gene || 0 }}只 ·
+                无20日共振 {{ positionFilterDebugPayload.history_funnel.no_recent_resonance || 0 }}只 ·
+                跌破关键位 {{ positionFilterDebugPayload.history_funnel.support_broken || 0 }}只
+              </span>
             </div>
             <div v-if="positionFilterDebugRows.length" class="position-filter-debug-reasons">
               <strong>过滤原因 TOP</strong>
@@ -970,11 +975,13 @@
                   <th>股票</th>
                   <th>建仓等级</th>
                   <th>综合分</th>
-                  <th>板块/热点</th>
+                  <th>近期涨停</th>
+                  <th>主关键位</th>
+                  <th>突破确认</th>
+                  <th>历史共振</th>
+                  <th>板块/量价/筹码</th>
                   <th>现价/涨幅</th>
-                  <th>量价/主力</th>
                   <th>MACD</th>
-                  <th>筹码峰</th>
                   <th>尾盘/相对强弱</th>
                   <th>依据与待确认</th>
                 </tr>
@@ -993,28 +1000,29 @@
                     <small v-if="row.position_risk_penalty">风险 -{{ formatNumber(row.position_risk_penalty) }}</small>
                   </td>
                   <td>
-                    <strong>{{ row.industry || '--' }}</strong><br>
-                    <span class="monitor-badge" :class="row.sector_hot_status === '热点' ? 'strong' : 'watch'">
-                      {{ row.sector_hot_status || '非热点' }} {{ formatNumber(row.sector_hot_score) }}/30
-                    </span>
-                  </td>
-                  <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }}<br>{{ formatNumber(row.pct_chg) }}%</td>
-                  <td>{{ formatNumber(row.price_volume_score) }}/20<br><small>{{ row.main_force_status || '--' }} · 量比{{ formatNumber(row.volume_ratio) }}</small></td>
-                  <td>{{ formatNumber(row.macd_score) }}/20<br><small>{{ monitorSignalText(row) }}</small></td>
-                  <td class="chip-washout" :title="chipPeakDisplay(row).title">
-                    <div class="chip-washout-main">
-                      <span class="monitor-badge" :class="chipPeakDisplay(row).state">
-                        {{ chipPeakDisplay(row).label }}
-                      </span>
-                      <strong>{{ formatNumber(row.chip_peak_score) }}/15</strong>
-                    </div>
-                    <small class="chip-washout-detail">
-                      {{ chipPeakDisplay(row).peak }}<br>
-                      {{ chipPeakDisplay(row).concentration }}
-                    </small>
+                    {{ row.latest_limit_up_date || '--' }}<br>
+                    <small>{{ row.latest_limit_up_days_ago == null ? '--' : row.latest_limit_up_days_ago + '日前' }} · {{ row.limit_up_count_10d || 0 }}次</small>
                   </td>
                   <td>
-                    {{ formatNumber(row.relative_tail_score) }}/10<br>
+                    {{ formatNumber(row.primary_support) }}<br>
+                    <small>{{ row.pullback_state || '--' }} · {{ formatNumber(row.support_pullback_score) }}/30</small>
+                  </td>
+                  <td>
+                    {{ formatNumber(row.confirmation_price) }}<br>
+                    <small>{{ row.confirmation_state || '--' }} · {{ formatNumber(row.breakout_pct) }}%</small>
+                  </td>
+                  <td>
+                    {{ row.latest_resonance_date || '--' }}<br>
+                    <small>{{ formatNumber(row.historical_resonance_score) }}/20</small>
+                  </td>
+                  <td>
+                    <strong>{{ row.industry || '--' }}</strong><br>
+                    <small>板{{ formatNumber(row.sector_hot_score) }}/18 · 量{{ formatNumber(row.price_volume_score) }}/12 · 筹{{ formatNumber(row.chip_peak_score) }}/8</small>
+                  </td>
+                  <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }}<br>{{ formatNumber(row.pct_chg) }}%</td>
+                  <td>{{ formatNumber(row.macd_score) }}/7<br><small>{{ monitorSignalText(row) }}</small></td>
+                  <td>
+                    {{ formatNumber(row.relative_tail_score) }}/5<br>
                     <small>{{ tailReturnText(row) }} · {{ marketRelativeText(row).text }}</small>
                   </td>
                   <td class="monitor-reason-cell" :title="row.position_level_reason || '--'">
@@ -1028,7 +1036,7 @@
                   </td>
                 </tr>
                 <tr v-if="realtimePositionCandidateRows.length === 0">
-                  <td colspan="10" class="empty">暂无达到保守型观察建仓标准的股票</td>
+                  <td colspan="12" class="empty">暂无达到保守型观察建仓标准的股票</td>
                 </tr>
               </tbody>
             </table>

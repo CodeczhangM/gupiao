@@ -18,6 +18,7 @@ from realtime_info_service import (
     _attach_market_relative_fields,
     _build_market_relative_benchmark,
     _build_bottom_filter_debug,
+    _build_history_position_pool,
     _build_unified_position_candidates,
     _group_realtime_stage_rows,
     _database_realtime_result_key,
@@ -30,6 +31,7 @@ from realtime_info_service import (
     _load_realtime_intraday_signal_bars,
     _market_relative_candidate_mask,
     _refresh_market_relative_fields,
+    _refresh_position_confirmation_fields,
     _minute_price_snapshot,
     _minute_result_with_1459_fallback,
     _snapshot_supports_realtime_filters,
@@ -37,6 +39,23 @@ from realtime_info_service import (
 )
 from strategy import _macd_kdj_60m_signal, _select_intraday_signal_stocks
 from tests.test_advantage_stock_scoring import build_60min_bars, build_tail_1min_bars, water_macd_kdj_cross_closes
+
+
+def _v2_candidate_fields():
+    return {
+        "limit_gene_eligible": True,
+        "latest_limit_up_date": "20260825",
+        "resonance_events": [{"type": "volume_breakout", "contribution": 20}],
+        "historical_resonance_score": 20,
+        "support_held": True,
+        "pullback_state": "回踩关键位未破",
+        "primary_support": 12.1,
+        "primary_support_strength": 17,
+        "support_distance_pct": 3.3,
+        "breakout_confirmed": True,
+        "breakout_pct": 0.8,
+        "price_volume_confirmation": True,
+    }
 
 
 class RealtimeInfoServiceTests(unittest.TestCase):
@@ -3298,6 +3317,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
     def test_realtime_intraday_returns_one_unified_position_pool(self):
         def row(ts_code, stage, relative_strength):
             return {
+                **_v2_candidate_fields(),
                 "ts_code": ts_code,
                 "name": ts_code,
                 "industry": "通信设备",
@@ -3359,6 +3379,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         rows = []
         for index in range(4):
             rows.append({
+                **_v2_candidate_fields(),
                 "ts_code": f"60010{index}.SH",
                 "name": f"候选{index}",
                 "close": 10,
@@ -3401,12 +3422,56 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
     def test_intraday_cache_key_includes_position_score_version(self):
         self.assertIn(
-            "position-candidate-v1",
+            "position-candidate-v2-limit-gene-pullback",
             _database_realtime_result_key(20),
         )
 
+    def test_history_position_pool_does_not_require_today_intraday_signal(self):
+        dates = pd.bdate_range(end="2026-08-31", periods=26)
+        rows = []
+        for index, date in enumerate(dates):
+            days_ago = len(dates) - 1 - index
+            rows.append({
+                "ts_code": "600001.SH", "trade_date": date.strftime("%Y%m%d"),
+                "open": 10.0, "high": 11.1 if days_ago == 6 else 10.4,
+                "low": 9.9, "close": 11.0 if days_ago == 6 else 10.2,
+                "pct_chg": 10.0 if days_ago == 6 else 0.3,
+                "vol": 2_000_000 if days_ago == 3 else 1_000_000,
+                "volume_breakout_event": days_ago == 3,
+                "volume_breakout_strength": 8 if days_ago == 3 else 0,
+            })
+        market = pd.DataFrame([{
+            "ts_code": "600001.SH", "name": "历史候选", "industry": "银行",
+            "close": 10.5, "current_price": 10.5, "pct_chg": 2.0,
+            "vol": 1_000_000, "volume_ratio": 1.3,
+        }])
+        candidates, debug, warnings = _build_history_position_pool(
+            market, pd.DataFrame(rows), "20260831"
+        )
+        self.assertEqual([row["ts_code"] for row in candidates], ["600001.SH"])
+        self.assertEqual(debug["source_main_board"], 1)
+        self.assertEqual(warnings, [])
+
+    def test_position_confirmation_recomputes_after_realtime_price_overlay(self):
+        bars = pd.DataFrame([
+            {"ts_code": "600001.SH", "trade_date": "20260820", "open": 10, "high": 11, "low": 9.8, "close": 11, "vol": 100},
+            {"ts_code": "600001.SH", "trade_date": "20260821", "open": 10.5, "high": 10.7, "low": 9.95, "close": 10.2, "vol": 70},
+            {"ts_code": "600001.SH", "trade_date": "20260824", "open": 10.2, "high": 10.5, "low": 10.0, "close": 10.4, "vol": 80},
+        ])
+        row = {
+            **_v2_candidate_fields(), "ts_code": "600001.SH",
+            "latest_limit_up_date": "20260820", "latest_limit_up_body_low": 9.8,
+            "latest_limit_up_start_price": 10.0, "latest_limit_up_close": 11.0,
+            "current_price": 10.56, "volume_ratio": 1.4,
+            "breakout_confirmed": False,
+        }
+        refreshed, warnings = _refresh_position_confirmation_fields([row], bars, "20260831")
+        self.assertTrue(refreshed[0]["breakout_confirmed"])
+        self.assertEqual(warnings, [])
+
     def test_unified_candidates_degrade_missing_confirmations(self):
         base = {
+            **_v2_candidate_fields(),
             "ts_code": "600001.SH", "name": "保守候选", "close": 10,
             "pct_chg": 2.5, "vol": 1_000_000, "sector_rank": 1,
             "sector_avg_pct_chg": 2.5, "sector_up_ratio": 0.8,

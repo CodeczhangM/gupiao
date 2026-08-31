@@ -747,7 +747,7 @@ createApp({
     },
     positionDebugVisible() {
       return this.realtimePositionDebug || (
-        this.realtimePositionCandidateRows.length === 0
+        (this.positionFilterDebugPayload.auto_expand === true || this.realtimePositionCandidateRows.length === 0)
         && this.positionFilterDebugPayload.source_count != null
       );
     },
@@ -981,7 +981,7 @@ createApp({
     },
     positionLevelBadgeClass(value) {
       if (value === '立即建仓') return 'strong';
-      if (value === '等待确认后建仓') return 'watch';
+      if (value === '等待突破建仓') return 'watch';
       return 'muted';
     },
     monitorRowClass(row) {

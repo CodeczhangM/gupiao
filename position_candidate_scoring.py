@@ -9,14 +9,15 @@ from indicator_settings import (
 )
 
 
-BASE_POSITION_SCORE_VERSION = "position-candidate-v1"
+BASE_POSITION_SCORE_VERSION = "position-candidate-v2-limit-gene-pullback"
 WEIGHTS = {
-    "sector": 30.0,
-    "price_volume": 20.0,
-    "macd": 20.0,
-    "chip": 15.0,
-    "relative_tail": 10.0,
-    "bottom": 5.0,
+    "support": 30.0,
+    "resonance": 20.0,
+    "sector": 18.0,
+    "price_volume": 12.0,
+    "chip": 8.0,
+    "macd": 7.0,
+    "relative_tail": 5.0,
 }
 
 
@@ -296,6 +297,44 @@ def _bottom_structure_score(row: dict[str, Any]) -> tuple[float, list[str]]:
     return score, reasons
 
 
+def _support_pullback_score(row: dict[str, Any]) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons: list[str] = []
+    if _truthy(row.get("support_held")):
+        score += 18
+        reasons.append("主关键位守住")
+    state = str(row.get("pullback_state") or "")
+    if state == "回踩关键位未破":
+        score += 8
+        reasons.append("回踩关键位未破")
+    elif state == "盘中跌破但收回":
+        score += 7
+        reasons.append("盘中跌破后收回")
+    elif state == "关键位上方企稳":
+        score += 5
+        reasons.append("关键位上方企稳")
+    strength = _number(row.get("primary_support_strength"), 0) or 0
+    if strength >= 12:
+        score += 4
+    elif strength >= 7:
+        score += 2
+    return min(WEIGHTS["support"], score), reasons
+
+
+def _historical_resonance_score(row: dict[str, Any]) -> tuple[float, list[str]]:
+    events = row.get("resonance_events") or []
+    score = _number(row.get("historical_resonance_score"))
+    if score is None:
+        score = sum(_number(event.get("contribution"), 0) or 0 for event in events)
+    reasons = []
+    if events:
+        latest = events[0]
+        reasons.append(
+            f"近20日共振：{latest.get('type') or '有效事件'}"
+        )
+    return min(WEIGHTS["resonance"], max(0.0, score or 0.0)), reasons
+
+
 def _risk_penalty(
     row: dict[str, Any],
 ) -> tuple[float, list[str], bool]:
@@ -347,8 +386,24 @@ def _hard_visibility_reason(row: dict[str, Any]) -> str | None:
     pct = _number(row.get("pct_chg"))
     if pct is None:
         return "最新价格不可用"
-    if pct >= 9.5 or pct <= -9.5 or _truthy(row.get("limit_sealed")):
-        return "涨跌停不可建仓"
+    if pct >= 9.5:
+        return f"当日涨停或接近涨停：{pct:.2f}%（阈值9.50%）"
+    if pct <= -9.5:
+        return f"当日跌停或接近跌停：{pct:.2f}%（阈值-9.50%）"
+    if _truthy(row.get("limit_sealed")):
+        return (
+            f"行情源标记封板：现价{_number(row.get('current_price'), _number(row.get('close'), 0)):.2f}，"
+            f"涨跌幅{pct:.2f}%，时间{row.get('quote_time') or row.get('data_as_of') or '--'}，"
+            f"来源{row.get('quote_source') or row.get('data_source') or '--'}"
+        )
+    if not _truthy(row.get("limit_gene_eligible")):
+        return "前1至10日无涨停基因"
+    if not (row.get("resonance_events") or []):
+        return "近20日无有效共振"
+    if _truthy(row.get("support_volume_break_veto")):
+        return "放量跌破主关键位"
+    if not _truthy(row.get("support_held")):
+        return "有效跌破关键位"
     return None
 
 
@@ -358,6 +413,8 @@ def score_position_candidate(
     market_phase: str = "",
 ) -> dict[str, Any]:
     source = dict(row)
+    support_score, support_reasons = _support_pullback_score(source)
+    resonance_score, resonance_reasons = _historical_resonance_score(source)
     sector_score, sector_reasons = _sector_hot_score(source)
     price_volume_score, price_volume_reasons = _price_volume_score(source)
     macd_score, macd_reasons, dual_macd_weak = _macd_score(source)
@@ -366,7 +423,6 @@ def score_position_candidate(
         source,
         market_phase,
     )
-    bottom_score, bottom_reasons = _bottom_structure_score(source)
     risk_penalty, risk_items, high_risk_veto = _risk_penalty(source)
     hard_reason = _hard_visibility_reason(source)
     if not _truthy(source.get("chip_data_complete")):
@@ -378,19 +434,24 @@ def score_position_candidate(
         high_risk_veto = True
 
     gross = (
-        sector_score
+        support_score
+        + resonance_score
+        + sector_score
         + price_volume_score
         + macd_score
         + chip_score
         + relative_tail_score
-        + bottom_score
     )
     score = min(100.0, max(0.0, gross - risk_penalty))
     immediate_confirmed = (
         score >= 80
-        and sector_score >= 22
-        and price_volume_score >= 14
-        and chip_score >= 8
+        and support_score >= 22
+        and _truthy(source.get("support_held"))
+        and _truthy(source.get("breakout_confirmed"))
+        and (_number(source.get("breakout_pct"), -999) or -999) >= 0.5
+        and _truthy(source.get("price_volume_confirmation"))
+        and (_number(source.get("support_distance_pct"), 999) or 0) <= 5
+        and sector_score >= 9
         and _truthy(source.get("chip_data_complete"))
         and not dual_macd_weak
         and not high_risk_veto
@@ -403,37 +464,44 @@ def score_position_candidate(
         )
     elif immediate_confirmed:
         level = "立即建仓"
-        level_reason = "板块、量价、MACD、筹码与尾盘确认均通过"
+        level_reason = "回踩守位并完成突破与量价确认"
     elif score >= 65:
-        level = "等待确认后建仓"
-        level_reason = "综合条件较强，仍需等待缺失条件确认"
+        level = "等待突破建仓"
+        level_reason = "关键位已守住，等待突破或补足确认"
     else:
         level = "观察建仓"
         level_reason = "达到观察门槛，尚未形成保守型建仓共振"
 
     positive = list(dict.fromkeys(
-        sector_reasons
+        support_reasons
+        + resonance_reasons
+        + sector_reasons
         + price_volume_reasons
         + macd_reasons
         + chip_reasons
         + relative_reasons
-        + bottom_reasons
     ))
     return {
         **source,
         "position_score": round(score, 2),
         "position_level": level,
         "position_level_reason": level_reason,
+        "position_filter_reason": level_reason if level == "不展示" else None,
+        "support_pullback_score": round(support_score, 2),
+        "historical_resonance_score": round(resonance_score, 2),
         "sector_hot_score": round(sector_score, 2),
         "sector_hot_status": (
-            "热点" if sector_score >= 22 else "偏强" if sector_score >= 15 else "非热点"
+            "热点" if sector_score >= 14 else "偏强" if sector_score >= 9 else "非热点"
         ),
         "sector_hot_reason": "；".join(sector_reasons) or "板块热度不足",
         "price_volume_score": round(price_volume_score, 2),
         "macd_score": round(macd_score, 2),
         "chip_peak_score": round(chip_score, 2),
         "relative_tail_score": round(relative_tail_score, 2),
-        "bottom_structure_score": round(bottom_score, 2),
+        "confirmation_state": (
+            "已突破确认" if _truthy(source.get("breakout_confirmed"))
+            else "等待突破"
+        ),
         "position_risk_penalty": round(risk_penalty, 2),
         "position_risk_items": risk_items,
         "position_high_risk_veto": high_risk_veto,
@@ -459,7 +527,7 @@ def rank_scored_position_candidates(
     rows: list[dict[str, Any]],
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    tier = {"立即建仓": 0, "等待确认后建仓": 1, "观察建仓": 2}
+    tier = {"立即建仓": 0, "等待突破建仓": 1, "观察建仓": 2}
     visible = [row for row in (rows or []) if row.get("position_level") in tier]
     cap = max(1, min(int(limit), 10))
     return sorted(
@@ -467,9 +535,8 @@ def rank_scored_position_candidates(
         key=lambda row: (
             tier[str(row.get("position_level"))],
             -float(row.get("position_score") or 0),
-            -float(row.get("sector_hot_score") or 0),
-            -float(row.get("price_volume_score") or 0),
-            -float(row.get("macd_score") or 0),
+            -float(row.get("support_pullback_score") or 0),
+            -float(row.get("historical_resonance_score") or 0),
             str(row.get("ts_code") or ""),
         ),
     )[:cap]

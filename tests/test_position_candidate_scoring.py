@@ -48,6 +48,19 @@ def _base_row(ts_code="600001.SH"):
         "bottom_setup_score": 82,
         "bottom_breakout_strength": 2.5,
         "bottom_volume_expansion": 1.8,
+        "limit_gene_eligible": True,
+        "latest_limit_up_date": "20260825",
+        "resonance_events": [{"type": "daily_macd", "contribution": 20}],
+        "historical_resonance_score": 20,
+        "support_held": True,
+        "pullback_state": "回踩关键位未破",
+        "primary_support": 12.1,
+        "support_distance_pct": 3.3,
+        "primary_support_strength": 17,
+        "breakout_confirmed": True,
+        "breakout_pct": 0.8,
+        "price_volume_confirmation": True,
+        "confirmation_price": 12.4,
     }
 
 
@@ -88,12 +101,49 @@ class PositionCandidateScoringTests(unittest.TestCase):
             "position_score", "position_level", "position_level_reason",
             "sector_hot_score", "price_volume_score", "macd_score",
             "chip_peak_score", "relative_tail_score",
-            "bottom_structure_score", "position_risk_penalty",
+            "support_pullback_score", "historical_resonance_score",
+            "position_risk_penalty",
             "position_risk_items", "position_positive_reasons",
             "position_missing_confirmations",
         }
         self.assertTrue(expected.issubset(result))
         self.assertEqual(result["position_level"], "立即建仓")
+
+    def test_immediate_entry_requires_breakout_confirmation(self):
+        result = score_position_candidate({
+            **_base_row(),
+            "breakout_confirmed": False,
+            "breakout_pct": -0.2,
+        })
+        self.assertEqual(result["position_level"], "等待突破建仓")
+
+    def test_immediate_entry_requires_non_weak_sector(self):
+        result = score_position_candidate({
+            **_base_row(),
+            "sector_rank": 30,
+            "sector_avg_pct_chg": 0.3,
+            "sector_up_ratio": 0.45,
+            "sector_limit_up_count": 0,
+            "sector_macd_status": "",
+        })
+        self.assertLess(result["sector_hot_score"], 9)
+        self.assertNotEqual(result["position_level"], "立即建仓")
+
+    def test_limit_gene_and_recent_resonance_are_hard_gates(self):
+        no_gene = score_position_candidate({**_base_row(), "limit_gene_eligible": False})
+        no_event = score_position_candidate({
+            **_base_row(), "resonance_events": [], "historical_resonance_score": 0,
+        })
+        self.assertEqual(no_gene["position_level"], "不展示")
+        self.assertEqual(no_gene["position_filter_reason"], "前1至10日无涨停基因")
+        self.assertEqual(no_event["position_level"], "不展示")
+        self.assertEqual(no_event["position_filter_reason"], "近20日无有效共振")
+
+    def test_today_limit_up_and_down_have_precise_reasons(self):
+        up = score_position_candidate({**_base_row(), "pct_chg": 9.8})
+        down = score_position_candidate({**_base_row(), "pct_chg": -9.7})
+        self.assertIn("当日涨停或接近涨停：9.80%", up["position_filter_reason"])
+        self.assertIn("当日跌停或接近跌停：-9.70%", down["position_filter_reason"])
 
     def test_missing_chip_confirmation_downgrades_immediate_entry(self):
         result = score_position_candidate({
@@ -169,6 +219,8 @@ class PositionCandidateScoringTests(unittest.TestCase):
                 "realtime_relative_strength_score": 0,
                 "relative_strength": -2,
                 "resonance_stage": None,
+                "pullback_state": "",
+                "primary_support_strength": 0,
             }
         ])
 
