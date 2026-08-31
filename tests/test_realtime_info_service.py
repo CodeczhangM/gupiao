@@ -961,6 +961,38 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(provider.call_args.args[1], "2026-07-30 14:30:00")
         self.assertEqual(result.bars.iloc[-1]["close"], 10.2)
 
+    def test_incremental_minutes_normalize_mixed_trade_time_types(self):
+        import realtime_info_service
+
+        cached = pd.DataFrame([
+            {"ts_code": "600201.SH", "trade_time": pd.Timestamp("2026-07-30 14:25:00"), "close": 10},
+        ])
+        refreshed = pd.DataFrame([
+            {"ts_code": "600201.SH", "trade_time": "2026-07-30 14:26:00", "close": 10.1},
+        ])
+        with (
+            patch("realtime_info_service.load_minute_cache", return_value=cached),
+            patch("realtime_info_service.minute_cache_is_fresh", return_value=False),
+            patch("realtime_info_service._minute_result_with_1459_fallback",
+                  return_value=MinuteLoadResult(refreshed, "tushare", [])),
+            patch("realtime_info_service.save_minute_cache"),
+        ):
+            result = realtime_info_service._persistent_minute_result(
+                "600201.SH", "2026-07-30 14:25:00", "2026-07-30 14:26:00",
+                "1min", "20260730", datetime(2026, 7, 30, 14, 26),
+                force_refresh=True,
+            )
+
+        self.assertEqual(result.bars["trade_time"].dtype.kind, "M")
+        self.assertEqual(result.bars.iloc[-1]["close"], 10.1)
+
+    def test_full_force_refresh_only_forces_one_minute_requests(self):
+        import realtime_info_service
+
+        self.assertFalse(realtime_info_service._force_minute_provider_refresh(True, "60min"))
+        self.assertTrue(realtime_info_service._force_minute_provider_refresh(True, "1min"))
+        self.assertFalse(realtime_info_service._force_minute_provider_refresh(False, "1min"))
+
     def test_signal_minutes_use_at_most_four_workers(self):
         active = 0
         max_active = 0

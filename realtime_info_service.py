@@ -821,6 +821,10 @@ def _request_minute_loader(
     return load
 
 
+def _force_minute_provider_refresh(force_refresh: bool, freq: str) -> bool:
+    return bool(force_refresh and str(freq) == "1min")
+
+
 def _first_present(*values: Any) -> Any:
     for value in values:
         if value is None:
@@ -1273,8 +1277,20 @@ def _persistent_minute_result(
         and loaded.bars is not None
         and not loaded.bars.empty
     ):
+        cached_normalized = cached.copy()
+        loaded_normalized = loaded.bars.copy()
+        cached_normalized["trade_time"] = pd.to_datetime(
+            cached_normalized["trade_time"], errors="coerce"
+        )
+        loaded_normalized["trade_time"] = pd.to_datetime(
+            loaded_normalized["trade_time"], errors="coerce"
+        )
         combined = (
-            pd.concat([cached, loaded.bars], ignore_index=True)
+            pd.concat(
+                [cached_normalized, loaded_normalized],
+                ignore_index=True,
+            )
+            .dropna(subset=["trade_time"])
             .drop_duplicates(subset=["ts_code", "trade_time"], keep="last")
             .sort_values("trade_time")
             .reset_index(drop=True)
@@ -2292,7 +2308,10 @@ def _build_realtime_info_uncached(
                 freq,
                 trade_date,
                 current,
-                force_refresh=force_refresh,
+                force_refresh=_force_minute_provider_refresh(
+                    force_refresh,
+                    freq,
+                ),
             )
         ),
         stats=performance,
