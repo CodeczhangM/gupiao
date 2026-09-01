@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>量化选股看板</title>
-  <link rel="stylesheet" href="./styles.css?v=20260831-position-columns-v2">
+  <link rel="stylesheet" href="./styles.css?v=20260831-breakout-zone-v3">
 </head>
 <body>
   <div id="app" v-cloak>
@@ -972,71 +972,67 @@
             <table>
               <thead>
                 <tr>
-                  <th>股票</th>
-                  <th>建仓等级</th>
-                  <th>综合分</th>
-                  <th>近期涨停</th>
-                  <th class="position-support-col">主关键位</th>
-                  <th class="position-confirmation-col">突破确认</th>
-                  <th>历史共振</th>
-                  <th class="position-factor-col position-wrap-col">板块/量价/筹码</th>
-                  <th>现价/涨幅</th>
-                  <th>MACD</th>
-                  <th class="position-tail-col position-wrap-col">尾盘/相对强弱</th>
-                  <th>依据与待确认</th>
+                  <th>股票/现价</th>
+                  <th>建仓等级/距触发价</th>
+                  <th class="position-support-col">支撑/压力区</th>
+                  <th class="position-confirmation-col">触发/确认</th>
+                  <th>突破质量/假突破风险</th>
+                  <th class="position-factor-col position-wrap-col">板块/量价</th>
+                  <th class="position-tail-col position-wrap-col">现价/尾盘</th>
+                  <th>评分/依据</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in realtimePositionCandidateRows" :key="row.ts_code" :class="monitorRowClass(row)">
-                  <td><strong>{{ row.name || '--' }}</strong><br><span class="mono">{{ row.ts_code }}</span></td>
-                  <td>
-                    <span class="monitor-badge" :class="positionLevelBadgeClass(row.position_level)">
-                      {{ row.position_level }}
+                  <td class="position-stock-cell position-detail-cell">
+                    <strong>{{ row.name || '--' }}</strong><br>
+                    <span class="mono">{{ row.ts_code }}</span><br>
+                    <small :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }} · {{ formatNumber(row.pct_chg) }}%</small>
+                  </td>
+                  <td class="position-level-cell position-detail-cell">
+                    <span class="monitor-badge" :class="positionLevelBadgeClass(row.build_position_level)">
+                      {{ row.build_position_level || '--' }} {{ row.build_position_status || row.position_level || '--' }}
                     </span><br>
-                    <small>{{ row.resonance_type || '--' }}</small>
-                  </td>
-                  <td class="position-score-cell">
-                    <strong>{{ formatNumber(row.position_score) }}</strong><br>
-                    <small v-if="row.position_risk_penalty">风险 -{{ formatNumber(row.position_risk_penalty) }}</small>
-                  </td>
-                  <td>
-                    {{ row.latest_limit_up_date || '--' }}<br>
-                    <small>{{ row.latest_limit_up_days_ago == null ? '--' : row.latest_limit_up_days_ago + '日前' }} · {{ row.limit_up_count_10d || 0 }}次</small>
+                    <strong>{{ row.distance_to_trigger_pct == null ? '--' : formatNumber(row.distance_to_trigger_pct) + '%' }}</strong>
+                    <small>{{ row.distance_to_trigger_pct != null && row.distance_to_trigger_pct < 0 ? '已突破触发价' : '距触发价' }} · 涨停{{ row.latest_limit_up_days_ago == null ? '--' : row.latest_limit_up_days_ago + '日前' }}</small>
                   </td>
                   <td class="position-support-col position-detail-cell">
-                    {{ formatNumber(row.primary_support) }}<br>
-                    <small>{{ row.pullback_state || '--' }} · {{ formatNumber(row.support_pullback_score) }}/30</small>
+                    支撑 {{ formatNumber(row.support_price) }}<br>
+                    <small>压力 {{ formatNumber(row.pressure_low) }} ~ {{ formatNumber(row.pressure_high) }} · 强度{{ formatNumber(row.pressure_strength_score) }}</small>
                   </td>
                   <td class="position-confirmation-col position-detail-cell">
-                    {{ formatNumber(row.confirmation_price) }}<br>
-                    <small>{{ row.confirmation_state || '--' }} · {{ formatNumber(row.breakout_pct) }}%</small>
+                    触发 {{ formatNumber(row.breakout_trigger) }}<br>
+                    <small>确认 {{ formatNumber(row.breakout_confirm) }} · 失效 {{ formatNumber(row.invalid_price) }}</small>
                   </td>
-                  <td>
-                    {{ row.latest_resonance_date || '--' }}<br>
-                    <small>{{ formatNumber(row.historical_resonance_score) }}/20</small>
+                  <td class="position-breakout-cell position-detail-cell">
+                    <strong>{{ formatNumber(row.breakout_quality_score) }}</strong><br>
+                    <small>{{ row.breakout_quality_label || row.breakout_state || '--' }}</small>
+                    <span class="monitor-badge" :class="falseBreakoutBadgeClass(row.false_breakout_risk)">{{ row.false_breakout_risk || '--' }}</span><br>
+                    <small>{{ (row.false_breakout_evidence || []).slice(0, 1).join('') || '暂无明显风险' }}</small>
                   </td>
                   <td class="position-factor-col position-detail-cell">
                     <strong>{{ row.industry || '--' }}</strong><br>
-                    <small>板{{ formatNumber(row.sector_hot_score) }}/18 · 量{{ formatNumber(row.price_volume_score) }}/12 · 筹{{ formatNumber(row.chip_peak_score) }}/8</small>
+                    <small>{{ row.sector_hot_status || '--' }} · 板{{ formatNumber(row.sector_hot_score) }} · 量{{ formatNumber(row.price_volume_score) }} · 筹{{ formatNumber(row.chip_peak_score) }}</small>
                   </td>
-                  <td :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }}<br>{{ formatNumber(row.pct_chg) }}%</td>
-                  <td>{{ formatNumber(row.macd_score) }}/7<br><small>{{ monitorSignalText(row) }}</small></td>
                   <td class="position-tail-col position-detail-cell">
-                    {{ formatNumber(row.relative_tail_score) }}/5<br>
+                    <strong :class="signedClass(row.pct_chg)">{{ formatNumber(row.current_price) }} · {{ formatNumber(row.pct_chg) }}%</strong><br>
+                    <small>尾盘 {{ formatNumber(row.relative_tail_score) }}/5</small>
                     <small>{{ tailReturnText(row) }} · {{ marketRelativeText(row).text }}</small>
                   </td>
                   <td class="monitor-reason-cell" :title="row.position_level_reason || '--'">
-                    {{ (row.position_positive_reasons || []).join('；') || row.position_level_reason || '--' }}
-                    <template v-if="row.position_missing_confirmations && row.position_missing_confirmations.length">
-                      <br><small>待确认：{{ row.position_missing_confirmations.join('；') }}</small>
-                    </template>
-                    <template v-if="row.position_risk_items && row.position_risk_items.length">
-                      <br><small class="negative">风险：{{ row.position_risk_items.join('；') }}</small>
-                    </template>
+                    <strong>总{{ formatNumber(row.final_score) }}</strong>
+                    <small>股{{ formatNumber(row.stock_quality_score) }} · 买{{ formatNumber(row.entry_timing_score) }} · 突{{ formatNumber(row.breakout_quality_score) }} · 完整{{ formatNumber(row.data_confidence) }}%</small>
+                    <details>
+                      <summary>查看依据</summary>
+                      <small>压力：{{ (row.pressure_sources || []).join('；') || '数据缺失' }}</small>
+                      <small>{{ (row.position_positive_reasons || []).join('；') || row.position_level_reason || '--' }}</small>
+                      <small v-if="row.position_missing_confirmations && row.position_missing_confirmations.length">待确认：{{ row.position_missing_confirmations.join('；') }}</small>
+                      <small v-if="row.position_risk_items && row.position_risk_items.length" class="negative">风险：{{ row.position_risk_items.join('；') }}</small>
+                    </details>
                   </td>
                 </tr>
                 <tr v-if="realtimePositionCandidateRows.length === 0">
-                  <td colspan="12" class="empty">暂无达到保守型观察建仓标准的股票</td>
+                  <td colspan="8" class="empty">暂无达到保守型观察建仓标准的股票</td>
                 </tr>
               </tbody>
             </table>
@@ -1852,6 +1848,6 @@
   <script src="./free-review-utils.js?v=20260730-free-review-v1"></script>
   <script src="./sector-rotation-utils.js?v=20260812-sector-rotation-v1"></script>
   <script src="./cycle-watch-utils.js?v=20260828-cycle-watch-v1"></script>
-  <script src="./main.js?v=20260830-chip-peak-v1"></script>
+  <script src="./main.js?v=20260831-breakout-zone-v3"></script>
 </body>
 </html>

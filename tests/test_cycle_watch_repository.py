@@ -109,6 +109,44 @@ class CycleWatchRepositoryTests(unittest.TestCase):
         self.assertIn("latest_evaluation_id", sql)
         self.assertEqual(saved["id"], 77)
 
+    def test_save_evaluation_only_passes_sql_parameters_to_driver(self):
+        class RejectContainerParametersCursor(FakeCursor):
+            def execute(self, sql, params=None):
+                if isinstance(params, dict):
+                    unsupported = {
+                        key: value
+                        for key, value in params.items()
+                        if isinstance(value, (dict, list))
+                    }
+                    if unsupported:
+                        raise TypeError(
+                            f"container values can not be used as parameters: {sorted(unsupported)}"
+                        )
+                super().execute(sql, params)
+
+        cursor = RejectContainerParametersCursor(lastrowid=78)
+        evaluation = {
+            "ts_code": "600000.SH", "trade_date": "20260828",
+            "checked_at": datetime(2026, 8, 28, 10, 35), "data_as_of": "2026-08-28 10:34:00",
+            "status": "low_buy", "status_label": "低吸提示", "opportunity_score": 68,
+            "current_price": 10.0, "pct_chg": -0.2, "support_price": 9.9,
+            "matched_conditions": ["回撤缩量"], "missing_conditions": ["等待60分钟确认"],
+            "risk_items": [], "invalidation_reason": "跌破MA20失效",
+            "factors": {"rule_version": "cycle-entry-v1"}, "is_new_alert": True,
+        }
+        with (
+            patch("cycle_watch_repository.init_cycle_watch_schema"),
+            patch("cycle_watch_repository.get_connection", connection_factory(cursor)),
+        ):
+            saved = save_cycle_evaluation(evaluation, "1035")
+
+        insert_params = cursor.statements[0][1]
+        self.assertNotIn("matched_conditions", insert_params)
+        self.assertNotIn("missing_conditions", insert_params)
+        self.assertNotIn("risk_items", insert_params)
+        self.assertNotIn("factors", insert_params)
+        self.assertEqual(saved["id"], 78)
+
     def test_delete_watch_stock_does_not_delete_history(self):
         cursor = FakeCursor(rowcount=1)
         with (

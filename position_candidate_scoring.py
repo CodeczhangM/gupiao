@@ -7,9 +7,13 @@ from indicator_settings import (
     load_macd_settings,
     macd_parameter_key,
 )
+from position_strategy_settings import (
+    load_position_strategy_settings,
+    position_strategy_parameter_key,
+)
 
 
-BASE_POSITION_SCORE_VERSION = "position-candidate-v2-limit-gene-pullback"
+BASE_POSITION_SCORE_VERSION = "position-candidate-v4-no-risk-reward"
 WEIGHTS = {
     "support": 30.0,
     "resonance": 20.0,
@@ -47,9 +51,14 @@ def _contains(value: Any, *markers: str) -> bool:
 
 def position_score_version(
     macd_settings: dict[str, Any] | None = None,
+    position_settings: dict[str, Any] | None = None,
 ) -> str:
-    settings = dict(macd_settings or load_macd_settings())
-    return f"{BASE_POSITION_SCORE_VERSION}-{macd_parameter_key(settings)}"
+    macd = dict(macd_settings or load_macd_settings())
+    strategy = dict(position_settings or load_position_strategy_settings())
+    return (
+        f"{BASE_POSITION_SCORE_VERSION}-{macd_parameter_key(macd)}-"
+        f"{position_strategy_parameter_key(strategy)}"
+    )
 
 
 def _sector_hot_score(row: dict[str, Any]) -> tuple[float, list[str]]:
@@ -435,44 +444,120 @@ def score_position_candidate(
         missing.append("日线与60分钟MACD同时走弱")
         high_risk_veto = True
 
-    gross = (
-        support_score
-        + resonance_score
-        + sector_score
-        + price_volume_score
-        + macd_score
-        + chip_score
-        + relative_tail_score
+    stock_components: dict[str, dict[str, Any]] = {
+        "sector": {"score": sector_score / WEIGHTS["sector"] * 25, "weight": 25, "available": True},
+        "price_volume": {"score": price_volume_score / WEIGHTS["price_volume"] * 20, "weight": 20, "available": True},
+        "support": {"score": support_score / WEIGHTS["support"] * 20, "weight": 20, "available": True},
+        "limit_resonance": {"score": resonance_score / WEIGHTS["resonance"] * 15, "weight": 15, "available": True},
+        "chip": {"score": chip_score / WEIGHTS["chip"] * 10, "weight": 10, "available": _truthy(source.get("chip_data_complete"))},
+        "macd": {"score": macd_score / WEIGHTS["macd"] * 5, "weight": 5, "available": True},
+        "relative_strength": {"score": relative_tail_score / WEIGHTS["relative_tail"] * 5, "weight": 5, "available": True},
+    }
+    stock_available = sum(
+        item["weight"] for item in stock_components.values() if item["available"]
     )
-    score = min(100.0, max(0.0, gross - risk_penalty))
+    stock_quality_score = (
+        sum(item["score"] for item in stock_components.values() if item["available"])
+        / stock_available * 100
+        if stock_available else 0.0
+    )
+
+    breakout_state = str(source.get("breakout_state") or (
+        "CONFIRMED" if _truthy(source.get("breakout_confirmed")) else "NOT_TRIGGERED"
+    ))
+    distance_to_trigger = _number(source.get("distance_to_trigger_pct"))
+    if distance_to_trigger is None:
+        distance_to_trigger = -(_number(source.get("breakout_pct"), 0) or 0)
+    if distance_to_trigger <= 1.5:
+        distance_score = 30.0
+    elif distance_to_trigger <= 3:
+        distance_score = 22.0
+    elif distance_to_trigger <= 5:
+        distance_score = 12.0
+    else:
+        distance_score = 0.0
+    stage_scores = {
+        "CONFIRMED": 20.0, "TRIGGERED": 15.0, "TOUCHING": 10.0,
+        "NOT_TRIGGERED": 5.0, "OVEREXTENDED": 8.0, "FAILED": 0.0,
+    }
+    false_risk_score = _number(source.get("false_breakout_risk_score"), 0) or 0
+    entry_points = (
+        distance_score
+        + (20.0 if _truthy(source.get("support_held")) else 0.0)
+        + stage_scores.get(breakout_state, 0.0)
+        + price_volume_score / WEIGHTS["price_volume"] * 10
+        + max(0.0, 10.0 - false_risk_score / 10)
+    )
+    entry_available = 90.0
+    tail_available = _truthy(source.get("tail_after_1430_available"))
+    if tail_available:
+        entry_available += 10.0
+        tail_score = _number(source.get("tail_strength_score"), 0) or 0
+        entry_points += max(0.0, min(10.0, tail_score / 10))
+    entry_timing_score = entry_points / entry_available * 100
+
+    daily_complete = all(source.get(key) is not None for key in ("close", "vol"))
+    pressure_complete = all(source.get(key) is not None for key in ("pressure_low", "pressure_high", "breakout_trigger"))
+    sector_complete = bool(source.get("industry")) and (
+        source.get("sector_rank") is not None or source.get("sector_avg_pct_chg") is not None
+    )
+    data_confidence = (
+        (40 if daily_complete else 0)
+        + (20 if pressure_complete else 0)
+        + (15 if sector_complete else 0)
+        + (10 if _truthy(source.get("chip_data_complete")) else 0)
+        + (15 if tail_available or source.get("above_vwap") is not None else 0)
+    )
+    breakout_quality = _number(source.get("breakout_quality_score"))
+    weighted = [
+        (stock_quality_score, 0.40),
+        (entry_timing_score, 0.35),
+        (data_confidence, 0.05),
+    ]
+    if breakout_quality is not None:
+        weighted.append((breakout_quality, 0.20))
+    final_score = sum(value * weight for value, weight in weighted) / sum(
+        weight for _, weight in weighted
+    )
+    final_score = min(100.0, max(0.0, final_score - risk_penalty))
+
+    false_breakout_risk = str(source.get("false_breakout_risk") or "LOW")
+    x_reason = hard_reason
+    if x_reason is None and high_risk_veto:
+        x_reason = "存在高风险否决项"
+    if x_reason is None and stock_quality_score < 50:
+        x_reason = f"股票质量低于50（{stock_quality_score:.2f}）"
+    if x_reason is None and not _truthy(source.get("support_held")):
+        x_reason = "支撑位已经失效"
+    if x_reason is None and false_breakout_risk == "HIGH" and breakout_state == "FAILED":
+        x_reason = "严重假突破风险"
+    if x_reason is None and distance_to_trigger > 5:
+        x_reason = f"距触发价超过5%（{distance_to_trigger:.2f}%）"
+
     immediate_confirmed = (
-        score >= 80
-        and support_score >= 22
+        breakout_state == "CONFIRMED"
+        and (breakout_quality or 0) >= 75
+        and false_breakout_risk != "HIGH"
+        and data_confidence >= 70
         and _truthy(source.get("support_held"))
-        and _truthy(source.get("breakout_confirmed"))
-        and (_number(source.get("breakout_pct"), -999) or -999) >= 0.5
-        and _truthy(source.get("price_volume_confirmation"))
-        and (_number(source.get("support_distance_pct"), 999) or 0) <= 5
         and sector_score >= 9
         and _truthy(source.get("chip_data_complete"))
+        and (tail_available or _contains(market_phase, "日线收盘"))
         and not dual_macd_weak
-        and not high_risk_veto
-        and not missing
     )
-    if hard_reason or high_risk_veto or score < 50:
-        level = "不展示"
-        level_reason = hard_reason or (
-            "存在高风险否决项" if high_risk_veto else "综合分低于50"
-        )
+    if x_reason:
+        build_level, build_status, level_reason = "X", "放弃", x_reason
     elif immediate_confirmed:
-        level = "立即建仓"
-        level_reason = "回踩守位并完成突破与量价确认"
-    elif score >= 65:
-        level = "等待突破建仓"
-        level_reason = "关键位已守住，等待突破或补足确认"
+        build_level, build_status = "A+", "已确认，可考虑建仓"
+        level_reason = "压力突破有效，量价、板块与风险确认通过"
+    elif breakout_state == "OVEREXTENDED":
+        build_level, build_status, level_reason = "B", "等回踩", "已突破但离确认价偏远"
+    elif distance_to_trigger <= 1.5:
+        build_level, build_status, level_reason = "A", "临界突破", "距触发价不超过1.5%"
+    elif distance_to_trigger <= 3:
+        build_level, build_status, level_reason = "B+", "等待突破", "距触发价不超过3%"
     else:
-        level = "观察建仓"
-        level_reason = "达到观察门槛，尚未形成保守型建仓共振"
+        build_level, build_status, level_reason = "C", "观察", "距触发价在3%至5%之间"
 
     positive = list(dict.fromkeys(
         support_reasons
@@ -485,10 +570,17 @@ def score_position_candidate(
     ))
     return {
         **source,
-        "position_score": round(score, 2),
-        "position_level": level,
+        "position_score": round(final_score, 2),
+        "position_level": build_status,
         "position_level_reason": level_reason,
-        "position_filter_reason": level_reason if level == "不展示" else None,
+        "position_filter_reason": level_reason if build_level == "X" else None,
+        "stock_quality_score": round(stock_quality_score, 2),
+        "entry_timing_score": round(entry_timing_score, 2),
+        "data_confidence": round(data_confidence, 2),
+        "final_score": round(final_score, 2),
+        "build_position_level": build_level,
+        "build_position_status": build_status,
+        "score_components": stock_components,
         "support_pullback_score": round(support_score, 2),
         "historical_resonance_score": round(resonance_score, 2),
         "sector_hot_score": round(sector_score, 2),
@@ -498,6 +590,7 @@ def score_position_candidate(
         "sector_hot_reason": "；".join(sector_reasons) or "板块热度不足",
         "price_volume_score": round(price_volume_score, 2),
         "macd_score": round(macd_score, 2),
+        "macd_strength": "强" if macd_score >= 5 else "中" if macd_score >= 2 else "弱",
         "chip_peak_score": round(chip_score, 2),
         "relative_tail_score": round(relative_tail_score, 2),
         "confirmation_state": (
@@ -529,16 +622,16 @@ def rank_scored_position_candidates(
     rows: list[dict[str, Any]],
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    tier = {"立即建仓": 0, "等待突破建仓": 1, "观察建仓": 2}
-    visible = [row for row in (rows or []) if row.get("position_level") in tier]
+    tier = {"A+": 0, "A": 1, "B+": 2, "B": 3, "C": 4}
+    visible = [row for row in (rows or []) if row.get("build_position_level") in tier]
     cap = max(1, min(int(limit), 10))
     return sorted(
         visible,
         key=lambda row: (
-            tier[str(row.get("position_level"))],
-            -float(row.get("position_score") or 0),
-            -float(row.get("support_pullback_score") or 0),
-            -float(row.get("historical_resonance_score") or 0),
+            tier[str(row.get("build_position_level"))],
+            -float(row.get("final_score") or 0),
+            -float(row.get("entry_timing_score") or 0),
+            -float(row.get("stock_quality_score") or 0),
             str(row.get("ts_code") or ""),
         ),
     )[:cap]

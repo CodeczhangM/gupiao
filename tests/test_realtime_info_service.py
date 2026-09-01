@@ -3486,7 +3486,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
 
     def test_intraday_cache_key_includes_position_score_version(self):
         self.assertIn(
-            "position-candidate-v2-limit-gene-pullback",
+            "position-candidate-v4-no-risk-reward",
             _database_realtime_result_key(20),
         )
 
@@ -3516,7 +3516,7 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         self.assertEqual(debug["source_main_board"], 1)
         self.assertEqual(warnings, [])
 
-    def test_position_confirmation_recomputes_after_realtime_price_overlay(self):
+    def test_position_confirmation_keeps_structural_pressure_after_price_overlay(self):
         bars = pd.DataFrame([
             {"ts_code": "600001.SH", "trade_date": "20260820", "open": 10, "high": 11, "low": 9.8, "close": 11, "vol": 100},
             {"ts_code": "600001.SH", "trade_date": "20260821", "open": 10.5, "high": 10.7, "low": 9.95, "close": 10.2, "vol": 70},
@@ -3530,7 +3530,9 @@ class RealtimeInfoServiceTests(unittest.TestCase):
             "breakout_confirmed": False,
         }
         refreshed, warnings = _refresh_position_confirmation_fields([row], bars, "20260831")
-        self.assertTrue(refreshed[0]["breakout_confirmed"])
+        self.assertFalse(refreshed[0]["breakout_confirmed"])
+        self.assertIn("pressure_low", refreshed[0])
+        self.assertIn("breakout_confirm", refreshed[0])
         self.assertEqual(warnings, [])
 
     def test_unified_candidates_degrade_missing_confirmations(self):
@@ -3573,7 +3575,9 @@ class RealtimeInfoServiceTests(unittest.TestCase):
         def score_one(row, *, market_phase=""):
             if row["ts_code"] == "600002.SH":
                 raise ValueError("bad candidate")
-            return {**row, "position_level": "观察建仓", "position_score": 55,
+            return {**row, "position_level": "观察", "position_score": 55,
+                    "build_position_level": "C", "final_score": 55,
+                    "entry_timing_score": 55, "stock_quality_score": 55,
                     "sector_hot_score": 15, "price_volume_score": 10,
                     "macd_score": 10}
 

@@ -149,15 +149,17 @@ class PositionCandidateHistoryTests(unittest.TestCase):
         self.assertTrue(result["support_held"])
         self.assertFalse(result["breakout_confirmed"])
 
-    def test_confirmed_breakout_requires_half_percent_and_volume(self):
+    def test_single_recent_high_does_not_create_a_false_confirmation(self):
         result = extract_pullback_confirmation(
             _pullback_bars(),
             _gene(),
             {"current_price": 10.56, "volume_ratio": 1.4},
         )
-        self.assertGreaterEqual(result["breakout_pct"], 0.5)
-        self.assertTrue(result["price_volume_confirmation"])
-        self.assertTrue(result["breakout_confirmed"])
+        self.assertLess(result["breakout_pct"], 0.5)
+        self.assertFalse(result["breakout_confirmed"])
+        self.assertLessEqual(result["pressure_high"], result["breakout_trigger"])
+        self.assertLess(result["breakout_trigger"], result["breakout_confirm"])
+        self.assertTrue(result["pressure_sources"])
 
     def test_volume_break_below_support_is_vetoed(self):
         result = extract_pullback_confirmation(

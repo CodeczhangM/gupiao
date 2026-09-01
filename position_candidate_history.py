@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from typing import Any
+from copy import deepcopy
 import math
 
 import pandas as pd
+
+from breakout_trade_evaluation import evaluate_breakout
+from position_strategy_settings import DEFAULT_POSITION_STRATEGY_SETTINGS
+from pressure_zone_service import (
+    build_breakout_trade_plan,
+    calculate_atr,
+    cluster_pressure_candidates,
+    extract_pressure_candidates,
+    select_actionable_pressure_zone,
+)
 
 
 EVENT_TYPES = (
@@ -261,7 +272,9 @@ def extract_pullback_confirmation(
     bars: pd.DataFrame,
     gene: dict[str, Any],
     current: dict[str, Any],
+    settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    strategy_settings = deepcopy(settings or DEFAULT_POSITION_STRATEGY_SETTINGS)
     normalised = _normalise_bars(
         bars,
         str(current.get("trade_date") or "29991231"),
@@ -330,6 +343,26 @@ def extract_pullback_confirmation(
         "breakout_pct": None,
         "price_volume_confirmation": False,
         "breakout_confirmed": False,
+        "pressure_zones": [],
+        "pressure_low": None,
+        "pressure_high": None,
+        "breakout_trigger": None,
+        "breakout_confirm": None,
+        "invalid_price": None,
+        "target_price": None,
+        "distance_to_pressure_pct": None,
+        "distance_to_trigger_pct": None,
+        "distance_to_confirm_pct": None,
+        "pressure_strength_score": 0.0,
+        "pressure_sources": [],
+        "pressure_selection_reason": "压力区不可用",
+        "breakout_state": "NOT_TRIGGERED",
+        "breakout_quality_score": None,
+        "breakout_quality_label": "未触发",
+        "false_breakout_risk_score": 0.0,
+        "false_breakout_risk": "LOW",
+        "breakout_evidence": [],
+        "false_breakout_evidence": [],
     }
     if primary is None or current_price is None or normalised.empty:
         return result
@@ -359,33 +392,82 @@ def extract_pullback_confirmation(
         result["support_volume_break_veto"] = bool(
             pd.notna(break_volume) and baseline > 0 and float(break_volume) >= baseline * 1.5
         )
-    highs = pd.to_numeric(post_limit.get("high"), errors="coerce").dropna()
-    confirmation = float(highs.iloc[-1]) if not highs.empty else None
-    confirmation_source = "回踩后的局部高点" if confirmation is not None else None
-    if confirmation is None:
-        confirmation = _number(current.get("platform_upper"), _number(current.get("prior_breakout_price")))
-        confirmation_source = "平台上沿" if current.get("platform_upper") is not None else "前期突破位"
+    atr = calculate_atr(normalised)
+    pressure_candidates = extract_pressure_candidates(
+        normalised,
+        gene,
+        current,
+        strategy_settings,
+    )
+    pressure_zones = cluster_pressure_candidates(
+        pressure_candidates,
+        atr,
+        strategy_settings,
+    )
+    selected_pressure, selection_reason = select_actionable_pressure_zone(
+        pressure_zones,
+        current_price,
+        strategy_settings,
+    )
+    higher_zones = [
+        zone for zone in pressure_zones
+        if selected_pressure is None or zone is not selected_pressure
+    ]
+    plan = build_breakout_trade_plan(
+        primary,
+        selected_pressure,
+        higher_zones,
+        current_price,
+        atr,
+        strategy_settings,
+    )
+    latest = normalised.iloc[-1].to_dict()
+    daily_bar = {
+        "open": current.get("open", latest.get("open")),
+        "high": current.get("high", latest.get("high")),
+        "low": current.get("low", latest.get("low")),
+        "close": current_price,
+        "vol": current.get("vol", latest.get("vol")),
+    }
+    prior_volumes = pd.to_numeric(
+        normalised["vol"] if "vol" in normalised else pd.Series(dtype=float),
+        errors="coerce",
+    ).dropna().tail(6)
+    avg_volume_5 = (
+        float(prior_volumes.iloc[:-1].mean())
+        if len(prior_volumes) >= 2 else None
+    )
+    evaluation = evaluate_breakout(
+        daily_bar,
+        plan,
+        {
+            **current,
+            "avg_volume_5": current.get("avg_volume_5", avg_volume_5),
+        },
+        strategy_settings,
+    )
+    confirmation = plan.get("breakout_confirm")
     breakout_pct = (
         (current_price / confirmation - 1) * 100
         if confirmation is not None and confirmation > 0 else None
     )
-    volume_ratio = _number(current.get("volume_ratio"))
-    current_amount = _number(current.get("amount"))
-    pullback_amount = _number(current.get("pullback_average_amount"))
-    volume_confirmed = bool(
-        volume_ratio is not None and 1.2 <= volume_ratio <= 3.0
-    ) or bool(
-        current_amount is not None and pullback_amount is not None
-        and current_amount > pullback_amount
-    )
     result.update({
+        **plan,
+        **evaluation,
+        "pressure_zones": pressure_zones,
+        "pressure_strength_score": (
+            0.0 if selected_pressure is None
+            else selected_pressure.get("strength_score", 0.0)
+        ),
+        "pressure_sources": (
+            [] if selected_pressure is None else selected_pressure.get("sources", [])
+        ),
+        "pressure_selection_reason": selection_reason,
         "confirmation_price": confirmation,
-        "confirmation_source": confirmation_source,
+        "confirmation_source": "压力区ATR确认价" if confirmation is not None else None,
         "breakout_pct": None if breakout_pct is None else round(breakout_pct, 2),
-        "price_volume_confirmation": volume_confirmed,
         "breakout_confirmed": bool(
-            support_held and breakout_pct is not None and breakout_pct >= 0.5
-            and volume_confirmed
+            support_held and evaluation.get("breakout_state") == "CONFIRMED"
         ),
     })
     return result

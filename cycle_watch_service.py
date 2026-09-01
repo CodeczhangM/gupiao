@@ -5,6 +5,7 @@ import threading
 from typing import Any
 
 import pandas as pd
+import realtime_market_source
 
 from cycle_watch_repository import (
     delete_watch_stock,
@@ -23,11 +24,25 @@ from cycle_watch_scoring import (
 )
 from data_service import get_trade_dates
 from market_cache import load_market_snapshot, load_recent_daily
-from overnight_monitor_service import _cached_minute_bars
 
 
 _CHECK_LOCK = threading.Lock()
 _STATUS_PRIORITY = {"data_delayed": 0, "watch": 1, "low_buy": 2, "confirmed": 3}
+
+
+def _load_cycle_minute_bars(
+    ts_code: str,
+    start_datetime: str,
+    end_datetime: str,
+    freq: str,
+    trade_date: str,
+    now: datetime,
+) -> pd.DataFrame:
+    from realtime_info_service import _persistent_minute_result
+
+    return _persistent_minute_result(
+        ts_code, start_datetime, end_datetime, freq, trade_date, now,
+    ).bars.copy()
 
 
 def _validate_changes(payload: dict[str, Any]) -> dict[str, Any]:
@@ -55,16 +70,13 @@ def _latest_trade_date() -> str:
 def _lookup_stock_name(ts_code: str) -> str | None:
     try:
         trade_date = _latest_trade_date()
-        snapshot = load_market_snapshot(trade_date)
-        if snapshot is not None and not snapshot.empty and "ts_code" in snapshot:
+        realtime, _error = realtime_market_source.load_eastmoney_market_snapshot(trade_date)
+        for snapshot in (realtime, load_market_snapshot(trade_date)):
+            if snapshot is None or snapshot.empty or "ts_code" not in snapshot:
+                continue
             rows = snapshot[snapshot["ts_code"].astype(str) == ts_code]
             if not rows.empty and rows.iloc[0].get("name"):
                 return str(rows.iloc[0]["name"])
-        history = load_recent_daily(trade_date, 5)
-        if history is not None and not history.empty and "name" in history:
-            rows = history[history["ts_code"].astype(str) == ts_code]
-            if not rows.empty and rows.iloc[-1].get("name"):
-                return str(rows.iloc[-1]["name"])
     except Exception:
         return None
     return None
@@ -133,8 +145,21 @@ def get_cycle_watchlist() -> dict[str, Any]:
     stocks = list_watch_stocks(enabled_only=False)
     rows = []
     for item in stocks:
+        item = dict(item)
+        if not item.get("name"):
+            item["name"] = _lookup_stock_name(str(item.get("ts_code")))
         history = list_cycle_history(str(item.get("ts_code")), 1)
-        rows.append({**item, **(history[0] if history else {})})
+        latest = history[0] if history else {
+            "status": "watch",
+            "status_label": "等待首次检查",
+            "opportunity_score": 0,
+            "matched_conditions": [],
+            "missing_conditions": ["等待首次行情检查"],
+            "risk_items": [],
+            "is_new_alert": False,
+            "alert_read": False,
+        }
+        rows.append({**item, **latest})
     groups = _group_rows(rows)
     return {
         "stocks": rows,
@@ -164,9 +189,48 @@ def _evaluate_watch_stock(
         rows = snapshot[snapshot["ts_code"].astype(str) == ts_code]
         if not rows.empty:
             realtime = rows.iloc[0].to_dict()
+    external, _external_error = realtime_market_source.load_eastmoney_market_snapshot(trade_date)
+    has_live_price = False
+    if external is not None and not external.empty and "ts_code" in external:
+        rows = external[external["ts_code"].astype(str) == ts_code]
+        if not rows.empty:
+            realtime.update(rows.iloc[0].to_dict())
+            has_live_price = pd.notna(realtime.get("close"))
     start = (now - timedelta(days=45)).strftime("%Y-%m-%d 09:30:00")
     end = now.strftime("%Y-%m-%d %H:%M:%S")
-    bars_60m = _cached_minute_bars(ts_code, start, end, freq="60min")
+    price_bars = pd.DataFrame()
+    if not has_live_price:
+        day = datetime.strptime(str(trade_date), "%Y%m%d").strftime("%Y-%m-%d")
+        price_bars = _load_cycle_minute_bars(
+            ts_code,
+            f"{day} 09:30:00",
+            end,
+            "1min",
+            trade_date,
+            now,
+        )
+        if not price_bars.empty and "trade_time" in price_bars and "close" in price_bars:
+            current = price_bars[
+                price_bars["trade_time"].astype(str).str.startswith(day)
+            ].copy()
+            current["trade_time"] = pd.to_datetime(current["trade_time"], errors="coerce")
+            current["close"] = pd.to_numeric(current["close"], errors="coerce")
+            current = current.dropna(subset=["trade_time", "close"]).sort_values("trade_time")
+            if not current.empty:
+                latest_price = float(current.iloc[-1]["close"])
+                realtime["close"] = latest_price
+                previous_close = pd.to_numeric(realtime.get("pre_close"), errors="coerce")
+                if pd.notna(previous_close) and float(previous_close) != 0:
+                    realtime["pct_chg"] = round(
+                        (latest_price / float(previous_close) - 1) * 100,
+                        6,
+                    )
+                has_live_price = True
+    if not has_live_price:
+        raise RuntimeError("实时价格不可用")
+    bars_60m = _load_cycle_minute_bars(
+        ts_code, start, end, "60min", trade_date, now,
+    )
     result = evaluate_cycle_entry(
         ts_code,
         daily,
@@ -177,13 +241,12 @@ def _evaluate_watch_stock(
     )
     result["name"] = watch.get("name") or realtime.get("name")
     result["note"] = watch.get("note")
-    result["data_as_of"] = (
-        str(pd.to_datetime(bars_60m["trade_time"], errors="coerce").max())
-        if isinstance(bars_60m, pd.DataFrame)
-        and not bars_60m.empty
-        and "trade_time" in bars_60m
-        else None
-    )
+    bar_times = [
+        pd.to_datetime(frame["trade_time"], errors="coerce").max()
+        for frame in (price_bars, bars_60m)
+        if isinstance(frame, pd.DataFrame) and not frame.empty and "trade_time" in frame
+    ]
+    result["data_as_of"] = str(max(bar_times)) if bar_times else None
     return result
 
 
@@ -219,7 +282,8 @@ def check_cycle_watchlist(
     current = now or datetime.now()
     trade_date = _latest_trade_date()
     current_date = current.strftime("%Y%m%d")
-    slot = schedule_slot or f"manual-{current.strftime('%H%M%S')}"
+    manual_time = current.strftime("%H%M%S%f")[:9]
+    slot = schedule_slot or f"manual-{manual_time}"
     if current_date != trade_date:
         return {
             "trade_date": trade_date,

@@ -47,6 +47,12 @@ from indicator_settings import (
     save_macd_settings_and_recalculate,
 )
 from indicator_settings_models import MacdSettingsUpdate
+from position_strategy_settings import (
+    load_position_strategy_settings,
+    position_strategy_parameter_key,
+    save_position_strategy_settings,
+)
+from position_strategy_settings_models import PositionStrategySettingsUpdate
 from free_review_repository import (
     load_build_status as load_free_review_build_status,
 )
@@ -133,6 +139,30 @@ def put_macd_indicator_settings(request: MacdSettingsUpdate):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("保存 MACD 全局设置失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/indicator-settings/position-strategy")
+def get_position_strategy_settings():
+    try:
+        settings = load_position_strategy_settings()
+        return {
+            **settings,
+            "position_strategy_parameter_key": position_strategy_parameter_key(settings),
+        }
+    except Exception as exc:
+        logger.exception("读取建仓策略设置失败")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.put("/api/indicator-settings/position-strategy")
+def put_position_strategy_settings(request: PositionStrategySettingsUpdate):
+    try:
+        return save_position_strategy_settings(request.update_payload())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("保存建仓策略设置失败")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

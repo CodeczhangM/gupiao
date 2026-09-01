@@ -3,6 +3,7 @@ package com.codec.quantserver.service;
 import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.MacdSettingsRequest;
+import com.codec.quantserver.dto.PositionStrategySettingsRequest;
 import com.codec.quantserver.dto.QuantScanRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import com.codec.quantserver.dto.CycleWatchCreateRequest;
@@ -88,6 +89,19 @@ public class QuantPythonClient {
             MacdSettingsRequest request) {
         return restClient.put()
                 .uri("/api/indicator-settings/macd")
+                .body(request)
+                .retrieve()
+                .body(mapType());
+    }
+
+    public Map<String, Object> positionStrategySettings() {
+        return getMap("/api/indicator-settings/position-strategy");
+    }
+
+    public Map<String, Object> updatePositionStrategySettings(
+            PositionStrategySettingsRequest request) {
+        return restClient.put()
+                .uri("/api/indicator-settings/position-strategy")
                 .body(request)
                 .retrieve()
                 .body(mapType());

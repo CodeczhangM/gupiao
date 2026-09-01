@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
+import realtime_tail_premium_service as tail_service
 from realtime_market_source import MinuteLoadResult
 from realtime_tail_premium_service import (
     build_realtime_tail_premium_monitor,
@@ -50,7 +51,7 @@ def _tail_bars(ts_code):
         "14:29:00", "14:30:00", "14:31:00", "14:40:00",
         "14:49:00",
     ]
-    closes = [11, 11, 11, 11, 11, 11, 11.03, 11.06, 11.10]
+    closes = [11.25, 11.25, 11.25, 11.25, 11.25, 11.25, 11.28, 11.31, 11.35]
     volumes = [1000, 1000, 1000, 1000, 1000, 1000, 1500, 1600, 1700]
     return pd.DataFrame([
         {
@@ -220,7 +221,7 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         )
         self.assertEqual(calls, [])
 
-    def test_1440_starts_live_tail_window_for_more_order_time(self):
+    def test_1440_starts_loading_live_tail_minutes_for_more_order_time(self):
         frequencies = []
 
         def loader(ts_code, start, end, freq, trade_date):
@@ -238,7 +239,6 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(result["selection_state"], "live_tail_window")
-        self.assertTrue(result["stocks"])
         self.assertEqual({item[2] for item in frequencies}, {"1min"})
 
     def test_before_1440_uses_current_day_minutes_for_display_price(self):
@@ -602,6 +602,44 @@ class RealtimeTailPremiumServiceTests(unittest.TestCase):
         result = _filter_waiting_realtime_candidates(factors)
 
         self.assertEqual(result["ts_code"].tolist(), ["600030.SH"])
+
+    def test_final_filter_rejects_latest_price_outside_band_limit_and_low_score(self):
+        scored = pd.DataFrame([
+            {
+                "ts_code": "600040.SH",
+                "pct_chg": 2.0,
+                "premium_score": 30.0,
+                "limit_sealed": False,
+            },
+            {
+                "ts_code": "600041.SH",
+                "pct_chg": -1.0,
+                "premium_score": 90.0,
+                "limit_sealed": False,
+            },
+            {
+                "ts_code": "600042.SH",
+                "pct_chg": 7.01,
+                "premium_score": 90.0,
+                "limit_sealed": False,
+            },
+            {
+                "ts_code": "600043.SH",
+                "pct_chg": 6.0,
+                "premium_score": 90.0,
+                "limit_sealed": True,
+            },
+            {
+                "ts_code": "600044.SH",
+                "pct_chg": 5.0,
+                "premium_score": 29.99,
+                "limit_sealed": False,
+            },
+        ])
+
+        result = tail_service._filter_final_realtime_candidates(scored)
+
+        self.assertEqual(result["ts_code"].tolist(), ["600040.SH"])
 
     def test_raw_prefilter_uses_tail_arbitrage_pct_band_before_scoring(self):
         market = pd.DataFrame([

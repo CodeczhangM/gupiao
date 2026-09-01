@@ -50,7 +50,24 @@
     ).length;
   }
 
-  const api = { normalizeCycleWatchInput, cycleWatchGroups, cycleWatchAlertCount };
+  async function addAndCheckCycleWatch(request, payload) {
+    const saved = await request('/cycle-watchlist', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const tsCode = (saved && saved.ts_code) || payload.ts_code;
+    return request('/cycle-watchlist/check', {
+      method: 'POST',
+      body: JSON.stringify({ ts_code: tsCode }),
+    });
+  }
+
+  const api = {
+    normalizeCycleWatchInput,
+    cycleWatchGroups,
+    cycleWatchAlertCount,
+    addAndCheckCycleWatch,
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) Object.assign(root, api);
 }(typeof window !== 'undefined' ? window : globalThis));

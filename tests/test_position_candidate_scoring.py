@@ -61,6 +61,20 @@ def _base_row(ts_code="600001.SH"):
         "breakout_pct": 0.8,
         "price_volume_confirmation": True,
         "confirmation_price": 12.4,
+        "pressure_low": 12.25,
+        "pressure_high": 12.35,
+        "breakout_trigger": 12.37,
+        "breakout_confirm": 12.4,
+        "distance_to_trigger_pct": -1.04,
+        "distance_to_confirm_pct": -0.8,
+        "breakout_state": "CONFIRMED",
+        "breakout_quality_score": 88,
+        "false_breakout_risk": "LOW",
+        "false_breakout_risk_score": 10,
+        "risk_reward_ratio": 2.4,
+        "risk_reward_score": 72,
+        "pressure_strength_score": 85,
+        "pressure_sources": ["近20日3次局部高点聚类"],
     }
 
 
@@ -107,15 +121,30 @@ class PositionCandidateScoringTests(unittest.TestCase):
             "position_missing_confirmations",
         }
         self.assertTrue(expected.issubset(result))
-        self.assertEqual(result["position_level"], "立即建仓")
+        self.assertEqual(result["build_position_level"], "A+")
+
+    def test_score_exposes_new_breakout_breakdown(self):
+        result = score_position_candidate(_base_row())
+
+        self.assertTrue({
+            "stock_quality_score", "entry_timing_score",
+            "breakout_quality_score",
+            "data_confidence", "final_score", "build_position_level",
+            "build_position_status", "score_components", "macd_strength",
+        }.issubset(result))
+        self.assertEqual(result["position_score"], result["final_score"])
+        self.assertEqual(result["build_position_level"], "A+")
+        self.assertIn(result["macd_strength"], {"强", "中", "弱"})
 
     def test_immediate_entry_requires_breakout_confirmation(self):
         result = score_position_candidate({
             **_base_row(),
             "breakout_confirmed": False,
             "breakout_pct": -0.2,
+            "breakout_state": "TRIGGERED",
+            "breakout_quality_score": 55,
         })
-        self.assertEqual(result["position_level"], "等待突破建仓")
+        self.assertNotEqual(result["build_position_level"], "A+")
 
     def test_immediate_entry_requires_non_weak_sector(self):
         result = score_position_candidate({
@@ -127,16 +156,16 @@ class PositionCandidateScoringTests(unittest.TestCase):
             "sector_macd_status": "",
         })
         self.assertLess(result["sector_hot_score"], 9)
-        self.assertNotEqual(result["position_level"], "立即建仓")
+        self.assertNotEqual(result["build_position_level"], "A+")
 
     def test_limit_gene_and_recent_resonance_are_hard_gates(self):
         no_gene = score_position_candidate({**_base_row(), "limit_gene_eligible": False})
         no_event = score_position_candidate({
             **_base_row(), "resonance_events": [], "historical_resonance_score": 0,
         })
-        self.assertEqual(no_gene["position_level"], "不展示")
+        self.assertEqual(no_gene["build_position_level"], "X")
         self.assertEqual(no_gene["position_filter_reason"], "前1至10日无涨停基因")
-        self.assertEqual(no_event["position_level"], "不展示")
+        self.assertEqual(no_event["build_position_level"], "X")
         self.assertEqual(no_event["position_filter_reason"], "近20日无有效共振")
 
     def test_today_limit_up_and_down_have_precise_reasons(self):
@@ -153,7 +182,7 @@ class PositionCandidateScoringTests(unittest.TestCase):
             "chip_washout_score": 0,
         })
 
-        self.assertNotEqual(result["position_level"], "立即建仓")
+        self.assertNotEqual(result["build_position_level"], "A+")
         self.assertIn("筹码数据缺失", result["position_missing_confirmations"])
 
     def test_after_1430_missing_tail_confirmation_blocks_immediate_entry(self):
@@ -167,7 +196,7 @@ class PositionCandidateScoringTests(unittest.TestCase):
             market_phase="收盘最终结果",
         )
 
-        self.assertNotEqual(result["position_level"], "立即建仓")
+        self.assertNotEqual(result["build_position_level"], "A+")
         self.assertIn("尾盘确认缺失", result["position_missing_confirmations"])
 
     def test_pre_1430_missing_tail_does_not_add_risk_penalty(self):
@@ -180,7 +209,7 @@ class PositionCandidateScoringTests(unittest.TestCase):
         result = score_position_candidate(row, market_phase="盘中观察")
 
         self.assertNotIn("尾盘确认缺失", result["position_risk_items"])
-        self.assertNotEqual(result["position_level"], "立即建仓")
+        self.assertNotEqual(result["build_position_level"], "A+")
 
     def test_high_risk_turnover_is_hidden_even_with_strong_positive_factors(self):
         result = score_position_candidate({
@@ -189,7 +218,7 @@ class PositionCandidateScoringTests(unittest.TestCase):
             "price_volume_stagnation": True,
         })
 
-        self.assertEqual(result["position_level"], "不展示")
+        self.assertEqual(result["build_position_level"], "X")
         self.assertTrue(result["position_high_risk_veto"])
 
     def test_ranking_caps_at_ten_without_backfilling_weak_rows(self):
@@ -226,6 +255,54 @@ class PositionCandidateScoringTests(unittest.TestCase):
 
         self.assertEqual(len(capped), 10)
         self.assertEqual(weak, [])
+
+    def test_distance_boundaries_drive_a_b_plus_c_and_x(self):
+        critical = score_position_candidate({
+            **_base_row(), "breakout_state": "NOT_TRIGGERED",
+            "breakout_confirmed": False, "breakout_quality_score": None,
+            "distance_to_trigger_pct": 1.5,
+        })
+        waiting = score_position_candidate({
+            **_base_row(), "breakout_state": "NOT_TRIGGERED",
+            "breakout_confirmed": False, "breakout_quality_score": None,
+            "distance_to_trigger_pct": 3.0,
+        })
+        observe = score_position_candidate({
+            **_base_row(), "breakout_state": "NOT_TRIGGERED",
+            "breakout_confirmed": False, "breakout_quality_score": None,
+            "distance_to_trigger_pct": 5.0,
+        })
+        distant = score_position_candidate({
+            **_base_row(), "breakout_state": "NOT_TRIGGERED",
+            "breakout_confirmed": False, "breakout_quality_score": None,
+            "distance_to_trigger_pct": 5.01,
+        })
+        self.assertEqual(critical["build_position_level"], "A")
+        self.assertEqual(waiting["build_position_level"], "B+")
+        self.assertEqual(observe["build_position_level"], "C")
+        self.assertEqual(distant["build_position_level"], "X")
+
+    def test_risk_reward_does_not_affect_score_level_or_ranking(self):
+        low_rr = score_position_candidate({**_base_row(), "risk_reward_ratio": 1.49})
+        high_rr = score_position_candidate({**_base_row(), "risk_reward_ratio": 5.0})
+        self.assertEqual(low_rr["build_position_level"], high_rr["build_position_level"])
+        self.assertEqual(low_rr["final_score"], high_rr["final_score"])
+
+    def test_high_false_breakout_is_a_hard_veto(self):
+        false_breakout = score_position_candidate({
+            **_base_row(), "false_breakout_risk": "HIGH",
+            "breakout_state": "FAILED",
+        })
+        self.assertEqual(false_breakout["build_position_level"], "X")
+
+    def test_missing_chip_lowers_confidence_without_zeroing_stock_quality(self):
+        complete = score_position_candidate(_base_row())
+        missing = score_position_candidate({
+            **_base_row(), "chip_data_complete": False,
+            "chip_build_position": False,
+        })
+        self.assertLess(missing["data_confidence"], complete["data_confidence"])
+        self.assertGreater(missing["stock_quality_score"], 0)
 
 
 if __name__ == "__main__":

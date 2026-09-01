@@ -4,6 +4,7 @@ const {
   normalizeCycleWatchInput,
   cycleWatchGroups,
   cycleWatchAlertCount,
+  addAndCheckCycleWatch,
 } = require('./cycle-watch-utils');
 
 assert.strictEqual(normalizeCycleWatchInput('600000'), '600000.SH');
@@ -32,4 +33,29 @@ assert.strictEqual(cycleWatchAlertCount([
   { is_new_alert: false, alert_read: false },
 ]), 1);
 
-console.log('cycle watch utils tests passed');
+async function testAddChecksOnlyTheNewStock() {
+  const calls = [];
+  const request = async (url, options) => {
+    calls.push({ url, options });
+    if (url === '/cycle-watchlist') return { ts_code: '600199.SH' };
+    return { stocks: [{ ts_code: '600199.SH', status: 'watch' }] };
+  };
+
+  const result = await addAndCheckCycleWatch(request, { ts_code: '600199.SH' });
+
+  assert.deepStrictEqual(calls.map((call) => call.url), [
+    '/cycle-watchlist',
+    '/cycle-watchlist/check',
+  ]);
+  assert.deepStrictEqual(JSON.parse(calls[1].options.body), {
+    ts_code: '600199.SH',
+  });
+  assert.strictEqual(result.stocks[0].ts_code, '600199.SH');
+}
+
+testAddChecksOnlyTheNewStock()
+  .then(() => console.log('cycle watch utils tests passed'))
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

@@ -51,6 +51,13 @@ from position_candidate_history import (
     extract_pullback_confirmation,
     extract_resonance_events,
 )
+from position_candidate_minute_enrichment import (
+    enrich_position_candidates_with_minutes,
+)
+from position_strategy_settings import (
+    DEFAULT_POSITION_STRATEGY_SETTINGS,
+    load_position_strategy_settings,
+)
 from strategy import (
     _attach_intraday_signal_stocks,
     _is_mainboard_a_stock,
@@ -84,6 +91,13 @@ _REALTIME_RESULT_LOCK = threading.Lock()
 _POSITION_HISTORY_FEATURE_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
 
 
+def _position_strategy_settings() -> dict[str, Any]:
+    try:
+        return load_position_strategy_settings()
+    except Exception:
+        return {group: dict(values) for group, values in DEFAULT_POSITION_STRATEGY_SETTINGS.items()}
+
+
 def clear_realtime_derived_caches() -> None:
     with _REALTIME_RESULT_LOCK:
         _REALTIME_RESULT_CACHE.clear()
@@ -106,6 +120,7 @@ def _build_history_position_pool(
     history: pd.DataFrame,
     trade_date: str,
 ) -> tuple[list[dict[str, Any]], dict[str, int], list[str]]:
+    strategy_settings = _position_strategy_settings()
     debug = {
         "source_main_board": 0,
         "no_limit_gene": 0,
@@ -173,7 +188,10 @@ def _build_history_position_pool(
         if eligible_codes is not None and code not in eligible_codes:
             continue
         bars = grouped.get(code, pd.DataFrame())
-        cache_key = (code, str(trade_date), position_score_version())
+        cache_key = (
+            code, str(trade_date),
+            position_score_version(position_settings=strategy_settings),
+        )
         try:
             features = _POSITION_HISTORY_FEATURE_CACHE.get(cache_key)
             if features is None:
@@ -201,6 +219,7 @@ def _build_history_position_pool(
                     "current_price": snapshot.get("current_price", snapshot.get("close")),
                     "trade_date": trade_date,
                 },
+                settings=strategy_settings,
             )
             if not pullback.get("support_held"):
                 debug["support_broken"] += 1
@@ -1834,7 +1853,7 @@ def _group_realtime_stage_rows(
 
 
 def _position_filter_reason(row: dict[str, Any]) -> str:
-    if row.get("position_level") == "不展示":
+    if row.get("build_position_level") == "X":
         return str(
             row.get("position_filter_reason")
             or row.get("position_level_reason")
@@ -1895,6 +1914,17 @@ def _build_unified_position_candidates(
                 "latest_resonance_date": row.get("latest_resonance_date"),
                 "primary_support": row.get("primary_support"),
                 "confirmation_price": row.get("confirmation_price"),
+                "pressure_low": row.get("pressure_low"),
+                "pressure_high": row.get("pressure_high"),
+                "breakout_trigger": row.get("breakout_trigger"),
+                "breakout_confirm": row.get("breakout_confirm"),
+                "distance_to_trigger_pct": row.get("distance_to_trigger_pct"),
+                "pressure_zones": row.get("pressure_zones"),
+                "pressure_selection_reason": row.get("pressure_selection_reason"),
+                "breakout_evidence": row.get("breakout_evidence"),
+                "false_breakout_evidence": row.get("false_breakout_evidence"),
+                "score_components": row.get("score_components"),
+                "data_confidence": row.get("data_confidence"),
                 "position_score": row.get("position_score"),
                 "component_scores": {
                     "support": row.get("support_pullback_score"),
@@ -1909,7 +1939,7 @@ def _build_unified_position_candidates(
                 "reason": reason,
             })
     visible_before_cap = sum(
-        row.get("position_level") in {"立即建仓", "等待突破建仓", "观察建仓"}
+        row.get("build_position_level") in {"A+", "A", "B+", "B", "C"}
         for row in scored
     )
     reasons = [_position_filter_reason(row) for row in scored]
@@ -1971,6 +2001,7 @@ def _refresh_position_confirmation_fields(
     history: pd.DataFrame,
     trade_date: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
+    strategy_settings = _position_strategy_settings()
     grouped = {
         str(code): bars.copy()
         for code, bars in (
@@ -1992,6 +2023,7 @@ def _refresh_position_confirmation_fields(
                 grouped.get(code, pd.DataFrame()),
                 row,
                 {**row, "trade_date": trade_date},
+                settings=strategy_settings,
             )
             refreshed.append({**row, **confirmation})
         except Exception as exc:
@@ -2872,6 +2904,8 @@ def _cached_chip_fields_by_code() -> dict[str, dict[str, Any]]:
         "chip_build_position", "chip_washout_score", "chip_concentration_70_pct",
         "chip_concentration_90_pct", "chip_price_distance_pct", "chip_winner_rate",
         "chip_peak_bottom_position_pct", "chip_washout_label", "chip_washout_reason",
+        "chip_pressure_low", "chip_pressure_high",
+        "chip_pressure_data_available", "chip_pressure_reason",
     )
     cached: dict[str, dict[str, Any]] = {}
     with _REALTIME_RESULT_LOCK:
@@ -2898,7 +2932,11 @@ def build_daily_position_candidate_info(
         raise RuntimeError("数据库中没有完整日线交易日")
     trade_date = str(dates[0])
     market = load_market_snapshot(trade_date)
-    history = load_recent_daily(trade_date, 40)
+    strategy_settings = _position_strategy_settings()
+    history = load_recent_daily(
+        trade_date,
+        int(strategy_settings["pressure"]["history_days"]),
+    )
     market = _attach_daily_sector_context(market)
     pool, history_debug, warnings = _build_history_position_pool(
         market, history, trade_date
@@ -2926,6 +2964,52 @@ def build_daily_position_candidate_info(
             market_phase="日线收盘",
         )
     )
+    minute_warnings: list[str] = []
+    minute_stats = {
+        "minute_enrichment_attempted": 0,
+        "minute_enrichment_completed": 0,
+        "minute_enrichment_failed": 0,
+        "minute_enrichment_timed_out": 0,
+        "minute_enrichment_budget_seconds": int(
+            strategy_settings["network"]["stage_budget_seconds"]
+        ),
+        "minute_enrichment_ms": 0.0,
+    }
+    if force_refresh and candidates:
+        start_datetime, end_datetime = _datetime_window(
+            trade_date, "09:30:00", "15:00:00"
+        )
+
+        def minute_loader(code: str, date: str) -> MinuteLoadResult:
+            return _minute_result_with_1459_fallback(
+                code,
+                start_datetime,
+                end_datetime,
+                "1min",
+                date,
+                force_refresh=True,
+            )
+
+        enriched, minute_warnings, minute_stats = (
+            enrich_position_candidates_with_minutes(
+                candidates,
+                trade_date,
+                minute_loader,
+                strategy_settings,
+            )
+        )
+        enriched, refreshed_warnings = _refresh_position_confirmation_fields(
+            enriched, history, trade_date
+        )
+        confirmation_warnings.extend(refreshed_warnings)
+        scored, candidates, enriched_score_warnings, filter_debug = (
+            _build_unified_position_candidates(
+                enriched,
+                limit=min(max(1, int(limit)), 10),
+                market_phase="日线收盘",
+            )
+        )
+        score_warnings.extend(enriched_score_warnings)
     filter_debug["history_funnel"] = history_debug
     elapsed_ms = (time.perf_counter() - started) * 1000
     return _json_safe({
@@ -2943,13 +3027,14 @@ def build_daily_position_candidate_info(
         "result_cache_hit": False,
         "cache_source": "database_daily",
         "fallback_warnings": list(dict.fromkeys(
-            warnings + confirmation_warnings + score_warnings
+            warnings + confirmation_warnings + score_warnings + minute_warnings
         ))[:20],
         "performance": {
             "daily_position_total_ms": round(elapsed_ms, 3),
             "network_request_count": 0,
             "minute_request_count": 0,
             "chip_network_request_count": 0,
+            **minute_stats,
         },
         "intraday": {
             "trade_date": trade_date,

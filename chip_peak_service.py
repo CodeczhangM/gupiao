@@ -36,6 +36,10 @@ _CHIP_FIELD_DEFAULTS = {
     "chip_data_complete": False,
     "chip_data_trade_date": None,
     "chip_data_warning": None,
+    "chip_pressure_low": None,
+    "chip_pressure_high": None,
+    "chip_pressure_data_available": False,
+    "chip_pressure_reason": "筹码分布数据缺失",
 }
 
 
@@ -185,6 +189,59 @@ def extract_chip_peaks(chips: pd.DataFrame) -> dict[str, float | None]:
     return result
 
 
+def extract_chip_pressure_zone(
+    chips: pd.DataFrame,
+    current_price: Any,
+    tolerance_pct: float = 1.0,
+) -> dict[str, Any]:
+    unavailable = {
+        "chip_pressure_low": None,
+        "chip_pressure_high": None,
+        "chip_pressure_data_available": False,
+        "chip_pressure_reason": "筹码分布数据缺失",
+    }
+    current = _finite_float(current_price)
+    if current is None or current <= 0 or chips is None or chips.empty:
+        return unavailable
+    if not {"price", "percent"}.issubset(chips.columns):
+        return unavailable
+    data = chips[["price", "percent"]].copy()
+    data["price"] = pd.to_numeric(data["price"], errors="coerce")
+    data["percent"] = pd.to_numeric(data["percent"], errors="coerce")
+    data = data.dropna().query("price > 0 and percent > 0").sort_values("price")
+    data = data[data["price"] >= current]
+    if data.empty:
+        return {
+            **unavailable,
+            "chip_pressure_reason": "当前价上方没有有效筹码密集区",
+        }
+    groups: list[list[dict[str, float]]] = []
+    for row in data.to_dict("records"):
+        item = {"price": float(row["price"]), "percent": float(row["percent"])}
+        if groups:
+            previous = groups[-1][-1]["price"]
+            if (item["price"] / previous - 1) * 100 <= tolerance_pct:
+                groups[-1].append(item)
+                continue
+        groups.append([item])
+    selected = max(
+        groups,
+        key=lambda group: (
+            sum(item["percent"] for item in group),
+            -min(item["price"] for item in group),
+        ),
+    )
+    low = min(item["price"] for item in selected)
+    high = max(item["price"] for item in selected)
+    weight = sum(item["percent"] for item in selected)
+    return {
+        "chip_pressure_low": round(low, 4),
+        "chip_pressure_high": round(high, 4),
+        "chip_pressure_data_available": True,
+        "chip_pressure_reason": f"当前价上方筹码密集区，占比{weight:.2f}%",
+    }
+
+
 def _concentration_score(value: float | None) -> int:
     if value is None:
         return 0
@@ -296,6 +353,10 @@ def build_chip_peak_fields(
     fields = empty_chip_peak_fields()
     peaks = extract_chip_peaks(chips)
     fields.update(peaks)
+    fields.update(extract_chip_pressure_zone(
+        chips,
+        row.get("current_price", row.get("close")),
+    ))
 
     perf_row = None
     if perf is not None and not perf.empty:

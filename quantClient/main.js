@@ -980,8 +980,15 @@ createApp({
       return 'muted';
     },
     positionLevelBadgeClass(value) {
-      if (value === '立即建仓') return 'strong';
-      if (value === '等待突破建仓') return 'watch';
+      if (value === 'A+') return 'strong';
+      if (value === 'A' || value === 'B+') return 'watch';
+      if (value === 'X') return 'risk';
+      return 'muted';
+    },
+    falseBreakoutBadgeClass(value) {
+      if (value === 'LOW') return 'strong';
+      if (value === 'MEDIUM') return 'watch';
+      if (value === 'HIGH') return 'risk';
       return 'muted';
     },
     monitorRowClass(row) {

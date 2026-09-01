@@ -1,2 +1,4 @@
 /mnt/d/piao/quantServer/quantServer/src/test/java/com/codec/quantserver/QuantServerApplicationTests.java
+/mnt/d/piao/quantServer/quantServer/src/test/java/com/codec/quantserver/config/CorsConfigTest.java
 /mnt/d/piao/quantServer/quantServer/src/test/java/com/codec/quantserver/controller/QuantControllerTest.java
+/mnt/d/piao/quantServer/quantServer/src/test/java/com/codec/quantserver/service/CycleWatchSchedulerTest.java

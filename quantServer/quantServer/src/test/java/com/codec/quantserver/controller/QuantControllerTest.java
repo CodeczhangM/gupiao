@@ -3,6 +3,7 @@ package com.codec.quantserver.controller;
 import com.codec.quantserver.dto.QuantBacktestRequest;
 import com.codec.quantserver.dto.FreeReviewQueryRequest;
 import com.codec.quantserver.dto.MacdSettingsRequest;
+import com.codec.quantserver.dto.PositionStrategySettingsRequest;
 import com.codec.quantserver.dto.TradeReviewRequest;
 import com.codec.quantserver.dto.CycleWatchCreateRequest;
 import com.codec.quantserver.service.QuantPythonClient;
@@ -106,6 +107,38 @@ class QuantControllerTest {
         assertThat(captor.getValue().getFastPeriod()).isEqualTo(6);
         assertThat(captor.getValue().getSlowPeriod()).isEqualTo(35);
         assertThat(captor.getValue().getSignalPeriod()).isEqualTo(6);
+    }
+
+    @Test
+    void positionStrategySettingsGetAndPutForwardToPythonClient() throws Exception {
+        QuantPythonClient client = mock(QuantPythonClient.class);
+        when(client.positionStrategySettings()).thenReturn(Map.of(
+                "pressure", Map.of("cluster_atr_factor", 0.4)));
+        when(client.updatePositionStrategySettings(any(PositionStrategySettingsRequest.class)))
+                .thenReturn(Map.of("pressure", Map.of("cluster_atr_factor", 0.5)));
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new QuantController(client)).build();
+
+        mockMvc.perform(get("/api/quant/indicator-settings/position-strategy"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/quant/indicator-settings/position-strategy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "pressure":{"cluster_atr_factor":0.5},
+                                  "breakout":{"confirm_pct":0.006}
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(client).positionStrategySettings();
+        ArgumentCaptor<PositionStrategySettingsRequest> captor =
+                ArgumentCaptor.forClass(PositionStrategySettingsRequest.class);
+        verify(client).updatePositionStrategySettings(captor.capture());
+        assertThat(captor.getValue().getPressure().get("cluster_atr_factor"))
+                .isEqualTo(0.5);
+        assertThat(captor.getValue().getBreakout().get("confirm_pct"))
+                .isEqualTo(0.006);
     }
 
     @Test

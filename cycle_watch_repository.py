@@ -186,14 +186,29 @@ def save_cycle_evaluation(
 ) -> dict[str, Any]:
     init_cycle_watch_schema()
     params = {
-        **evaluation,
+        key: evaluation.get(key)
+        for key in (
+            "ts_code",
+            "trade_date",
+            "checked_at",
+            "data_as_of",
+            "status",
+            "status_label",
+            "opportunity_score",
+            "current_price",
+            "pct_chg",
+            "support_price",
+            "invalidation_reason",
+        )
+    }
+    params.update({
         "schedule_slot": schedule_slot,
         "matched_conditions_json": json.dumps(evaluation.get("matched_conditions", []), ensure_ascii=False),
         "missing_conditions_json": json.dumps(evaluation.get("missing_conditions", []), ensure_ascii=False),
         "risk_items_json": json.dumps(evaluation.get("risk_items", []), ensure_ascii=False),
         "factors_json": json.dumps(evaluation.get("factors", {}), ensure_ascii=False),
         "is_new_alert": 1 if evaluation.get("is_new_alert") else 0,
-    }
+    })
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(

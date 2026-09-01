@@ -29,6 +29,7 @@ from tail_premium_scoring import (
 
 MAX_MINUTE_WORKERS = 4
 DEFAULT_MAX_FETCH = 60
+MIN_FINAL_PREMIUM_SCORE = 30.0
 LIVE_TAIL_WINDOW_START = "14:40:00"
 LIVE_TAIL_WINDOW_LABEL = "14:40"
 
@@ -653,6 +654,31 @@ def _filter_waiting_realtime_candidates(factors: pd.DataFrame) -> pd.DataFrame:
     return data[mask].copy().reset_index(drop=True)
 
 
+def _filter_final_realtime_candidates(scored: pd.DataFrame) -> pd.DataFrame:
+    """Apply final buyability gates to minute-refreshed candidates."""
+    if scored is None or scored.empty:
+        return pd.DataFrame()
+    data = scored.copy()
+    pct = pd.to_numeric(
+        data.get("pct_chg", pd.Series(0, index=data.index)),
+        errors="coerce",
+    ).fillna(0)
+    premium_score = pd.to_numeric(
+        data.get("premium_score", pd.Series(0, index=data.index)),
+        errors="coerce",
+    ).fillna(0)
+    limit_sealed = data.get(
+        "limit_sealed",
+        pd.Series(False, index=data.index),
+    ).fillna(False).astype(bool)
+    mask = (
+        pct.between(2, 7, inclusive="both")
+        & ~limit_sealed
+        & premium_score.ge(MIN_FINAL_PREMIUM_SCORE)
+    )
+    return data[mask].copy().reset_index(drop=True)
+
+
 def _load_and_score(
     stock: dict[str, Any],
     trade_date: str,
@@ -917,10 +943,10 @@ def build_realtime_tail_premium_monitor(
             for warning in item[2]
         ]
     ))
-    ranked = rank_tail_premium_candidates(
-        pd.DataFrame(rows),
-        limit=limit,
-    )
+    scored_rows = pd.DataFrame(rows)
+    if state != "waiting_tail_window":
+        scored_rows = _filter_final_realtime_candidates(scored_rows)
+    ranked = rank_tail_premium_candidates(scored_rows, limit=limit)
     stocks = [_json_safe(row) for row in ranked.to_dict("records")]
     result = {
         "trade_date": trade_date,

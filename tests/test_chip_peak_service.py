@@ -10,6 +10,7 @@ from chip_peak_service import (
     calculate_concentration,
     clear_chip_peak_cache,
     extract_chip_peaks,
+    extract_chip_pressure_zone,
     load_chip_data,
 )
 
@@ -88,6 +89,26 @@ class ChipPeakServiceTests(unittest.TestCase):
         self.assertEqual(result["chip_peak_percent"], 12.0)
         self.assertEqual(result["chip_secondary_peak_price"], 9.5)
         self.assertEqual(result["chip_secondary_peak_percent"], 9.0)
+
+    def test_chip_pressure_zone_uses_dense_cluster_above_current_price(self):
+        chips = pd.DataFrame([
+            {"price": 9.80, "percent": 4.0},
+            {"price": 10.20, "percent": 9.0},
+            {"price": 10.28, "percent": 12.0},
+            {"price": 10.35, "percent": 8.0},
+            {"price": 11.20, "percent": 6.0},
+        ])
+        result = extract_chip_pressure_zone(chips, current_price=10.0)
+        self.assertTrue(result["chip_pressure_data_available"])
+        self.assertEqual(result["chip_pressure_low"], 10.2)
+        self.assertEqual(result["chip_pressure_high"], 10.35)
+        self.assertIn("密集", result["chip_pressure_reason"])
+
+    def test_missing_chip_pressure_is_data_unavailable_not_zero(self):
+        result = extract_chip_pressure_zone(pd.DataFrame(), current_price=10.0)
+        self.assertFalse(result["chip_pressure_data_available"])
+        self.assertIsNone(result["chip_pressure_low"])
+        self.assertIsNone(result["chip_pressure_high"])
 
     def test_dense_bottom_peak_with_washout_structure_is_buildable(self):
         chips = pd.DataFrame([

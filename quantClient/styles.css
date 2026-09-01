@@ -1214,7 +1214,7 @@ tr:hover td {
 }
 
 .position-candidate-table table {
-  min-width: 1900px;
+  min-width: 2180px;
 }
 
 .position-candidate-table .position-support-col,
@@ -1259,7 +1259,24 @@ tr:hover td {
 }
 
 .position-candidate-table .monitor-reason-cell {
-  min-width: 260px;
+  min-width: 330px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.position-candidate-table .monitor-reason-cell small {
+  display: block;
+  margin-top: 3px;
+}
+
+.position-candidate-table details {
+  margin-top: 6px;
+}
+
+.position-candidate-table summary {
+  color: var(--blue);
+  cursor: pointer;
 }
 
 .position-filter-debug {
@@ -1297,6 +1314,53 @@ tr:hover td {
 .intraday-monitor-table th:last-child,
 .intraday-monitor-table td:last-child {
   width: 360px;
+}
+
+/* Must follow the generic intraday rule above so the unified position table
+   keeps readable column widths instead of collapsing fixed-layout columns. */
+.intraday-monitor-table.position-candidate-table table {
+  min-width: 1600px;
+  table-layout: auto;
+}
+
+.position-candidate-table th,
+.position-candidate-table td {
+  height: auto;
+  min-width: 120px;
+  padding: 12px 14px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.position-candidate-table th:nth-child(1),
+.position-candidate-table td:nth-child(1) { min-width: 150px; }
+
+.position-candidate-table th:nth-child(2),
+.position-candidate-table td:nth-child(2) { min-width: 190px; }
+
+.position-candidate-table th:nth-child(3),
+.position-candidate-table td:nth-child(3),
+.position-candidate-table th:nth-child(4),
+.position-candidate-table td:nth-child(4) { min-width: 210px; }
+
+.position-candidate-table th:nth-child(5),
+.position-candidate-table td:nth-child(5) { min-width: 190px; }
+
+.position-candidate-table th:nth-child(6),
+.position-candidate-table td:nth-child(6),
+.position-candidate-table th:nth-child(7),
+.position-candidate-table td:nth-child(7) { min-width: 180px; }
+
+.position-candidate-table th:nth-child(8),
+.position-candidate-table td:nth-child(8) { min-width: 360px; }
+
+.position-candidate-table .monitor-badge,
+.position-candidate-table .mono,
+.position-candidate-table td > strong {
+  white-space: nowrap;
 }
 
 .monitor-reason-cell {

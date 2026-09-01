@@ -1,2 +1,4 @@
 com/codec/quantserver/QuantServerApplicationTests.class
+com/codec/quantserver/config/CorsConfigTest.class
+com/codec/quantserver/service/CycleWatchSchedulerTest.class
 com/codec/quantserver/controller/QuantControllerTest.class

@@ -16,14 +16,15 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         self.assertIn("position_candidates", main)
         self.assertIn("/realtime-info/position-candidates", main)
         self.assertIn("建仓等级", candidate_html)
-        self.assertIn("综合分", candidate_html)
-        self.assertIn("MACD", candidate_html)
-        self.assertIn("近期涨停", candidate_html)
-        self.assertIn("主关键位", candidate_html)
-        self.assertIn("突破确认", candidate_html)
-        self.assertIn("历史共振", candidate_html)
-        self.assertIn("板块/量价/筹码", candidate_html)
-        self.assertIn("等待突破建仓", main)
+        self.assertIn("距触发价", candidate_html)
+        self.assertIn("压力区", candidate_html)
+        self.assertIn("突破质量", candidate_html)
+        self.assertIn("假突破风险", candidate_html)
+        self.assertNotIn("盈亏比", candidate_html)
+        self.assertNotIn("risk_reward", candidate_html)
+        self.assertNotIn("<th>MACD</th>", candidate_html)
+        self.assertIn('colspan="8"', candidate_html)
+        self.assertIn("build_position_status", candidate_html)
         self.assertIn("positionFilterDebugPayload.auto_expand", main)
         self.assertIn("position_risk_items", candidate_html)
         self.assertIn("过滤调试", candidate_html)
@@ -38,13 +39,13 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         self.assertNotIn("<h3>底部放量启动</h3>", candidate_html)
         self.assertIn("realtimeOvernightRows", overnight_html)
 
-    def test_support_and_confirmation_details_wrap_in_dedicated_columns(self):
+    def test_pressure_and_confirmation_details_wrap_in_dedicated_columns(self):
         html = (ROOT / "quantClient" / "index.html").read_text(encoding="utf-8")
         css = (ROOT / "quantClient" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn('<th class="position-support-col">主关键位</th>', html)
+        self.assertIn('<th class="position-support-col">支撑/压力区</th>', html)
         self.assertIn('<td class="position-support-col position-detail-cell">', html)
-        self.assertIn('<th class="position-confirmation-col">突破确认</th>', html)
+        self.assertIn('<th class="position-confirmation-col">触发/确认</th>', html)
         self.assertIn('<td class="position-confirmation-col position-detail-cell">', html)
         self.assertIn(
             ".position-candidate-table .position-detail-cell {",
@@ -58,16 +59,20 @@ class PositionCandidateLayoutTests(unittest.TestCase):
         html = (ROOT / "quantClient" / "index.html").read_text(encoding="utf-8")
         css = (ROOT / "quantClient" / "styles.css").read_text(encoding="utf-8")
 
-        self.assertIn("styles.css?v=20260831-position-columns-v2", html)
-        self.assertIn('<th class="position-factor-col position-wrap-col">板块/量价/筹码</th>', html)
+        self.assertIn("styles.css?v=20260831-breakout-zone-v3", html)
+        self.assertIn('<th class="position-factor-col position-wrap-col">板块/量价</th>', html)
         self.assertIn('<td class="position-factor-col position-detail-cell">', html)
-        self.assertIn('<th class="position-tail-col position-wrap-col">尾盘/相对强弱</th>', html)
+        self.assertIn('<th class="position-tail-col position-wrap-col">现价/尾盘</th>', html)
         self.assertIn('<td class="position-tail-col position-detail-cell">', html)
         header_css = css.split(
             ".position-candidate-table .position-wrap-col {", 1
         )[1].split("}", 1)[0]
         self.assertIn("white-space: normal;", header_css)
         self.assertIn("text-overflow: clip;", header_css)
+        self.assertIn(".intraday-monitor-table.position-candidate-table table {", css)
+        self.assertIn("table-layout: auto;", css.split(
+            ".intraday-monitor-table.position-candidate-table table {", 1
+        )[1].split("}", 1)[0])
 
 
 if __name__ == "__main__":
