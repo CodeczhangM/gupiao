@@ -563,9 +563,13 @@ createApp({
         trade_date: '',
         lookback_trade_dates: [],
         moneyflow_trade_dates: [],
+        macd_basis: {},
         warnings: [],
-        continuation_inflow: [],
-        rotation_rebound: [],
+        groups: {
+          priority_focus: [],
+          trend_watch: [],
+          caution_avoid: [],
+        },
       },
       sectorRotationLoading: false,
       freeReviewMeta: {},
@@ -682,6 +686,19 @@ createApp({
         { key: 'low-buy', title: '低吸提示', hint: '接近支撑，等待缩量企稳', rows: this.cycleWatchLowBuyRows },
         { key: 'watch', title: '继续观察', hint: '条件尚未齐备，暂不追高', rows: this.cycleWatchWatchingRows },
       ];
+    },
+    sectorTrendPanels() {
+      return [
+        { key: 'priority_focus', title: '优先关注', subtitle: '资金持续流入且周线MACD走强' },
+        { key: 'trend_watch', title: '趋势观察', subtitle: '资金或周线MACD信号未完全确认' },
+        { key: 'caution_avoid', title: '谨慎回避', subtitle: '资金流出叠加周线MACD走弱' },
+      ];
+    },
+    sectorRotationMacdBasis() {
+      const basis = (this.sectorRotation && this.sectorRotation.macd_basis) || {};
+      const { macd_fast_period: fast, macd_slow_period: slow, macd_signal_period: signal } = basis;
+      if (!fast || !slow || !signal) return '--';
+      return `周线 (${fast}/${slow}/${signal})`;
     },
     freeReviewBuildView() {
       return freeReviewBuildState(this.freeReviewBuild);
@@ -903,15 +920,36 @@ createApp({
       const summary = this.latest && this.latest.moneyflow_summary;
       return summary && Array.isArray(summary[key]) ? summary[key] : [];
     },
-    sectorRotationTopScore(key, scoreKey) {
-      const rows = this.sectorRotation && Array.isArray(this.sectorRotation[key])
-        ? this.sectorRotation[key]
-        : [];
-      if (!rows.length) return '--';
-      return formatNumber(rows[0][scoreKey], 1);
+    sectorTrendRows(group) {
+      const groups = (this.sectorRotation && this.sectorRotation.groups) || {};
+      return Array.isArray(groups[group]) ? groups[group] : [];
+    },
+    sectorTrendCount(group) {
+      return this.sectorTrendRows(group).length;
+    },
+    sectorTrendRatingClass(rating) {
+      return trendRatingClass(rating);
+    },
+    sectorTrendCapitalArrow(row) {
+      const flow = (row && row.capital_flow) || {};
+      return capitalTrendArrow(flow.trend);
+    },
+    sectorTrendCapitalClass(row) {
+      const flow = (row && row.capital_flow) || {};
+      return capitalTrendClass(flow.trend);
+    },
+    sectorTrendCapitalText(row) {
+      const flow = (row && row.capital_flow) || {};
+      return flow.trend_text || '资金数据不足';
+    },
+    sectorMacdTags(row) {
+      return macdTagList(row && row.macd);
     },
     formatSectorRotationMoney(value) {
       return formatRotationMoney(value);
+    },
+    formatSectorRotationSignedMoney(value) {
+      return signedRotationMoney(value);
     },
     formatSectorRotationPercent(value, digits) {
       return formatRotationPercent(value, digits);
@@ -1234,7 +1272,7 @@ createApp({
           `/sector-rotation/tomorrow?limit=${this.limit || 10}&stocks_per_sector=5`,
         );
       } catch (error) {
-        this.error = error.message || '明日轮动加载失败';
+        this.error = error.message || '板块数据加载失败';
       } finally {
         this.sectorRotationLoading = false;
       }

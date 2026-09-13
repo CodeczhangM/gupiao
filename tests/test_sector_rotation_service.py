@@ -5,7 +5,24 @@ from unittest.mock import patch
 import pandas as pd
 
 
-def market_rows(trade_date="20260812"):
+TRADE_DATES = [
+    value.strftime("%Y%m%d")
+    for value in pd.bdate_range(end="2026-08-12", periods=120)
+]
+CURRENT = TRADE_DATES[-1]
+PREV1 = TRADE_DATES[-2]
+PREV2 = TRADE_DATES[-3]
+
+# 周线形态参数：(起点, 日斜率, 日加速度)
+# 机器人加速上行 -> 金叉/零轴上方/红柱放大；医药加速下行 -> 死叉/零轴下方/绿柱放大。
+CLOSE_PARAMS = {
+    "机器人": (8.0, 0.20, 0.005),
+    "半导体": (20.0, 0.05, 0.0),
+    "医药": (40.0, -0.08, -0.004),
+}
+
+
+def market_rows(trade_date=CURRENT):
     rows = []
     for industry, code_suffix, base_amount, pct_values in [
         ("机器人", "R", 300000.0, [6.2, 4.5, 2.1, 1.5, 0.8, -0.4, 3.2, 5.1]),
@@ -32,31 +49,30 @@ def market_rows(trade_date="20260812"):
 
 
 def history_rows():
-    dates = [
-        "20260716", "20260717", "20260720", "20260721", "20260722",
-        "20260723", "20260724", "20260727", "20260728", "20260729",
-        "20260730", "20260731", "20260803", "20260804", "20260805",
-        "20260806", "20260807", "20260810", "20260811", "20260812",
-    ]
     current = market_rows()
     rows = []
     for row_index, stock in current.iterrows():
         industry = stock["industry"]
-        for offset, trade_date in enumerate(dates):
-            trend = {"机器人": 0.45, "半导体": 0.18, "医药": -0.08}[industry]
-            close = 8 + offset * trend + (row_index % 3) * 0.1
-            if trade_date == "20260811":
+        base, slope, accel = CLOSE_PARAMS[industry]
+        for offset, trade_date in enumerate(TRADE_DATES):
+            close = (
+                base
+                + slope * offset
+                + accel * offset * offset
+                + (row_index % 3) * 0.1
+            )
+            if trade_date == PREV1:
                 pct = {"机器人": 1.2, "半导体": -1.5, "医药": -0.6}[industry]
                 amount = float(stock["amount"]) * {
                     "机器人": 0.72,
                     "半导体": 0.75,
                     "医药": 0.9,
                 }[industry]
-            elif trade_date == "20260812":
+            elif trade_date == CURRENT:
                 pct = float(stock["pct_chg"])
                 amount = float(stock["amount"])
             else:
-                pct = trend
+                pct = {"机器人": 0.45, "半导体": 0.18, "医药": -0.08}[industry]
                 amount = float(stock["amount"]) * 0.65
             rows.append({
                 "trade_date": trade_date,
@@ -72,199 +88,191 @@ def history_rows():
 
 
 def moneyflow_for(date):
-    if date == "20260811":
-        return pd.DataFrame([
-            {"trade_date": date, "name": "机器人", "net_amount": 800000000, "net_amount_rate": 3.1},
-            {"trade_date": date, "name": "半导体", "net_amount": -600000000, "net_amount_rate": -2.3},
-            {"trade_date": date, "name": "医药", "net_amount": -300000000, "net_amount_rate": -1.1},
-        ])
+    if date == PREV1:
+        flows = {
+            "机器人": (800000000, 3.1),
+            "半导体": (-600000000, -2.3),
+            "医药": (-300000000, -1.1),
+        }
+    else:
+        flows = {
+            "机器人": (1300000000, 4.8),
+            "半导体": (450000000, 1.7),
+            "医药": (-260000000, -0.9),
+        }
     return pd.DataFrame([
-        {"trade_date": date, "name": "机器人", "net_amount": 1300000000, "net_amount_rate": 4.8},
-        {"trade_date": date, "name": "半导体", "net_amount": 450000000, "net_amount_rate": 1.7},
-        {"trade_date": date, "name": "医药", "net_amount": -260000000, "net_amount_rate": -0.9},
+        {
+            "trade_date": date,
+            "name": name,
+            "net_amount": net_amount,
+            "net_amount_rate": net_amount_rate,
+        }
+        for name, (net_amount, net_amount_rate) in flows.items()
     ])
 
 
-class SectorRotationServiceTests(unittest.TestCase):
-    def test_scores_and_sorts_continuation_and_rotation_lists(self):
-        import sector_rotation_service
+def build_with_patches(**overrides):
+    import sector_rotation_service
 
+    complete_dates = overrides.get("complete_dates", list(reversed(TRADE_DATES)))
+    market = overrides["market"] if "market" in overrides else market_rows()
+    history = overrides["history"] if "history" in overrides else history_rows()
+    moneyflow = overrides.get("moneyflow", moneyflow_for)
+    with patch(
+        "sector_rotation_service.get_complete_dates",
+        return_value=complete_dates,
+    ):
         with patch(
-            "sector_rotation_service.get_complete_dates",
-            return_value=["20260812", "20260811", "20260810"],
+            "sector_rotation_service.load_market_snapshot",
+            return_value=market,
         ):
             with patch(
-                "sector_rotation_service.load_market_snapshot",
-                return_value=market_rows(),
+                "sector_rotation_service.load_recent_daily",
+                return_value=history,
             ):
                 with patch(
-                    "sector_rotation_service.load_recent_daily",
-                    return_value=history_rows(),
+                    "sector_rotation_service.load_moneyflow",
+                    side_effect=moneyflow,
                 ):
-                    with patch(
-                        "sector_rotation_service.load_moneyflow",
-                        side_effect=lambda date: moneyflow_for(date),
-                    ):
-                        result = (
-                            sector_rotation_service
-                            .build_tomorrow_sector_rotation(
-                                limit=5,
-                                stocks_per_sector=3,
-                            )
+                    return (
+                        sector_rotation_service
+                        .build_tomorrow_sector_rotation(
+                            limit=overrides.get("limit", 5),
+                            stocks_per_sector=overrides.get(
+                                "stocks_per_sector", 3
+                            ),
                         )
+                    )
 
-        self.assertEqual(result["trade_date"], "20260812")
+
+class SectorRotationServiceTests(unittest.TestCase):
+    def test_groups_ratings_and_capital_flow_windows(self):
+        result = build_with_patches()
+        groups = result["groups"]
+
+        self.assertEqual(result["trade_date"], CURRENT)
         self.assertEqual(
             result["lookback_trade_dates"],
-            ["20260811", "20260812"],
+            [PREV2, PREV1, CURRENT],
         )
         self.assertEqual(
             result["moneyflow_trade_dates"],
-            ["20260811", "20260812"],
+            [PREV2, PREV1, CURRENT],
         )
         self.assertEqual(
-            result["continuation_inflow"][0]["industry_name"],
-            "机器人",
+            result["macd_basis"]["macd_parameter_key"],
+            "macd-4-10-5-v1",
         )
+
+        priority = groups["priority_focus"]
+        self.assertTrue(priority)
+        robot = next(
+            row for row in priority if row["industry_name"] == "机器人"
+        )
+        self.assertEqual(robot["trend_rating"], "strong")
+        self.assertEqual(robot["capital_flow"]["trend"], "inflow")
         self.assertEqual(
-            result["rotation_rebound"][0]["industry_name"],
-            "半导体",
+            robot["capital_flow"]["net_amount_3d"],
+            [1300000000.0, 800000000.0, 1300000000.0],
         )
-        self.assertGreater(
-            result["continuation_inflow"][0]["continuation_score"],
-            result["continuation_inflow"][-1]["continuation_score"],
-        )
-        self.assertGreater(
-            result["rotation_rebound"][0]["rotation_score"],
-            result["rotation_rebound"][-1]["rotation_score"],
-        )
-        self.assertTrue(result["continuation_inflow"][0]["attack_leaders"])
-        self.assertTrue(result["rotation_rebound"][0]["catchup_candidates"])
+        self.assertTrue(robot["macd"]["ready"])
+        self.assertEqual(robot["macd"]["status"], "golden_cross")
+        self.assertEqual(robot["macd"]["zero_axis"], "above")
+        self.assertEqual(robot["macd"]["histogram_trend"], "red_expand")
+        self.assertIn("金叉", robot["macd"]["status_text"])
+        self.assertTrue(robot["attack_leaders"])
+        self.assertTrue(robot["catchup_candidates"])
         attack_scores = [
-            row["attack_score"]
-            for row in result["continuation_inflow"][0]["attack_leaders"]
+            row["attack_score"] for row in robot["attack_leaders"]
         ]
         self.assertEqual(attack_scores, sorted(attack_scores, reverse=True))
+
+        caution = groups["caution_avoid"]
+        self.assertTrue(caution)
+        pharma = next(
+            row for row in caution if row["industry_name"] == "医药"
+        )
+        self.assertEqual(pharma["trend_rating"], "avoid")
+        self.assertEqual(pharma["capital_flow"]["trend"], "outflow")
+        self.assertEqual(pharma["macd"]["status"], "death_cross")
+        self.assertEqual(pharma["macd"]["zero_axis"], "below")
+        self.assertEqual(pharma["macd"]["histogram_trend"], "green_expand")
+        self.assertTrue(pharma["catchup_candidates"])
         catchup_scores = [
             row["catchup_score"]
-            for row in result["rotation_rebound"][0]["catchup_candidates"]
+            for row in pharma["catchup_candidates"]
         ]
         self.assertEqual(catchup_scores, sorted(catchup_scores, reverse=True))
 
-    def test_payload_is_strict_json_serializable_with_missing_numeric_values(self):
-        import sector_rotation_service
+        # 同组内 rank 连续且从 1 开始
+        for rows in groups.values():
+            self.assertEqual(
+                [row["rank"] for row in rows],
+                list(range(1, len(rows) + 1)),
+            )
+        # 全部板块都被分到某个组
+        grouped_names = {
+            row["industry_name"]
+            for rows in groups.values()
+            for row in rows
+        }
+        self.assertIn("半导体", grouped_names)
+        self.assertTrue(robot["trend_desc"])
+        self.assertIn("近3日主力资金持续流入", robot["trend_desc"])
 
+    def test_payload_is_strict_json_serializable_with_missing_numeric_values(self):
         market = market_rows()
         market.loc[0, "volume_ratio"] = float("nan")
         market.loc[1, "turnover_rate"] = float("nan")
         history = history_rows()
         history.loc[0, "high"] = float("nan")
 
-        with patch(
-            "sector_rotation_service.get_complete_dates",
-            return_value=["20260812", "20260811", "20260810"],
-        ):
-            with patch(
-                "sector_rotation_service.load_market_snapshot",
-                return_value=market,
-            ):
-                with patch(
-                    "sector_rotation_service.load_recent_daily",
-                    return_value=history,
-                ):
-                    with patch(
-                        "sector_rotation_service.load_moneyflow",
-                        side_effect=lambda date: moneyflow_for(date),
-                    ):
-                        result = (
-                            sector_rotation_service
-                            .build_tomorrow_sector_rotation(
-                                limit=5,
-                                stocks_per_sector=3,
-                            )
-                        )
-
+        result = build_with_patches(market=market, history=history)
         json.dumps(result, ensure_ascii=False, allow_nan=False)
 
-    def test_missing_one_moneyflow_day_degrades_confidence(self):
-        import sector_rotation_service
-
+    def test_missing_one_moneyflow_day_degrades_to_watch(self):
         def partial_moneyflow(date):
-            if date == "20260811":
+            if date == PREV1:
                 return pd.DataFrame()
             return moneyflow_for(date)
 
-        with patch(
-            "sector_rotation_service.get_complete_dates",
-            return_value=["20260812", "20260811", "20260810"],
-        ):
-            with patch(
-                "sector_rotation_service.load_market_snapshot",
-                return_value=market_rows(),
-            ):
-                with patch(
-                    "sector_rotation_service.load_recent_daily",
-                    return_value=history_rows(),
-                ):
-                    with patch(
-                        "sector_rotation_service.load_moneyflow",
-                        side_effect=partial_moneyflow,
-                    ):
-                        result = (
-                            sector_rotation_service
-                            .build_tomorrow_sector_rotation()
-                        )
+        result = build_with_patches(moneyflow=partial_moneyflow)
 
         self.assertTrue(result["warnings"])
-        self.assertIn("20260811", result["warnings"][0])
-        confidences = {
-            row["confidence"]
-            for row in (
-                result["continuation_inflow"]
-                + result["rotation_rebound"]
-            )
-        }
+        self.assertIn(PREV1, result["warnings"][0])
+        rows = [
+            row
+            for rows in result["groups"].values()
+            for row in rows
+        ]
+        self.assertTrue(rows)
+        self.assertTrue(
+            all(row["trend_rating"] == "watch" for row in rows)
+        )
+        self.assertTrue(
+            all(row["capital_flow"]["trend"] == "unknown" for row in rows)
+        )
+        confidences = {row["confidence"] for row in rows}
         self.assertNotIn("高", confidences)
 
-    def test_no_moneyflow_returns_empty_lists_with_warning(self):
-        import sector_rotation_service
+    def test_no_moneyflow_returns_empty_groups_with_warning(self):
+        result = build_with_patches(moneyflow=lambda date: pd.DataFrame())
 
-        with patch(
-            "sector_rotation_service.get_complete_dates",
-            return_value=["20260812", "20260811"],
-        ):
-            with patch(
-                "sector_rotation_service.load_market_snapshot",
-                return_value=market_rows(),
-            ):
-                with patch(
-                    "sector_rotation_service.load_recent_daily",
-                    return_value=history_rows(),
-                ):
-                    with patch(
-                        "sector_rotation_service.load_moneyflow",
-                        return_value=pd.DataFrame(),
-                    ):
-                        result = (
-                            sector_rotation_service
-                            .build_tomorrow_sector_rotation()
-                        )
-
-        self.assertEqual(result["continuation_inflow"], [])
-        self.assertEqual(result["rotation_rebound"], [])
+        self.assertTrue(
+            all(
+                not rows for rows in result["groups"].values()
+            )
+        )
         self.assertIn("暂无足够资金流数据", " ".join(result["warnings"]))
 
-    def test_less_than_two_complete_dates_returns_empty_lists(self):
-        import sector_rotation_service
+    def test_less_than_two_complete_dates_returns_empty_groups(self):
+        result = build_with_patches(complete_dates=[CURRENT])
 
-        with patch(
-            "sector_rotation_service.get_complete_dates",
-            return_value=["20260812"],
-        ):
-            result = sector_rotation_service.build_tomorrow_sector_rotation()
-
-        self.assertEqual(result["continuation_inflow"], [])
-        self.assertEqual(result["rotation_rebound"], [])
+        self.assertTrue(
+            all(
+                not rows for rows in result["groups"].values()
+            )
+        )
         self.assertIn("完整交易日不足", " ".join(result["warnings"]))
 
 

@@ -2040,6 +2040,85 @@ tr:hover td {
   font-size: 12px;
 }
 
+.rotation-macd-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rotation-macd-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.macd-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.macd-tag.up {
+  background: #e8f6ef;
+  color: var(--green);
+}
+
+.macd-tag.down {
+  background: #fff1f0;
+  color: var(--red);
+}
+
+.macd-tag.muted {
+  background: #eef3f6;
+  color: var(--muted);
+}
+
+.trend-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.trend-badge.is-strong {
+  background: #e8f6ef;
+  color: var(--green);
+}
+
+.trend-badge.is-bullish {
+  background: #eef4ff;
+  color: var(--blue);
+}
+
+.trend-badge.is-watch {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
+.trend-badge.is-weak,
+.trend-badge.is-avoid {
+  background: #fff1f0;
+  color: var(--red);
+}
+
+.rotation-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  user-select: none;
+}
+
+.rotation-details[open] summary {
+  margin-bottom: 10px;
+}
+
 .market-news-summary {
   display: grid;
   gap: 12px;

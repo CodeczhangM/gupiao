@@ -451,8 +451,10 @@
         <div class="metrics sector-rotation-summary">
           <article><span>交易日</span><strong>{{ sectorRotation.trade_date || '--' }}</strong></article>
           <article><span>资金流日期</span><strong class="small-value">{{ (sectorRotation.moneyflow_trade_dates || []).join(' / ') || '--' }}</strong></article>
-          <article><span>延续最高分</span><strong>{{ sectorRotationTopScore('continuation_inflow', 'continuation_score') }}</strong></article>
-          <article><span>回流最高分</span><strong>{{ sectorRotationTopScore('rotation_rebound', 'rotation_score') }}</strong></article>
+          <article><span>周线MACD</span><strong class="small-value">{{ sectorRotationMacdBasis }}</strong></article>
+          <article><span>优先关注</span><strong>{{ sectorTrendCount('priority_focus') }}</strong></article>
+          <article><span>趋势观察</span><strong>{{ sectorTrendCount('trend_watch') }}</strong></article>
+          <article><span>谨慎回避</span><strong>{{ sectorTrendCount('caution_avoid') }}</strong></article>
         </div>
 
         <section v-if="sectorRotation.warnings && sectorRotation.warnings.length" class="cache-warning">
@@ -461,160 +463,87 @@
         </section>
 
         <div class="sector-rotation-stack">
-          <div class="panel sector-rotation-board">
+          <div class="panel sector-rotation-board" v-for="panel in sectorTrendPanels" :key="panel.key">
             <div class="panel-head">
               <div>
-                <h3>延续流入榜</h3>
-                <span>连续流入、放量扩散、龙头强度靠前</span>
+                <h3>{{ panel.title }}</h3>
+                <span>{{ panel.subtitle }}</span>
               </div>
-              <button class="secondary" @click="loadSectorRotation(true)" :disabled="sectorRotationLoading">
+              <button v-if="panel.key === 'priority_focus'" class="secondary" @click="loadSectorRotation(true)" :disabled="sectorRotationLoading">
                 {{ sectorRotationLoading ? '刷新中' : '刷新' }}
               </button>
             </div>
             <div class="rotation-sector-list">
-              <article class="rotation-sector-card" v-for="row in sectorRotation.continuation_inflow || []" :key="'continuation-' + row.industry_name">
+              <article class="rotation-sector-card" v-for="row in sectorTrendRows(panel.key)" :key="panel.key + '-' + row.industry_name">
                 <div class="rotation-sector-head">
                   <div class="rotation-sector-title">
                     <span class="rank-chip">#{{ row.rank }}</span>
                     <div>
                       <strong>{{ row.industry_name }}</strong>
-                      <small>{{ row.signal }}</small>
+                      <small>{{ row.trend_desc || '信号未共振，暂按观察处理。' }}</small>
                     </div>
                   </div>
-                  <div class="rotation-sector-score">
-                    <strong>{{ formatNumber(row.continuation_score, 1) }}</strong>
-                    <small>回流 {{ formatNumber(row.rotation_score, 1) }}</small>
-                  </div>
+                  <span :class="sectorTrendRatingClass(row.trend_rating)">{{ row.trend_rating_text || '待确认' }}</span>
                 </div>
                 <div class="rotation-sector-metrics">
-                  <span>信心 <b>{{ row.confidence || '低' }}</b></span>
-                  <span>今日净流入 <b>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_today) }}</b></span>
-                  <span>变化 <b>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_change) }}</b></span>
-                  <span>上涨率 <b>{{ formatSectorRotationPercent(row.metrics && row.metrics.up_ratio, 0) }}</b></span>
+                  <span>今日涨跌 <b :class="signedClass(row.metrics && row.metrics.avg_pct_chg)">{{ formatNumber(row.metrics && row.metrics.avg_pct_chg, 2) }}%</b></span>
+                  <span>成交额 <b>{{ formatSectorRotationMoney(row.metrics && row.metrics.amount_today) }}</b></span>
+                  <span>主力资金 <b :class="sectorTrendCapitalClass(row)">{{ formatSectorRotationSignedMoney(row.capital_flow && row.capital_flow.net_amount_today) }}</b></span>
+                  <span :class="sectorTrendCapitalClass(row)">{{ sectorTrendCapitalArrow(row) }} {{ sectorTrendCapitalText(row) }}</span>
                 </div>
-                <div class="rotation-stock-groups">
-                  <div class="rotation-stock-group">
-                    <strong>进攻龙头</strong>
-                    <div class="rotation-stock-list">
-                      <article class="rotation-stock-card" v-for="stock in row.attack_leaders || []" :key="stock.ts_code">
-                        <div class="rotation-stock-title">
-                          <strong>{{ stock.name || '--' }}</strong>
-                          <span>{{ stock.ts_code || '--' }}</span>
-                        </div>
-                        <div class="rotation-stock-score">
-                          <b>{{ formatNumber(stock.attack_score, 1) }}</b>
-                          <span>{{ stock.reason || '板块内相对占优' }}</span>
-                        </div>
-                        <div class="rotation-stock-metrics">
-                          <span>涨跌 {{ formatNumber(stock.pct_chg, 2) }}%</span>
-                          <span>量比 {{ formatNumber(stock.volume_ratio, 2) }}</span>
-                          <span>换手 {{ formatNumber(stock.turnover_rate, 2) }}%</span>
-                          <span>成交额 {{ formatSectorRotationStockAmount(stock) }}</span>
-                        </div>
-                      </article>
+                <div class="rotation-macd-row">
+                  <span class="macd-tag" :class="tag.kind" v-for="tag in sectorMacdTags(row)" :key="tag.label">{{ tag.label }}</span>
+                  <small v-if="row.macd && row.macd.ready">DIF {{ formatNumber(row.macd.dif, 2) }} / DEA {{ formatNumber(row.macd.dea, 2) }}</small>
+                </div>
+                <details class="rotation-details" v-if="(row.attack_leaders || []).length || (row.catchup_candidates || []).length">
+                  <summary>个股明细</summary>
+                  <div class="rotation-stock-groups">
+                    <div class="rotation-stock-group" v-if="(row.attack_leaders || []).length">
+                      <strong>进攻龙头</strong>
+                      <div class="rotation-stock-list">
+                        <article class="rotation-stock-card" v-for="stock in row.attack_leaders" :key="stock.ts_code">
+                          <div class="rotation-stock-title">
+                            <strong>{{ stock.name || '--' }}</strong>
+                            <span>{{ stock.ts_code || '--' }}</span>
+                          </div>
+                          <div class="rotation-stock-score">
+                            <b>{{ formatNumber(stock.attack_score, 1) }}</b>
+                            <span>{{ stock.reason || '板块内相对占优' }}</span>
+                          </div>
+                          <div class="rotation-stock-metrics">
+                            <span>涨跌 {{ formatNumber(stock.pct_chg, 2) }}%</span>
+                            <span>量比 {{ formatNumber(stock.volume_ratio, 2) }}</span>
+                            <span>换手 {{ formatNumber(stock.turnover_rate, 2) }}%</span>
+                            <span>成交额 {{ formatSectorRotationStockAmount(stock) }}</span>
+                          </div>
+                        </article>
+                      </div>
+                    </div>
+                    <div class="rotation-stock-group" v-if="(row.catchup_candidates || []).length">
+                      <strong>补涨候选</strong>
+                      <div class="rotation-stock-list">
+                        <article class="rotation-stock-card" v-for="stock in row.catchup_candidates" :key="'c-' + stock.ts_code">
+                          <div class="rotation-stock-title">
+                            <strong>{{ stock.name || '--' }}</strong>
+                            <span>{{ stock.ts_code || '--' }}</span>
+                          </div>
+                          <div class="rotation-stock-score">
+                            <b>{{ formatNumber(stock.catchup_score, 1) }}</b>
+                            <span>{{ stock.reason || '板块内相对占优' }}</span>
+                          </div>
+                          <div class="rotation-stock-metrics">
+                            <span>涨跌 {{ formatNumber(stock.pct_chg, 2) }}%</span>
+                            <span>量比 {{ formatNumber(stock.volume_ratio, 2) }}</span>
+                            <span>换手 {{ formatNumber(stock.turnover_rate, 2) }}%</span>
+                            <span>成交额 {{ formatSectorRotationStockAmount(stock) }}</span>
+                          </div>
+                        </article>
+                      </div>
                     </div>
                   </div>
-                  <div class="rotation-stock-group">
-                    <strong>补涨候选</strong>
-                    <div class="rotation-stock-list">
-                      <article class="rotation-stock-card" v-for="stock in row.catchup_candidates || []" :key="'c-' + stock.ts_code">
-                        <div class="rotation-stock-title">
-                          <strong>{{ stock.name || '--' }}</strong>
-                          <span>{{ stock.ts_code || '--' }}</span>
-                        </div>
-                        <div class="rotation-stock-score">
-                          <b>{{ formatNumber(stock.catchup_score, 1) }}</b>
-                          <span>{{ stock.reason || '板块内相对占优' }}</span>
-                        </div>
-                        <div class="rotation-stock-metrics">
-                          <span>涨跌 {{ formatNumber(stock.pct_chg, 2) }}%</span>
-                          <span>量比 {{ formatNumber(stock.volume_ratio, 2) }}</span>
-                          <span>换手 {{ formatNumber(stock.turnover_rate, 2) }}%</span>
-                          <span>成交额 {{ formatSectorRotationStockAmount(stock) }}</span>
-                        </div>
-                      </article>
-                    </div>
-                  </div>
-                </div>
+                </details>
               </article>
-              <div v-if="!(sectorRotation.continuation_inflow || []).length" class="empty-line">暂无足够资金流数据</div>
-            </div>
-          </div>
-
-          <div class="panel sector-rotation-board">
-            <div class="panel-head">
-              <div>
-                <h3>轮动回流榜</h3>
-                <span>流出转改善、趋势未破坏、补涨空间靠前</span>
-              </div>
-            </div>
-            <div class="rotation-sector-list">
-              <article class="rotation-sector-card" v-for="row in sectorRotation.rotation_rebound || []" :key="'rotation-' + row.industry_name">
-                <div class="rotation-sector-head">
-                  <div class="rotation-sector-title">
-                    <span class="rank-chip">#{{ row.rank }}</span>
-                    <div>
-                      <strong>{{ row.industry_name }}</strong>
-                      <small>{{ row.signal }}</small>
-                    </div>
-                  </div>
-                  <div class="rotation-sector-score">
-                    <strong>{{ formatNumber(row.rotation_score, 1) }}</strong>
-                    <small>延续 {{ formatNumber(row.continuation_score, 1) }}</small>
-                  </div>
-                </div>
-                <div class="rotation-sector-metrics">
-                  <span>信心 <b>{{ row.confidence || '低' }}</b></span>
-                  <span>今日净流入 <b>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_today) }}</b></span>
-                  <span>变化 <b>{{ formatSectorRotationMoney(row.metrics && row.metrics.net_amount_change) }}</b></span>
-                  <span>上涨率 <b>{{ formatSectorRotationPercent(row.metrics && row.metrics.up_ratio, 0) }}</b></span>
-                </div>
-                <div class="rotation-stock-groups">
-                  <div class="rotation-stock-group">
-                    <strong>进攻龙头</strong>
-                    <div class="rotation-stock-list">
-                      <article class="rotation-stock-card" v-for="stock in row.attack_leaders || []" :key="stock.ts_code">
-                        <div class="rotation-stock-title">
-                          <strong>{{ stock.name || '--' }}</strong>
-                          <span>{{ stock.ts_code || '--' }}</span>
-                        </div>
-                        <div class="rotation-stock-score">
-                          <b>{{ formatNumber(stock.attack_score, 1) }}</b>
-                          <span>{{ stock.reason || '板块内相对占优' }}</span>
-                        </div>
-                        <div class="rotation-stock-metrics">
-                          <span>涨跌 {{ formatNumber(stock.pct_chg, 2) }}%</span>
-                          <span>量比 {{ formatNumber(stock.volume_ratio, 2) }}</span>
-                          <span>换手 {{ formatNumber(stock.turnover_rate, 2) }}%</span>
-                          <span>成交额 {{ formatSectorRotationStockAmount(stock) }}</span>
-                        </div>
-                      </article>
-                    </div>
-                  </div>
-                  <div class="rotation-stock-group">
-                    <strong>补涨候选</strong>
-                    <div class="rotation-stock-list">
-                      <article class="rotation-stock-card" v-for="stock in row.catchup_candidates || []" :key="'c-' + stock.ts_code">
-                        <div class="rotation-stock-title">
-                          <strong>{{ stock.name || '--' }}</strong>
-                          <span>{{ stock.ts_code || '--' }}</span>
-                        </div>
-                        <div class="rotation-stock-score">
-                          <b>{{ formatNumber(stock.catchup_score, 1) }}</b>
-                          <span>{{ stock.reason || '板块内相对占优' }}</span>
-                        </div>
-                        <div class="rotation-stock-metrics">
-                          <span>涨跌 {{ formatNumber(stock.pct_chg, 2) }}%</span>
-                          <span>量比 {{ formatNumber(stock.volume_ratio, 2) }}</span>
-                          <span>换手 {{ formatNumber(stock.turnover_rate, 2) }}%</span>
-                          <span>成交额 {{ formatSectorRotationStockAmount(stock) }}</span>
-                        </div>
-                      </article>
-                    </div>
-                  </div>
-                </div>
-              </article>
-              <div v-if="!(sectorRotation.rotation_rebound || []).length" class="empty-line">暂无足够资金流数据</div>
+              <div v-if="!sectorTrendRows(panel.key).length" class="empty-line">暂无板块数据</div>
             </div>
           </div>
         </div>
